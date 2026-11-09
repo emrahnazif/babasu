@@ -1,20 +1,27 @@
+/*
+  Colours use light-dark(light, dark): one definition per token.
+  Which side applies follows color-scheme: the OS by default, or the
+  theme chosen in Settings (data-theme on <html>).
+*/
 :root {
   color-scheme: light dark;
 
   /* Colour */
-  --color-bg: #ffffff;
-  --color-text: #0a0a0a;
-  --color-text-muted: #737373;
-  --color-border: #e5e5e5;
-  --color-accent-bg: #f5f5f5;
+  --color-bg: light-dark(#ffffff, #0a0a0a);
+  --color-text: light-dark(#0a0a0a, #fafafa);
+  --color-text-muted: light-dark(#737373, #a3a3a3);
+  --color-border: light-dark(#e5e5e5, #262626);
+  --color-accent-bg: light-dark(#f5f5f5, #262626);
 
   /* Typography */
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --text-sm: 0.875rem;
   --text-md: 1rem;
   --text-lg: 1.5rem;
   --leading-tight: 1.15;
   --leading-normal: 1.5;
+  --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
 
@@ -34,12 +41,5 @@
   --sidebar-width: 320px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #0a0a0a;
-    --color-text: #fafafa;
-    --color-text-muted: #a3a3a3;
-    --color-border: #262626;
-    --color-accent-bg: #262626;
-  }
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }

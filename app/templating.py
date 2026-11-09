@@ -4,7 +4,7 @@ from functools import cache
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from app import config
+from app import config, settings
 
 ICONS_DIR = config.STATIC_DIR / "icons"
 
@@ -21,3 +21,4 @@ templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
 templates.env.globals["app_name"] = config.APP_NAME
 templates.env.globals["nav"] = config.NAV
 templates.env.globals["icon"] = icon
+templates.env.globals["settings"] = settings.get
