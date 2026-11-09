@@ -33,11 +33,15 @@
 }
 
 
-/* Row of buttons at the end of a form, aligned right. */
+/* Row of buttons, aligned right. Variant: "actions divided" adds a line above (form footers). */
 .actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+
+.actions.divided {
   margin-top: var(--space-8);
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
