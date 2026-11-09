@@ -1,0 +1,18 @@
+/*
+  Entry stylesheet. Cascade order is fixed by layers, not file order:
+  later layers win regardless of selector specificity.
+
+  reset      – normalise browser defaults
+  tokens     – design variables (colour, space, type)
+  base       – element defaults (body, headings)
+  layout     – page-level primitives (.app, .center)
+  components – one file per component, BEM-ish: .block, .block__el, .block--mod
+*/
+@layer reset, tokens, base, layout, components;
+
+@import url("reset.css") layer(reset);
+@import url("tokens.css") layer(tokens);
+@import url("base.css") layer(base);
+@import url("layout.css") layer(layout);
+
+@import url("components/title.css") layer(components);

@@ -1,0 +1,12 @@
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+h1, h2, h3 {
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-semibold);
+}

@@ -1,0 +1,14 @@
+/* App shell fills the window. */
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Centres its content on both axes within the available space. */
+.center {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+}
