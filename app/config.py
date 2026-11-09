@@ -9,6 +9,11 @@ WINDOW_MIN_SIZE = (900, 600)
 
 HOST = "127.0.0.1"
 
+# Header navigation: label and link for each item.
+NAV = [
+    {"label": "Home", "href": "/"},
+]
+
 # Works in dev and in PyInstaller builds (bundled modules get __file__ under _MEIPASS).
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"

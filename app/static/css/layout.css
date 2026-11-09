@@ -1,14 +1,40 @@
-/* App shell fills the window. */
+/*
+  App shell (ours only, BEM names). Two full-height columns:
+    sidebar column: its own top bar + the agent chat
+    main column:    the navigation bar + the main area
+  Both bars sit in the same grid row, so they always line up.
+  The window never scrolls; the sidebar and main each scroll vertically on their own.
+*/
 .app {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
+  height: 100%;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: var(--header-height) minmax(0, 1fr);
+  grid-template-areas:
+    "sidebar-bar main-bar"
+    "sidebar     main";
 }
 
-/* Centres its content on both axes within the available space. */
-.center {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  padding: var(--space-8);
+.app__sidebar-bar { grid-area: sidebar-bar; }
+.app__main-bar    { grid-area: main-bar; }
+.app__sidebar     { grid-area: sidebar; }
+.app__main        { grid-area: main; }
+
+.app__sidebar-bar,
+.app__main-bar {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app__sidebar-bar,
+.app__sidebar {
+  border-right: 1px solid var(--color-border);
+}
+
+.app__sidebar,
+.app__main {
+  overflow-y: auto;
+}
+
+.app__main {
+  padding: var(--space-6) var(--space-8);
 }

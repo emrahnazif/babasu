@@ -3,12 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}babasu{% endblock %}</title>
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='css/main.css') }}">
 </head>
 <body>
-  <main class="app">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="app">
+    <div class="app__sidebar-bar topbar">
+      <div class="topbar__left">
+        <a class="topbar__brand" href="/">{{ app_name }}</a>
+      </div>
+    </div>
+
+    <aside class="app__sidebar chat">
+      <h2 class="chat__title">Agent</h2>
+      <p class="chat__empty">No messages yet.</p>
+    </aside>
+
+    <header class="app__main-bar topbar">
+      <div class="topbar__left">
+        <button class="topbar__button" type="button" aria-label="Undo" title="Undo">{{ icon("arrow-uturn-left") }}</button>
+      </div>
+
+      <nav class="topbar__center">
+        {% for item in nav %}
+          <a class="topbar__link{% if request.url.path == item.href %} topbar__link--active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+        {% endfor %}
+      </nav>
+
+      <div class="topbar__right">
+        <button class="topbar__button" type="button" aria-label="Delete" title="Delete">{{ icon("trash") }}</button>
+        <button class="topbar__button" type="button" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</button>
+      </div>
+    </header>
+
+    <main class="app__main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 </body>
 </html>

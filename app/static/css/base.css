@@ -1,3 +1,7 @@
+/*
+  Plain elements look right without classes. Main-area templates
+  (ours and the agent's) rely on this first, flat classes second.
+*/
 body {
   font-family: var(--font-sans);
   font-size: var(--text-md);
@@ -9,4 +13,9 @@ body {
 h1, h2, h3 {
   line-height: var(--leading-tight);
   font-weight: var(--weight-semibold);
+  letter-spacing: -0.02em;
 }
+
+h1 { font-size: var(--text-lg); }
+
+h1 + p { margin-top: var(--space-1); }

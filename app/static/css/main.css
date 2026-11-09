@@ -4,9 +4,10 @@
 
   reset      – normalise browser defaults
   tokens     – design variables (colour, space, type)
-  base       – element defaults (body, headings)
-  layout     – page-level primitives (.app, .center)
-  components – one file per component, BEM-ish: .block, .block__el, .block--mod
+  base       – element defaults; plain HTML looks right with no classes
+  layout     – app shell (.app, .app__main, …)
+  components – shell components use BEM (.topbar, .topbar__link);
+               main-area content uses flat one-word classes (main.css)
 */
 @layer reset, tokens, base, layout, components;
 
@@ -15,4 +16,6 @@
 @import url("base.css") layer(base);
 @import url("layout.css") layer(layout);
 
-@import url("components/title.css") layer(components);
+@import url("components/topbar.css") layer(components);
+@import url("components/chat.css") layer(components);
+@import url("components/main.css") layer(components);

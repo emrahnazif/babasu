@@ -1,0 +1,15 @@
+/*
+  Flat classes for main-area content: one plain word each; a variant is a
+  second plain word on the same element. Keep this list short enough to
+  document on one screen; it is what the agent writes with.
+*/
+
+/* Centres its content on both axes, filling the main area. */
+.center {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+/* Secondary text. */
+.muted { color: var(--color-text-muted); }
