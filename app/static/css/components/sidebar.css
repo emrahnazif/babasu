@@ -1,0 +1,32 @@
+/* Content of the left sidebar: the agent chat, or a page's own menu (e.g. Settings). */
+.sidebar__title {
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-2);
+}
+
+.sidebar__empty {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* Vertical list of links; the current one has aria-current="page". */
+.sidebar__menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sidebar__menu a {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.sidebar__menu a:hover,
+.sidebar__menu a[aria-current="page"] {
+  color: var(--color-text);
+  background: var(--color-accent-bg);
+}

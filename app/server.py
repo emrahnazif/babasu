@@ -8,11 +8,12 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app import config
-from app.routes import pages
+from app.routes import pages, settings
 
 app = FastAPI(title=config.APP_NAME, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
 app.include_router(pages.router)
+app.include_router(settings.router)
 
 
 def start_server() -> tuple[uvicorn.Server, str]:

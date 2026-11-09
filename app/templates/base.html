@@ -14,9 +14,11 @@
       </div>
     </div>
 
-    <aside class="app__sidebar chat">
-      <h2 class="chat__title">Agent</h2>
-      <p class="chat__empty">No messages yet.</p>
+    <aside class="app__sidebar">
+      {% block sidebar %}
+        <h2 class="sidebar__title">Agent</h2>
+        <p class="sidebar__empty">No messages yet.</p>
+      {% endblock %}
     </aside>
 
     <header class="app__main-bar topbar">
@@ -32,7 +34,9 @@
 
       <div class="topbar__right">
         <button class="topbar__button" type="button" aria-label="Delete" title="Delete">{{ icon("trash") }}</button>
-        <button class="topbar__button" type="button" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</button>
+        {# A page that has its own return target (e.g. settings) passes `next`; keep it. #}
+        {% set back = next if next is defined else request.url.path %}
+        <a class="topbar__button" href="/settings/general?next={{ back | urlencode }}" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</a>
       </div>
     </header>
 

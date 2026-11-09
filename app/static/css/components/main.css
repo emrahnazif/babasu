@@ -13,3 +13,52 @@
 
 /* Secondary text. */
 .muted { color: var(--color-text-muted); }
+
+/* A form field: label text with its control and any hint below it. */
+.field {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 28rem;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.field .muted { font-weight: var(--weight-normal); }
+
+/* Stack of fields; the gap does the spacing, so markup order doesn't matter. */
+.fields {
+  display: grid;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
+}
+
+
+/* Row of buttons at the end of a form, aligned right. */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-8);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Button, for <button> and <a>. Variant: "button secondary". */
+.button {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button.secondary {
+  background: var(--color-accent-bg);
+  color: var(--color-text);
+}

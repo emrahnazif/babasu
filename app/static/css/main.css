@@ -17,5 +17,5 @@
 @import url("layout.css") layer(layout);
 
 @import url("components/topbar.css") layer(components);
-@import url("components/chat.css") layer(components);
+@import url("components/sidebar.css") layer(components);
 @import url("components/main.css") layer(components);

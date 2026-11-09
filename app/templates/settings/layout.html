@@ -1,0 +1,36 @@
+{#
+  Shared layout for every settings page. The sidebar shows the settings
+  sections instead of the agent; the main area shows the current section's
+  form with Cancel and Save. A section template extends this and fills
+  {% block fields %}. The route passes `sections`, the current `section`
+  and a validated `next`. Save posts the form; the server saves and
+  redirects to `next`.
+#}
+{% extends "base.html" %}
+
+{% block title %}{{ section.label }} · Settings · {{ app_name }}{% endblock %}
+
+{% block sidebar %}
+  <h2 class="sidebar__title">Settings</h2>
+  <nav class="sidebar__menu">
+    {% for item in sections %}
+      <a href="{{ item.href }}?next={{ next | urlencode }}"{% if item.href == section.href %} aria-current="page"{% endif %}>{{ item.label }}</a>
+    {% endfor %}
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <form method="post">
+    <h1>{{ section.label }}</h1>
+    <input type="hidden" name="next" value="{{ next }}">
+
+    <div class="fields">
+      {% block fields %}{% endblock %}
+    </div>
+
+    <div class="actions">
+      <a class="button secondary" href="{{ next }}">Cancel</a>
+      <button class="button" type="submit">Save</button>
+    </div>
+  </form>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "settings/layout.html" %}
+
+{% block fields %}
+  <label class="field">
+    Theme
+    <select name="theme">
+      {% for value in themes %}
+        <option value="{{ value }}"{% if current.theme == value %} selected{% endif %}>{{ value | capitalize }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <div class="field">
+    Workspace folder
+    <code>{{ data_dir }}</code>
+    <p class="muted">Where {{ app_name }} keeps your settings, and later your datasets and models.</p>
+  </div>
+{% endblock %}

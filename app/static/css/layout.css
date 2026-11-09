@@ -1,6 +1,7 @@
 /*
   App shell (ours only, BEM names). Two full-height columns:
-    sidebar column: its own top bar + the agent chat
+    sidebar column: its own top bar + sidebar content (agent chat by default,
+                    or a page's own menu, e.g. Settings)
     main column:    the navigation bar + the main area
   Both bars sit in the same grid row, so they always line up.
   The window never scrolls; the sidebar and main each scroll vertically on their own.
@@ -33,6 +34,10 @@
 .app__sidebar,
 .app__main {
   overflow-y: auto;
+}
+
+.app__sidebar {
+  padding: var(--space-4);
 }
 
 .app__main {
