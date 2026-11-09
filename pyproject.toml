@@ -1,0 +1,19 @@
+[project]
+name = "babasu"
+version = "0.1.0"
+description = "Desktop app: FastAPI + Jinja served locally, shown in a pywebview window."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "jinja2>=3.1",
+    "pywebview>=5.3",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.11",
+]
+
+[tool.uv]
+package = false
