@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import platformdirs
+
 APP_NAME = "babasu"
 
 WINDOW_SIZE = (1280, 800)
@@ -19,3 +21,8 @@ NAV = [
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
+
+# The user's workspace: settings now, datasets and models later.
+# macOS ~/Library/Application Support/babasu, Windows %LOCALAPPDATA%\babasu,
+# Linux ~/.local/share/babasu.
+DATA_DIR = Path(platformdirs.user_data_dir(APP_NAME, appauthor=False))
