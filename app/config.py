@@ -12,6 +12,7 @@ HOST = "127.0.0.1"
 # Header navigation: label and link for each item.
 NAV = [
     {"label": "Home", "href": "/"},
+    {"label": "Datasets", "href": "/datasets"},
 ]
 
 # Works in dev and in PyInstaller builds (bundled modules get __file__ under _MEIPASS).
