@@ -2,6 +2,9 @@
 
 * { margin: 0; }
 
+/* Keep the browser's own centring for top-layer elements. */
+[popover] { margin: auto; }
+
 html, body { height: 100%; }
 
 body {

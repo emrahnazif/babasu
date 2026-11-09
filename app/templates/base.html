@@ -33,7 +33,17 @@
       </nav>
 
       <div class="topbar__right">
-        <button class="topbar__button" type="button" aria-label="Delete" title="Delete">{{ icon("trash") }}</button>
+        <button class="topbar__button" type="button" popovertarget="confirm-delete" aria-label="Delete" title="Delete">{{ icon("trash") }}</button>
+
+        {# Test alert dialog: Cancel closes, Continue does nothing yet. #}
+        <div id="confirm-delete" class="dialog" popover role="alertdialog" aria-labelledby="confirm-delete-title" aria-describedby="confirm-delete-text">
+          <h2 id="confirm-delete-title">Are you absolutely sure?</h2>
+          <p id="confirm-delete-text" class="muted">This action cannot be undone. This will permanently delete the item.</p>
+          <div class="actions">
+            <button class="button secondary" type="button" popovertarget="confirm-delete" popovertargetaction="hide" autofocus>Cancel</button>
+            <button class="button destructive" type="button">Continue</button>
+          </div>
+        </div>
         {# A page that has its own return target (e.g. settings) passes `next`; keep it. #}
         {% set back = next if next is defined else request.url.path %}
         <a class="topbar__button" href="/settings/general?next={{ back | urlencode }}" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</a>

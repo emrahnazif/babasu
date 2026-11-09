@@ -37,6 +37,7 @@
 
   /* Shape */
   --radius-md: 6px;
+  --radius-lg: 10px;
 
   /* Layout */
   --header-height: 48px;
