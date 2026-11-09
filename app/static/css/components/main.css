@@ -47,7 +47,7 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* Button, for <button> and <a>. Variant: "button secondary". */
+/* Button, for <button> and <a>. Variants: "button secondary", "button destructive". */
 .button {
   display: inline-flex;
   align-items: center;
@@ -65,4 +65,10 @@
 .button.secondary {
   background: var(--color-accent-bg);
   color: var(--color-text);
+}
+
+/* For actions that delete or can't be undone. */
+.button.destructive {
+  background: var(--color-destructive);
+  color: var(--color-destructive-text);
 }
