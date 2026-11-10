@@ -18,6 +18,7 @@
   <script type="module" src="{{ url_for('static', path='js/refresh-region.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/model-test.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/command.js') }}"></script>
+  <script type="module" src="{{ url_for('static', path='js/shortcuts.js') }}"></script>
 </head>
 <body>
   <div class="app{% if collapsed %} app--collapsed{% endif %}{% if unified_title_bar %} app--unified-title-bar{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
@@ -25,8 +26,8 @@
       <div class="topbar" data-window-drag>
         {% if collapsible %}
           <div class="topbar__right">
-            <button class="icon-button" type="button" popovertarget="chat-history" aria-label="Search chats" title="Search chats">{{ icon("chat-bubble-left-right") }}</button>
-            <button class="icon-button" type="submit" form="chat-history-form" aria-label="New chat" title="New chat">{{ icon("pencil-square") }}</button>
+            <button class="icon-button" type="button" popovertarget="chat-history" data-shortcut="mod+k" aria-label="Search chats" title="Search chats">{{ icon("chat-bubble-left-right") }}</button>
+            <button class="icon-button" type="submit" form="chat-history-form" data-shortcut="mod+n" aria-label="New chat" title="New chat">{{ icon("pencil-square") }}</button>
           </div>
         {% endif %}
       </div>
@@ -35,7 +36,7 @@
     {# The sidebar toggle stays at the top left, open or collapsed (next to the macOS traffic lights). #}
     {% if collapsible %}
       <div class="app__toggle" data-window-drag>
-        <button class="icon-button" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("panel") }}</button>
+        <button class="icon-button" id="sidebar-toggle" type="button" data-shortcut="mod+b" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("panel") }}</button>
       </div>
     {% endif %}
 
@@ -98,7 +99,7 @@
     </div>
   </div>
 
-  {# Search chats: opens from the button by New chat; results come from /agent/history as
+  {# Search chats: opens from the button by New chat (or its shortcut); results come from /agent/history as
      you type (js/command.js). Picking one opens it (POST /agent/open); New chat submits the form
      with no id. #}
   {% if collapsible %}
