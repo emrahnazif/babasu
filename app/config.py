@@ -21,6 +21,8 @@ NAV = [
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
+BRAND_DIR = STATIC_DIR / "brand"  # logo.svg; app-icon.svg and the files scripts/app_icons.py renders from it
+APP_ICON = BRAND_DIR / "app-icon.png"
 
 # The user's workspace: settings, database and media files.
 # macOS ~/Library/Application Support/babasu, Windows %LOCALAPPDATA%\babasu,

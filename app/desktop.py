@@ -94,7 +94,7 @@ def main() -> None:
     window.events.loaded += _connect_drop_zones
     if sys.platform == "darwin":
         _unified_title_bar(window)
-    webview.start()  # blocks until the window is closed
+    webview.start(icon=str(config.APP_ICON))  # blocks until the window is closed; icon: the Dock (macOS), GTK/Qt
 
     # Let the server shut down fully: its lifespan stops running jobs (up to 5 s).
     server.should_exit = True
