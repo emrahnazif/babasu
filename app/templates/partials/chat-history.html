@@ -1,0 +1,12 @@
+{# Results in the search chats dialog (GET /agent/history?q=), grouped by when each chat was last
+   used. Each is a submit button of the dialog's form: picking it opens the chat (POST /agent/open). #}
+{% for c in conversations %}
+  {% set when = c.updated_at | period %}
+  {% if loop.changed(when) %}<p class="command__group">{{ when }}</p>{% endif %}
+  <button class="command__item" type="submit" name="conversation_id" value="{{ c.id }}"{% if c.id == current %} aria-current="true"{% endif %}>
+    <span class="command__label">{{ c.title }}</span>
+    <span class="command__meta">{% if c.page_title %}{{ c.page_title }} · {% endif %}{{ c.updated_at | ago }}</span>
+  </button>
+{% else %}
+  <p class="command__empty">{{ "No chats match “" ~ query ~ "”" if query else "No chats yet" }}</p>
+{% endfor %}

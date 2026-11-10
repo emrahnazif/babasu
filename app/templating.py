@@ -1,5 +1,6 @@
 import re
 from contextlib import closing
+from datetime import UTC, datetime
 from functools import cache
 
 from fastapi.templating import Jinja2Templates
@@ -46,7 +47,42 @@ def agent_chat() -> dict:
     return {"turns": turns, "agents": s.agents, "agent_id": found[0].id if found else None}
 
 
+def ago(timestamp: str) -> str:
+    """A short "how long ago" for a stored UTC time: now, 5m, 3h, Yesterday, 4d, then the date."""
+    then = datetime.fromisoformat(timestamp)
+    seconds = (datetime.now(UTC) - then).total_seconds()
+    if seconds < 60:
+        return "now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}h"
+    if seconds < 2 * 86400:
+        return "Yesterday"
+    if seconds < 7 * 86400:
+        return f"{int(seconds // 86400)}d"
+    local = then.astimezone()
+    return f"{local:%b} {local.day}"
+
+
+def period(timestamp: str) -> str:
+    """Which stretch of time a stored UTC time falls in, for grouping lists: Today, Yesterday,
+    Previous 7 days, Previous 30 days, Older (by local calendar days)."""
+    days = (datetime.now().astimezone().date() - datetime.fromisoformat(timestamp).astimezone().date()).days
+    if days <= 0:
+        return "Today"
+    if days == 1:
+        return "Yesterday"
+    if days < 7:
+        return "Previous 7 days"
+    if days < 30:
+        return "Previous 30 days"
+    return "Older"
+
+
 templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
+templates.env.filters["ago"] = ago
+templates.env.filters["period"] = period
 templates.env.globals["app_name"] = config.APP_NAME
 templates.env.globals["nav"] = config.NAV
 templates.env.globals["icon"] = icon

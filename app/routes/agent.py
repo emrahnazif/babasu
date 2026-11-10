@@ -5,12 +5,13 @@ import json
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, StringConstraints
 
 from app import agent, config, db
 from app.routes import safe_next
+from app.templating import templates
 
 router = APIRouter()
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -44,6 +45,19 @@ def conversation(conn: DB) -> list[dict]:
     return agent.turns(conn, agent.current_conversation(conn))
 
 
+@router.get("/api/agent/conversations")
+def conversations(conn: DB, q: str = "") -> dict:
+    """Past conversations, most recent first, each with the page it was last written on, and the
+    one open in the chat (null: a new chat). `q` searches titles and messages."""
+    return agent.history(conn, q.strip())
+
+
+@router.get("/agent/history", response_class=HTMLResponse)
+def history(request: Request, conn: DB, q: str = ""):
+    """The search chats dialog's results (partials/chat-history.html)."""
+    return templates.TemplateResponse(request, "partials/chat-history.html", agent.history(conn, q.strip()) | {"query": q.strip()})
+
+
 class OpenConversation(BaseModel):
     conversation_id: int | None  # null: a new chat
 
@@ -72,8 +86,8 @@ def switch_agent(change: ConversationAgent, conn: DB) -> None:
 
 @router.post("/agent/open")
 def open_chat(conn: DB, conversation_id: Annotated[int | None, Form()] = None, next: Annotated[str, Form()] = "/"):
-    """New chat (no id: stays on the page), or a past chat: it opens on the page it was last
-    written on. One that's gone (deleted meanwhile) is simply not opened."""
+    """New chat (no id: stays on the page), or a chat picked from the search chats dialog: it opens
+    on the page it was last written on. One that's gone (deleted meanwhile) is simply not opened."""
     try:
         agent.open_conversation(conn, conversation_id)
     except ValueError:

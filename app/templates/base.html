@@ -24,10 +24,10 @@
     <div class="app__sidebar-bar">
       <div class="topbar" data-window-drag>
         {% if collapsible %}
-          <form class="topbar__right" method="post" action="/agent/open">
-            <input type="hidden" name="next" value="{{ request.url.path }}">
-            <button class="icon-button" type="submit" aria-label="New chat" title="New chat">{{ icon("pencil-square") }}</button>
-          </form>
+          <div class="topbar__right">
+            <button class="icon-button" type="button" popovertarget="chat-history" aria-label="Search chats" title="Search chats">{{ icon("chat-bubble-left-right") }}</button>
+            <button class="icon-button" type="submit" form="chat-history-form" aria-label="New chat" title="New chat">{{ icon("pencil-square") }}</button>
+          </div>
         {% endif %}
       </div>
     </div>
@@ -97,6 +97,19 @@
       {% with jobs = job_overview.jobs, active = job_overview.active %}{% include "partials/jobs.html" %}{% endwith %}
     </div>
   </div>
+
+  {# Search chats: opens from the button by New chat; results come from /agent/history as
+     you type (js/command.js). Picking one opens it (POST /agent/open); New chat submits the form
+     with no id. #}
+  {% if collapsible %}
+    <div id="chat-history" class="command" popover data-command-src="/agent/history" aria-label="Search chats">
+      <input class="command__input" type="text" placeholder="Search chats…" aria-label="Search chats" autocomplete="off" spellcheck="false">
+      <form class="command__results" id="chat-history-form" method="post" action="/agent/open">
+        <input type="hidden" name="next" value="{{ request.url.path }}">
+        <div class="command__list"></div>
+      </form>
+    </div>
+  {% endif %}
 
   {# Toasts: js/toast.js clones the template; "manual" keeps the stack open above everything. #}
   <div id="toasts" class="toasts" popover="manual" aria-live="polite"></div>

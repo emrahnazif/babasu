@@ -126,6 +126,34 @@ def new_conversation(conn: sqlite3.Connection) -> int:
     return conversation_id
 
 
+def conversations(conn: sqlite3.Connection, query: str = "", limit: int = 50) -> list[dict]:
+    """Past conversations, most recently used first, each with the page its last message was sent
+    from. `query` keeps those whose title or messages contain it. Ones never written in (no
+    title) are left out."""
+    like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    rows = conn.execute(
+        """
+        SELECT c.id, c.title, c.agent_id, c.created_at, c.updated_at, last.page, last.page_title
+        FROM conversation c
+        LEFT JOIN message last ON last.id = (
+            SELECT max(id) FROM message WHERE conversation_id = c.id AND role = 'user')
+        WHERE c.title != '' AND (
+            :query = '' OR c.title LIKE :like ESCAPE '\\' OR EXISTS (
+                SELECT 1 FROM message m WHERE m.conversation_id = c.id
+                AND m.role IN ('user', 'assistant') AND m.content LIKE :like ESCAPE '\\'))
+        ORDER BY c.updated_at DESC, c.id DESC
+        LIMIT :limit
+        """,
+        {"query": query, "like": like, "limit": limit},
+    )
+    return [dict(row) for row in rows]
+
+
+def history(conn: sqlite3.Connection, query: str = "") -> dict:
+    """The chat history (search chats dialog, /api/agent/conversations): chats and the open one."""
+    return {"conversations": conversations(conn, query), "current": current_conversation(conn)}
+
+
 def conversation_page(conn: sqlite3.Connection, conversation_id: int) -> str | None:
     """The page the conversation's last message was sent from: where to continue it."""
     row = conn.execute(
