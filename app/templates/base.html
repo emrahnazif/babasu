@@ -67,5 +67,14 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+
+  {# Toasts: js/toast.js clones the template; "manual" keeps the stack open above everything. #}
+  <div id="toasts" class="toasts" popover="manual" aria-live="polite"></div>
+  <template id="toast-template">
+    <div class="toast" role="status">
+      <p class="toast__title"></p>
+      <p class="toast__text"></p>
+    </div>
+  </template>
 </body>
 </html>
