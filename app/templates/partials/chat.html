@@ -1,14 +1,66 @@
-{# Agent chat, the default sidebar content. Behaviour in js/chat.js; not connected to an agent yet. #}
+{# Agent chat, the default sidebar content. Behaviour in js/chat.js.
+   Saved turns are rendered here with these macros; the <template>s at the bottom use the same
+   macros, and chat.js clones them for a turn that is streaming. One source of markup. #}
+{% macro user_message(text) -%}
+  <div class="chat__message chat__message--user">{{ text }}</div>
+{%- endmacro %}
+
+{% macro text_part(text) -%}
+  <div class="chat__text">{{ text }}</div>
+{%- endmacro %}
+
+{# A tool call: running (spinner), done (check) or error (cross). The icon follows data-status. #}
+{% macro tool_part(name, status) -%}
+  <div class="chat__tool" data-status="{{ status }}">
+    <span class="chat__tool-icon" aria-hidden="true"><span class="chat__spinner"></span>{{ icon("check") }}{{ icon("x-mark") }}</span>
+    <span class="chat__tool-name">{{ name }}</span>
+  </div>
+{%- endmacro %}
+
+{% macro note(kind, text) -%}
+  {# kind: "status" (shimmering, while working), "error" or "stopped" #}
+  <p class="chat__note chat__note--{{ kind }}">{{ text }}</p>
+{%- endmacro %}
+
+{% set chat = agent_chat() %}
 <div class="chat">
   <div class="chat__messages" role="log" aria-label="Messages">
-    <div class="chat__empty">
+    <div class="chat__empty" {% if chat.turns %}hidden{% endif %}>
       <h2>What should we build?</h2>
-      <p>Ask the agent about your data, or to build a view.</p>
+      {% if chat.configured %}
+        <p>Ask the agent about your data, or to build a view.</p>
+      {% else %}
+        <p>Connect a model in <a href="/settings/agent?next={{ request.url.path | urlencode }}">Settings → Agent</a> to start.</p>
+      {% endif %}
     </div>
+
+    {% for turn in chat.turns %}
+      {% if turn.role == "user" %}
+        {{ user_message(turn.text) }}
+      {% else %}
+        <div class="chat__message chat__message--agent" data-status="{{ turn.status }}">
+          {% for part in turn.parts %}
+            {% if part.kind == "text" %}{{ text_part(part.text) }}{% else %}{{ tool_part(part.name, part.status) }}{% endif %}
+          {% endfor %}
+          {% if turn.status == "error" %}{{ note("error", turn.error) }}{% endif %}
+          {% if turn.status == "stopped" %}{{ note("stopped", "Stopped") }}{% endif %}
+        </div>
+      {% endif %}
+    {% endfor %}
   </div>
 
   <form class="chat__form">
     <textarea class="chat__input" name="message" placeholder="Ask the agent…" aria-label="Message"></textarea>
-    <button class="icon-button icon-button--primary chat__send" type="submit" aria-label="Send" title="Send">{{ icon("arrow-up") }}</button>
+    <button class="icon-button icon-button--primary chat__send" type="submit" aria-label="Send" title="Send">
+      {{ icon("arrow-up") }}{{ icon("stop") }}
+    </button>
   </form>
+
+  <template id="chat-user">{{ user_message("") }}</template>
+  <template id="chat-agent"><div class="chat__message chat__message--agent" data-status="streaming"></div></template>
+  <template id="chat-text">{{ text_part("") }}</template>
+  <template id="chat-tool">{{ tool_part("", "running") }}</template>
+  <template id="chat-status">{{ note("status", "Thinking…") }}</template>
+  <template id="chat-error">{{ note("error", "") }}</template>
+  <template id="chat-stopped">{{ note("stopped", "Stopped") }}</template>
 </div>

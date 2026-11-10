@@ -23,6 +23,12 @@
         <div class="topbar__left">
           <a class="topbar__brand" href="/">{{ app_name }}</a>
         </div>
+        {% if collapsible %}
+          <form class="topbar__right" method="post" action="/agent/new">
+            <input type="hidden" name="next" value="{{ request.url.path }}">
+            <button class="icon-button" type="submit" aria-label="New chat" title="New chat">{{ icon("pencil-square") }}</button>
+          </form>
+        {% endif %}
       </div>
     </div>
 

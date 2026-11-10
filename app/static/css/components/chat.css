@@ -33,11 +33,16 @@
   color: var(--color-text);
 }
 
-/* Assistant messages are plain text across the full width; the user's are bubbles on the right. */
+/* The agent's turns run across the full width; the person's are bubbles on the right.
+   A new message slides up into place. */
 .chat__message {
   font-size: var(--text-sm);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  transition: opacity var(--duration-slow) var(--ease-out), translate var(--duration-slow) var(--ease-out);
+}
+
+@starting-style {
+  .chat__message { opacity: 0; translate: 0 var(--space-2); }
 }
 
 .chat__message--user {
@@ -46,7 +51,80 @@
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
   background: var(--color-accent-bg);
+  white-space: pre-wrap;
 }
+
+/* An agent turn: its text and tool calls in the order they happened, then a note if any. */
+.chat__message--agent {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.chat__text {
+  white-space: pre-wrap;
+}
+
+/* A tool call: the icon shows running (spinner), done (check) or error (cross). */
+.chat__tool {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.chat__tool-name {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.chat__tool-icon {
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+}
+
+.chat__tool-icon > * { grid-area: 1 / 1; display: none; }
+.chat__tool-icon svg { width: 1rem; height: 1rem; }
+.chat__tool[data-status="running"] .chat__spinner,
+.chat__tool[data-status="done"] .chat__tool-icon svg:first-of-type,
+.chat__tool[data-status="error"] .chat__tool-icon svg:last-of-type { display: block; }
+.chat__tool[data-status="error"] { color: var(--color-destructive); }
+
+.chat__spinner {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: chat-spin 0.8s linear infinite;
+}
+
+@keyframes chat-spin {
+  to { rotate: 1turn; }
+}
+
+/* Notes under a turn: "Thinking…" while waiting (a light sweeps across it), an error, or stopped. */
+.chat__note {
+  font-size: var(--text-sm);
+}
+
+.chat__note--status {
+  background: linear-gradient(90deg, var(--color-text-muted) 40%, var(--color-text) 50%, var(--color-text-muted) 60%);
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: chat-shimmer 2s linear infinite;
+}
+
+@keyframes chat-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+.chat__note--error { color: var(--color-destructive); }
+.chat__note--stopped { color: var(--color-text-muted); }
 
 /* The form looks like one input box; the textarea inside has no border of its own. */
 .chat__form {
@@ -77,3 +155,8 @@
 .chat__send {
   align-self: flex-end;
 }
+
+/* While a reply streams, the send button becomes a stop button. */
+.chat__send svg:last-child { display: none; }
+.chat--busy .chat__send svg:first-child { display: none; }
+.chat--busy .chat__send svg:last-child { display: block; }
