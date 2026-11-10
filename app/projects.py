@@ -100,6 +100,16 @@ def _images(conn: sqlite3.Connection, project_id: int, class_ids: set[int], offs
     ]
 
 
+def annotation_counts(conn: sqlite3.Connection, project_id: int) -> dict[int, int]:
+    """Number of annotations per class id, over all of the project's images."""
+    rows = conn.execute(
+        """SELECT a.value->>'class_id', count(*) FROM project_media, json_each(project_media.annotations) a
+           WHERE project_media.project_id = ? GROUP BY 1""",
+        (project_id,),
+    ).fetchall()
+    return {class_id: n for class_id, n in rows}
+
+
 def create(conn: sqlite3.Connection, name: str, description: str = "", classes: list[dict] | None = None) -> int:
     """Create a project. Caller commits."""
     return conn.execute(

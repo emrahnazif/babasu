@@ -20,6 +20,11 @@ class Settings(BaseModel):
     # Set by dragging the sidebar border and the collapse button, not by the Settings form.
     sidebar_width: int = Field(320, ge=SIDEBAR_MIN_WIDTH, le=SIDEBAR_MAX_WIDTH)
     sidebar_collapsed: bool = False
+    # The agent's model, through an OpenAI-compatible chat completions API (local or hosted).
+    # FOR TESTING ONLY the API key is stored here in plain text; it will move to the OS keychain.
+    agent_base_url: str = ""
+    agent_model: str = ""
+    agent_api_key: str = ""
 
 
 def get() -> Settings:
