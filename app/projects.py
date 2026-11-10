@@ -79,6 +79,7 @@ def _images(conn: sqlite3.Connection, project_id: int, class_ids: set[int]) -> l
         | {
             "annotations": [a for a in json.loads(row["annotations"]) if a["class_id"] in class_ids],
             "url": media.url(row["sha256"], row["ext"]),
+            "thumb_url": media.thumb_url(row["sha256"]),
         }
         for row in rows
     ]

@@ -15,9 +15,10 @@
     <div class="grid">
       {% for image in project.images %}
         <figure class="thumb">
-          {# The image and its annotations share one coordinate system: the image's own pixels. #}
+          {# The image and its annotations share one coordinate system: the original image's pixels.
+             The thumbnail is stretched over that same area, so annotations line up on it. #}
           <svg viewBox="0 0 {{ image.width }} {{ image.height }}" role="img" aria-label="{{ image.filename }}">
-            <image href="{{ image.url }}" width="{{ image.width }}" height="{{ image.height }}"/>
+            <image href="{{ image.thumb_url }}" width="{{ image.width }}" height="{{ image.height }}"/>
             {% set keypoint_r = ([image.width, image.height] | max / 80) | round(1) %}
             {% for a in image.annotations %}
               {% set color = (project.classes | selectattr("id", "equalto", a.class_id) | first).color %}
