@@ -35,9 +35,9 @@
      <div class="topbar">
       <div class="topbar__left">
         {% if collapsible %}
-          <button class="topbar__button" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("chevron-double-left") }}</button>
+          <button class="icon-button" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("chevron-double-left") }}</button>
         {% endif %}
-        <button class="topbar__button" type="button" aria-label="Undo" title="Undo">{{ icon("arrow-uturn-left") }}</button>
+        <button class="icon-button" type="button" aria-label="Undo" title="Undo">{{ icon("arrow-uturn-left") }}</button>
       </div>
 
       <nav class="topbar__center">
@@ -47,7 +47,7 @@
       </nav>
 
       <div class="topbar__right">
-        <button class="topbar__button" type="button" popovertarget="confirm-delete" aria-label="Delete" title="Delete">{{ icon("trash") }}</button>
+        <button class="icon-button" type="button" popovertarget="confirm-delete" aria-label="Delete" title="Delete">{{ icon("trash") }}</button>
 
         {# Test alert dialog: Cancel closes, Continue does nothing yet. #}
         <div id="confirm-delete" class="dialog" popover role="alertdialog" aria-labelledby="confirm-delete-title" aria-describedby="confirm-delete-text">
@@ -60,7 +60,7 @@
         </div>
         {# A page that has its own return target (e.g. settings) passes `next`; keep it. #}
         {% set back = next if next is defined else request.url.path %}
-        <a class="topbar__button" href="/settings/general?next={{ back | urlencode }}" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</a>
+        <a class="icon-button" href="/settings/general?next={{ back | urlencode }}" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</a>
       </div>
      </div>
     </header>
