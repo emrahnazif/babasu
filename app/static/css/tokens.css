@@ -38,7 +38,14 @@
   /* Shape */
   --radius-md: 6px;
   --radius-lg: 10px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
+  --shadow-overlay: 0 10px 30px rgb(0 0 0 / 0.15);  /* dialogs, toasts */
+
+  /* Motion: components animate themselves with these (reduced motion turns it off, reset.css) */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-slow: 400ms;
 
   /* Layout (the sidebar width comes from settings, set on .app) */
   --header-height: 48px;
