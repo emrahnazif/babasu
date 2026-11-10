@@ -126,6 +126,16 @@ def new_conversation(conn: sqlite3.Connection) -> int:
     return conversation_id
 
 
+def conversation_page(conn: sqlite3.Connection, conversation_id: int) -> str | None:
+    """The page the conversation's last message was sent from: where to continue it."""
+    row = conn.execute(
+        "SELECT page FROM message WHERE conversation_id = ? AND role = 'user' AND page IS NOT NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (conversation_id,),
+    ).fetchone()
+    return row["page"] if row else None
+
+
 def conversation_agent(conn: sqlite3.Connection, conversation_id: int | None) -> str | None:
     """The agent a conversation talks to (None: the default agent)."""
     row = conn.execute("SELECT agent_id FROM conversation WHERE id = ?", (conversation_id,)).fetchone()
@@ -203,7 +213,7 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
 # --- One turn ---
 
 
-async def stream_turn(text: str) -> AsyncIterator[dict]:
+async def stream_turn(text: str, page: str | None = None, page_title: str | None = None) -> AsyncIterator[dict]:
     """Run one turn in its own thread and yield its events as they come (see run_turn).
 
     If the consumer goes away (the person pressed stop, or the app is closing: stop_all), the
@@ -217,7 +227,7 @@ async def stream_turn(text: str) -> AsyncIterator[dict]:
     def run() -> None:
         with closing(db.connect()) as conn:
             conversation_id = current_conversation(conn) or new_conversation(conn)
-        turn = run_turn(conversation_id, text)
+        turn = run_turn(conversation_id, text, page, page_title)
         try:
             for event in turn:
                 loop.call_soon_threadsafe(events.put_nowait, event)
@@ -237,9 +247,9 @@ async def stream_turn(text: str) -> AsyncIterator[dict]:
         stop.set()
 
 
-def run_turn(conversation_id: int, text: str) -> Iterator[dict]:
-    """Send the person's message to the conversation's agent and yield what happens, for the chat
-    to show as it streams:
+def run_turn(conversation_id: int, text: str, page: str | None = None, page_title: str | None = None) -> Iterator[dict]:
+    """Send the person's message (written on `page`) to the conversation's agent and yield what
+    happens, for the chat to show as it streams:
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
@@ -248,7 +258,10 @@ def run_turn(conversation_id: int, text: str) -> Iterator[dict]:
     """
     with closing(db.connect()) as conn:
         with conn:
-            conn.execute("INSERT INTO message (conversation_id, role, content) VALUES (?, 'user', ?)", (conversation_id, text))
+            conn.execute(
+                "INSERT INTO message (conversation_id, role, content, page, page_title) VALUES (?, 'user', ?, ?, ?)",
+                (conversation_id, text, page, page_title),
+            )
             conn.execute(
                 f"UPDATE conversation SET updated_at = {db.NOW}, title = CASE title WHEN '' THEN ? ELSE title END WHERE id = ?",
                 (text[:TITLE_LENGTH], conversation_id),

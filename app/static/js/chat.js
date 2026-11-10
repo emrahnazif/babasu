@@ -91,7 +91,8 @@ if (chat) {
       const response = await fetch("/api/agent/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        // Where it was written: a chat opened from the history goes back there.
+        body: JSON.stringify({ text, page: location.pathname + location.search, page_title: document.title }),
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`The server answered ${response.status}.`);
