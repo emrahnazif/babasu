@@ -38,7 +38,9 @@ def start_server() -> tuple[uvicorn.Server, threading.Thread, str]:
     To stop: set `server.should_exit` and join the thread, so the lifespan's shutdown
     (which stops running jobs) completes before the process exits.
     """
-    server = uvicorn.Server(uvicorn.Config(app, host=config.HOST, port=0))  # 0 = OS picks a free port
+    # port=0: the OS picks a free port. timeout_graceful_shutdown: open requests (e.g. a streaming
+    # agent reply) get a few seconds to end before they're cancelled, so closing never hangs.
+    server = uvicorn.Server(uvicorn.Config(app, host=config.HOST, port=0, timeout_graceful_shutdown=3))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
