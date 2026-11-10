@@ -2,8 +2,9 @@
 
 from typing import Annotated, get_args
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import ValidationError
 
 from app import config, settings
 from app.templating import templates
@@ -44,3 +45,17 @@ def save_general(
 ):
     settings.update(theme=theme)
     return RedirectResponse(_safe_next(next), status_code=303)
+
+
+SIDEBAR_FIELDS = {"sidebar_width", "sidebar_collapsed"}
+
+
+@router.post("/sidebar", status_code=204)
+def save_sidebar(change: dict = Body()):
+    """Called from sidebar.js after a resize or collapse, so the next page renders the same way."""
+    if not change or not change.keys() <= SIDEBAR_FIELDS:
+        raise HTTPException(422, f"expected only {sorted(SIDEBAR_FIELDS)}")
+    try:
+        settings.update(**change)
+    except ValidationError as e:
+        raise HTTPException(422, e.errors(include_url=False))

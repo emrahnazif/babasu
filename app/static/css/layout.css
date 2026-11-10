@@ -44,3 +44,36 @@
 .app__main {
   padding: var(--space-6) var(--space-8);
 }
+
+/* Drag handle on the sidebar's right border (behaviour in js/sidebar.js). */
+.app__resizer {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  justify-self: end;
+  width: 6px;
+  margin-right: -3px;   /* centred on the border */
+  z-index: 1;
+  cursor: col-resize;
+}
+
+.app__resizer:hover,
+.app__resizer:focus-visible {
+  outline: none;
+  background: var(--color-border);
+}
+
+/* Collapsed: the sidebar column takes no space. */
+.app--collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.app--collapsed .app__sidebar-bar,
+.app--collapsed .app__sidebar,
+.app--collapsed .app__resizer {
+  display: none;
+}
+
+/* The toggle icon points left when open, right when collapsed. */
+.app--collapsed #sidebar-toggle svg {
+  transform: scaleX(-1);
+}

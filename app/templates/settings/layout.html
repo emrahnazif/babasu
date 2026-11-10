@@ -8,6 +8,9 @@
 #}
 {% extends "base.html" %}
 
+{# The sidebar is this page's menu, so it never collapses here. #}
+{% set sidebar_collapsible = false %}
+
 {% block title %}{{ section.label }} · Settings · {{ app_name }}{% endblock %}
 
 {% block sidebar %}

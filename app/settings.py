@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import config
 
@@ -11,8 +11,15 @@ SETTINGS_FILE = config.DATA_DIR / "settings.json"
 Theme = Literal["system", "light", "dark"]
 
 
+SIDEBAR_MIN_WIDTH = 240
+SIDEBAR_MAX_WIDTH = 600
+
+
 class Settings(BaseModel):
     theme: Theme = "system"
+    # Set by dragging the sidebar border and the collapse button, not by the Settings form.
+    sidebar_width: int = Field(320, ge=SIDEBAR_MIN_WIDTH, le=SIDEBAR_MAX_WIDTH)
+    sidebar_collapsed: bool = False
 
 
 def get() -> Settings:
