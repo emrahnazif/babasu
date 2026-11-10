@@ -3,6 +3,30 @@
 
 {% block content %}
   <h1>Projects</h1>
+  <div class="actions">
+    <button class="button" type="button" popovertarget="new-project">New project</button>
+  </div>
+
+  <div id="new-project" class="dialog" popover aria-labelledby="new-project-title">
+    <form method="post" action="/projects">
+      <h2 id="new-project-title">New project</h2>
+      <div class="fields">
+        <label class="field">
+          Name
+          <input name="name" required maxlength="200" autofocus>
+        </label>
+        <label class="field">
+          Description
+          <textarea name="description" rows="3" maxlength="2000"></textarea>
+        </label>
+      </div>
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="new-project" popovertargetaction="hide">Cancel</button>
+        <button class="button" type="submit">Create</button>
+      </div>
+    </form>
+  </div>
+
   {% if projects %}
     <div class="grid">
       {% for project in projects %}

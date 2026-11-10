@@ -166,11 +166,11 @@ a.card:hover { background: var(--color-accent-bg); }
   background: rgb(0 0 0 / 0.5);
 }
 
-.dialog > h2 {
+.dialog h2 {
   font-size: var(--text-md);
 }
 
-.dialog > p {
+.dialog p {
   margin-top: var(--space-2);
   font-size: var(--text-sm);
 }
