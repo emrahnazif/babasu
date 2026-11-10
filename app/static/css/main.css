@@ -5,7 +5,9 @@
   reset      – normalise browser defaults
   tokens     – design variables (colour, space, type)
   base       – element defaults; plain HTML looks right with no classes
-  layout     – app shell (.app, .app__main, …)
+  layout     – app shell regions (.app, .app__main, …). Never put a region class
+               and a component class on the same element: components is a later
+               layer, so it would override region states such as .app--collapsed.
   components – shell components use BEM (.topbar, .topbar__link);
                main-area content uses flat one-word classes (main.css)
 */

@@ -16,8 +16,9 @@
     "sidebar     main";
 }
 
-.app__sidebar-bar { grid-area: sidebar-bar; }
-.app__main-bar    { grid-area: main-bar; }
+/* Bar regions hold a .topbar; display: grid makes it fill the bar's height. */
+.app__sidebar-bar { grid-area: sidebar-bar; display: grid; }
+.app__main-bar    { grid-area: main-bar; display: grid; }
 .app__sidebar     { grid-area: sidebar; }
 .app__main        { grid-area: main; }
 

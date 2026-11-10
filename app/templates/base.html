@@ -8,9 +8,11 @@
 </head>
 <body>
   <div class="app">
-    <div class="app__sidebar-bar topbar">
-      <div class="topbar__left">
-        <a class="topbar__brand" href="/">{{ app_name }}</a>
+    <div class="app__sidebar-bar">
+      <div class="topbar">
+        <div class="topbar__left">
+          <a class="topbar__brand" href="/">{{ app_name }}</a>
+        </div>
       </div>
     </div>
 
@@ -21,7 +23,8 @@
       {% endblock %}
     </aside>
 
-    <header class="app__main-bar topbar">
+    <header class="app__main-bar">
+     <div class="topbar">
       <div class="topbar__left">
         <button class="topbar__button" type="button" aria-label="Undo" title="Undo">{{ icon("arrow-uturn-left") }}</button>
       </div>
@@ -48,6 +51,7 @@
         {% set back = next if next is defined else request.url.path %}
         <a class="topbar__button" href="/settings/general?next={{ back | urlencode }}" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</a>
       </div>
+     </div>
     </header>
 
     <main class="app__main">
