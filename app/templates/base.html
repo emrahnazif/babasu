@@ -21,9 +21,6 @@
   <div class="app{% if collapsed %} app--collapsed{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
     <div class="app__sidebar-bar">
       <div class="topbar">
-        <div class="topbar__left">
-          <a class="topbar__brand" href="/">{{ app_name }}</a>
-        </div>
         {% if collapsible %}
           <form class="topbar__right" method="post" action="/agent/new">
             <input type="hidden" name="next" value="{{ request.url.path }}">
@@ -32,6 +29,13 @@
         {% endif %}
       </div>
     </div>
+
+    {# The sidebar toggle stays at the top left, open or collapsed. #}
+    {% if collapsible %}
+      <div class="app__toggle">
+        <button class="icon-button" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("panel") }}</button>
+      </div>
+    {% endif %}
 
     <aside class="app__sidebar">
       {% block sidebar %}{% include "partials/chat.html" %}{% endblock %}
@@ -43,9 +47,6 @@
     <header class="app__main-bar">
      <div class="topbar">
       <div class="topbar__left">
-        {% if collapsible %}
-          <button class="icon-button" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("chevron-double-left") }}</button>
-        {% endif %}
         <button class="icon-button" type="button" aria-label="Undo" title="Undo">{{ icon("arrow-uturn-left") }}</button>
       </div>
 

@@ -23,7 +23,8 @@
 .app__main        { grid-area: main; }
 
 .app__sidebar-bar,
-.app__main-bar {
+.app__main-bar,
+.app--collapsed .app__toggle {
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -62,18 +63,27 @@
   background: var(--color-border);
 }
 
-/* Collapsed: the sidebar column takes no space. */
+/* The sidebar toggle: over the start of the sidebar's bar while it's open; on its own at the top
+   left while it's collapsed. */
+.app__toggle {
+  grid-area: sidebar-bar;
+  justify-self: start;
+  display: grid;
+  align-items: center;
+  padding-left: var(--space-4);
+  padding-right: var(--space-2);
+}
+
+/* Collapsed: only the toggle is left of the main bar, and the main area takes the full width. */
 .app--collapsed {
-  grid-template-columns: 0 minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "sidebar-bar main-bar"
+    "main        main";
 }
 
 .app--collapsed .app__sidebar-bar,
 .app--collapsed .app__sidebar,
 .app--collapsed .app__resizer {
   display: none;
-}
-
-/* The toggle icon points left when open, right when collapsed. */
-.app--collapsed #sidebar-toggle svg {
-  transform: scaleX(-1);
 }
