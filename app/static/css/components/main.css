@@ -14,6 +14,9 @@
 /* Secondary text. */
 .muted { color: var(--color-text-muted); }
 
+/* Text that reports a failure. */
+.error { color: var(--color-destructive); }
+
 /* A form field: label text with its control and any hint below it. */
 .field {
   display: grid;
