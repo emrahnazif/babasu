@@ -1,5 +1,7 @@
 """Placeholder data for development: a project of generated shape images with matching annotations.
 
+Squares have a box, circles a box and a center keypoint, triangles a box and a polygon.
+
     uv run python -m scripts.seed
 
 Writes to the real workspace (DATA_DIR). Runs once: does nothing if the project exists.
@@ -34,14 +36,18 @@ def make_image(rng: random.Random) -> tuple[bytes, list[dict]]:
         size = rng.randint(60, 160)
         x, y = rng.randint(0, WIDTH - size), rng.randint(0, HEIGHT - size)
         fill = tuple(rng.randint(40, 160) for _ in range(3))
-        if class_id in (0, 1):  # square or circle: a box
-            shape = draw.rectangle if class_id == 0 else draw.ellipse
-            shape((x, y, x + size, y + size), fill=fill)
-            annotations.append({"class_id": class_id, "type": "bbox", "bbox": [x, y, size, size]})
+        # One object per shape, with every form it has (like COCO and pixelflow's Detection).
+        obj = {"class_id": class_id, "bbox": [x, y, size, size]}
+        box = (x, y, x + size, y + size)
+        if class_id == 0:
+            draw.rectangle(box, fill=fill)
+        elif class_id == 1:
+            draw.ellipse(box, fill=fill)
+            obj["keypoints"] = [{"name": "center", "point": [x + size / 2, y + size / 2]}]
         else:
-            points = [[x + size / 2, y], [x + size, y + size], [x, y + size]]
-            draw.polygon([tuple(p) for p in points], fill=fill)
-            annotations.append({"class_id": 2, "type": "polygon", "segments": points})
+            obj["segments"] = [[x + size / 2, y], [x + size, y + size], [x, y + size]]
+            draw.polygon([tuple(p) for p in obj["segments"]], fill=fill)
+        annotations.append(obj)
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=90)
     return buffer.getvalue(), annotations
