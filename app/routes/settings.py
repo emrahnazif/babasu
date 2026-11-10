@@ -42,5 +42,5 @@ def save_general(
     theme: Annotated[settings.Theme, Form()],
     next: Annotated[str | None, Form()] = None,
 ):
-    settings.save(settings.get().model_copy(update={"theme": theme}))
+    settings.update(theme=theme)
     return RedirectResponse(_safe_next(next), status_code=303)

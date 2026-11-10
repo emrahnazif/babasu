@@ -26,3 +26,10 @@ def save(settings: Settings) -> None:
     tmp = SETTINGS_FILE.with_suffix(".tmp")
     tmp.write_text(settings.model_dump_json(indent=2))
     tmp.replace(SETTINGS_FILE)  # atomic: never leaves a half-written file
+
+
+def update(**changes) -> Settings:
+    """Apply changes, validated by the Settings model, and save. Raises ValidationError."""
+    updated = Settings.model_validate(get().model_dump() | changes)
+    save(updated)
+    return updated
