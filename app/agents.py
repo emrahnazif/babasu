@@ -59,6 +59,14 @@ def delete_model(model_id: str) -> None:
     _save(s)
 
 
+def test(form: ModelForm, model_id: str = "") -> tuple[bool, str]:
+    """Test a model as typed in the form, before it's saved. Editing a saved model (`model_id`),
+    a blank key means its saved key. Raises ValueError if the form isn't a valid model."""
+    saved = settings.find_model(model_id) if model_id else None
+    fields = form.model_dump() | ({"api_key": saved.api_key} if saved and not form.api_key else {})
+    return agent.test_connection(Model(id=model_id or "draft", **fields))
+
+
 def add_agent(form: AgentForm) -> Agent:
     s = settings.get()
     new = Agent(id=slug(form.name, {a.id for a in s.agents}), **form.model_dump())

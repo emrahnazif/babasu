@@ -42,6 +42,20 @@ def delete_model(model_id: str) -> None:
     _do(lambda: agents.delete_model(model_id))
 
 
+class ModelDraft(ModelForm):
+    model_id: str = ""  # editing a saved model: a blank api_key means its saved key
+
+
+@router.post("/models/test")
+def test_draft(draft: ModelDraft) -> dict:
+    """Test a model before saving it (the Test button in the Add and Edit dialogs)."""
+    try:
+        ok, result = agents.test(draft, draft.model_id)
+    except ValueError as exc:
+        ok, result = False, message(exc)
+    return {"ok": ok, "message": result}
+
+
 @router.post("/models/{model_id}/test")
 def test_model(model_id: str) -> dict:
     model = settings.find_model(model_id)

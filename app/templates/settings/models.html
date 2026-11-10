@@ -29,7 +29,11 @@
     <form method="post" action="{{ action }}">
       <h2 id="{{ id }}-title">{{ title }}</h2>
       <div class="fields">{{ model_fields(m) }}</div>
+      {% if m %}<input type="hidden" name="model_id" value="{{ m.id }}">{% endif %}
+      {# Filled by js/model-test.js with the result of the Test button. #}
+      <p class="muted" data-test-result aria-live="polite"></p>
       <div class="actions">
+        <button class="button secondary" type="button" data-test-model>Test</button>
         <button class="button secondary" type="button" popovertarget="{{ id }}" popovertargetaction="hide">Cancel</button>
         <button class="button" type="submit">Save</button>
       </div>
