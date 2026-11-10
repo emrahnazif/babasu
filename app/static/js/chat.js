@@ -91,7 +91,7 @@ if (chat) {
       const response = await fetch("/api/agent/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Where it was written: a chat opened from the history goes back there.
+        // Where it was written: a chat that starts with this message reopens here.
         body: JSON.stringify({ text, page: location.pathname + location.search, page_title: document.title }),
         signal: controller.signal,
       });

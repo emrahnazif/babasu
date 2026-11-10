@@ -127,16 +127,14 @@ def new_conversation(conn: sqlite3.Connection) -> int:
 
 
 def conversations(conn: sqlite3.Connection, query: str = "", limit: int = 50) -> list[dict]:
-    """Past conversations, most recently used first, each with the page its last message was sent
-    from. `query` keeps those whose title or messages contain it. Ones never written in (no
-    title) are left out."""
+    """Past conversations, most recently used first, each with the page it was last open on.
+    `query` keeps those whose title or messages contain it. Ones never written in (no title) are
+    left out."""
     like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     rows = conn.execute(
         """
-        SELECT c.id, c.title, c.agent_id, c.created_at, c.updated_at, last.page, last.page_title
+        SELECT c.id, c.title, c.agent_id, c.created_at, c.updated_at, c.page, c.page_title
         FROM conversation c
-        LEFT JOIN message last ON last.id = (
-            SELECT max(id) FROM message WHERE conversation_id = c.id AND role = 'user')
         WHERE c.title != '' AND (
             :query = '' OR c.title LIKE :like ESCAPE '\\' OR EXISTS (
                 SELECT 1 FROM message m WHERE m.conversation_id = c.id
@@ -155,12 +153,8 @@ def history(conn: sqlite3.Connection, query: str = "") -> dict:
 
 
 def conversation_page(conn: sqlite3.Connection, conversation_id: int) -> str | None:
-    """The page the conversation's last message was sent from: where to continue it."""
-    row = conn.execute(
-        "SELECT page FROM message WHERE conversation_id = ? AND role = 'user' AND page IS NOT NULL "
-        "ORDER BY id DESC LIMIT 1",
-        (conversation_id,),
-    ).fetchone()
+    """The page the conversation was last open on: where to continue it."""
+    row = conn.execute("SELECT page FROM conversation WHERE id = ?", (conversation_id,)).fetchone()
     return row["page"] if row else None
 
 
@@ -276,8 +270,8 @@ async def stream_turn(text: str, page: str | None = None, page_title: str | None
 
 
 def run_turn(conversation_id: int, text: str, page: str | None = None, page_title: str | None = None) -> Iterator[dict]:
-    """Send the person's message (written on `page`) to the conversation's agent and yield what
-    happens, for the chat to show as it streams:
+    """Send the person's message (written on `page`, which the conversation keeps as where it
+    was left) to the conversation's agent and yield what happens, for the chat to show as it streams:
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
@@ -286,13 +280,11 @@ def run_turn(conversation_id: int, text: str, page: str | None = None, page_titl
     """
     with closing(db.connect()) as conn:
         with conn:
+            conn.execute("INSERT INTO message (conversation_id, role, content) VALUES (?, 'user', ?)", (conversation_id, text))
             conn.execute(
-                "INSERT INTO message (conversation_id, role, content, page, page_title) VALUES (?, 'user', ?, ?, ?)",
-                (conversation_id, text, page, page_title),
-            )
-            conn.execute(
-                f"UPDATE conversation SET updated_at = {db.NOW}, title = CASE title WHEN '' THEN ? ELSE title END WHERE id = ?",
-                (text[:TITLE_LENGTH], conversation_id),
+                f"UPDATE conversation SET updated_at = {db.NOW}, title = CASE title WHEN '' THEN ? ELSE title END, "
+                "page = coalesce(?, page), page_title = coalesce(?, page_title) WHERE id = ?",
+                (text[:TITLE_LENGTH], page, page_title, conversation_id),
             )
 
         found = settings.find_agent(conversation_agent(conn, conversation_id))

@@ -35,6 +35,12 @@ def jobs_overview() -> dict:
         return jobs.overview(conn)
 
 
+def page_name(title: str) -> str:
+    """A page's own name from its title: "COCO val · babasu" -> "COCO val"; Home is just "babasu"."""
+    name = title.strip().removesuffix(f" · {config.APP_NAME}")
+    return "Home" if name in ("", config.APP_NAME) else name
+
+
 def agent_chat() -> dict:
     """Shell data for the chat in the sidebar: the current conversation and its agent, and the
     agents to pick from, rendered with every page."""
