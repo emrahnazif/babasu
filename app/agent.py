@@ -158,6 +158,16 @@ def conversation_page(conn: sqlite3.Connection, conversation_id: int) -> str | N
     return row["page"] if row else None
 
 
+def set_page(conn: sqlite3.Connection, conversation_id: int, page: str, page_title: str) -> None:
+    """The conversation is open on this page now; written only when it changed."""
+    with conn:
+        conn.execute(
+            "UPDATE conversation SET page = ?, page_title = ? "
+            "WHERE id = ? AND (page IS NOT ? OR page_title IS NOT ?)",
+            (page, page_title, conversation_id, page, page_title),
+        )
+
+
 def conversation_agent(conn: sqlite3.Connection, conversation_id: int | None) -> str | None:
     """The agent a conversation talks to (None: the default agent)."""
     row = conn.execute("SELECT agent_id FROM conversation WHERE id = ?", (conversation_id,)).fetchone()

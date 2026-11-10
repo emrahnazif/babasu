@@ -41,7 +41,8 @@
     {% endif %}
 
     <aside class="app__sidebar">
-      {% block sidebar %}{% include "partials/chat.html" %}{% endblock %}
+      {# The chat records this page as where it's open; self.title() is the page's own title. #}
+      {% block sidebar %}{% with page_title = self.title() %}{% include "partials/chat.html" %}{% endwith %}{% endblock %}
     </aside>
 
     <div class="app__resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"

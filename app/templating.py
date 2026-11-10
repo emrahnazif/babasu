@@ -3,6 +3,7 @@ from contextlib import closing
 from datetime import UTC, datetime
 from functools import cache
 
+from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
@@ -41,11 +42,15 @@ def page_name(title: str) -> str:
     return "Home" if name in ("", config.APP_NAME) else name
 
 
-def agent_chat() -> dict:
+def agent_chat(request: Request, page_title: str) -> dict:
     """Shell data for the chat in the sidebar: the current conversation and its agent, and the
-    agents to pick from, rendered with every page."""
+    agents to pick from, rendered with every page. The open chat follows you: this page (its path
+    and title) becomes where it was last open, so it reopens here from the history."""
     with closing(db.connect()) as conn:
         conversation_id = agent.current_conversation(conn)
+        if conversation_id is not None:
+            page = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+            agent.set_page(conn, conversation_id, page, page_name(page_title))
         turns = agent.turns(conn, conversation_id)
         agent_id = agent.conversation_agent(conn, conversation_id)
     s = settings.get()

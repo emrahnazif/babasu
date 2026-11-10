@@ -27,7 +27,7 @@
   <p class="chat__note chat__note--{{ kind }}">{{ text }}</p>
 {%- endmacro %}
 
-{% set chat = agent_chat() %}
+{% set chat = agent_chat(request, page_title) %}
 <div class="chat">
   <div class="chat__messages" role="log" aria-label="Messages">
     <div class="chat__empty" {% if chat.turns %}hidden{% endif %}>
