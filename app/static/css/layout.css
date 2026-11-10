@@ -46,21 +46,42 @@
   padding: var(--space-6) var(--space-8);
 }
 
-/* Drag handle on the sidebar's right border (behaviour in js/sidebar.js). */
+/* Drag handle on the sidebar's right border (behaviour in js/sidebar.js): a 6px strip to grab,
+   centred on the border. Hovering it shows a thin line after a moment, so passing the pointer
+   over the border doesn't flash it; dragging or keyboard focus show it at once. */
 .app__resizer {
+  position: relative;
   grid-column: 1;
   grid-row: 1 / -1;
   justify-self: end;
   width: 6px;
-  margin-right: -3px;   /* centred on the border */
+  margin-right: -3px;
   z-index: 1;
   cursor: col-resize;
 }
 
-.app__resizer:hover,
+.app__resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 2px;  /* a 2px line in the middle of the 6px strip */
+  background: var(--color-highlight);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.app__resizer:hover::after {
+  opacity: 1;
+  transition-delay: 150ms;
+}
+
+.app__resizer:active::after,
+.app__resizer:focus-visible::after {
+  opacity: 1;
+  transition-delay: 50ms;
+}
+
 .app__resizer:focus-visible {
   outline: none;
-  background: var(--color-border);
 }
 
 /* The sidebar toggle: over the start of the sidebar's bar while it's open; on its own at the top
