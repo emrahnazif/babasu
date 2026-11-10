@@ -32,6 +32,51 @@
   margin-top: var(--space-6);
 }
 
+/*
+  Drop zone for files and folders; click to choose files. Behaviour: js/drop-zone.js.
+  <div class="dropzone" id="…" data-drop-paths data-name="paths" data-accept=".jpg,.png" role="button" tabindex="0">
+    <p>Drop files here</p><ul></ul>
+  </div>
+  "dropzone over" while something is dragged over it.
+*/
+.dropzone {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.dropzone:hover,
+.dropzone:focus-visible,
+.dropzone.over {
+  border-color: var(--color-text-muted);
+  background: var(--color-accent-bg);
+  outline: none;
+}
+
+.dropzone ul {
+  max-height: 8rem;
+  overflow-y: auto;
+  list-style: none;
+  padding: 0;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.dropzone li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropzone ul:empty { display: none; }
+
 /* Responsive grid of equal columns (cards, images); as many as fit. */
 .grid {
   display: grid;
