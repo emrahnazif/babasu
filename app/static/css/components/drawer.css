@@ -1,0 +1,69 @@
+/*
+  Panel that floats in from the right edge, opened with popovertarget (no JS).
+  Reusable: header with a title and a close button, then a scrolling body.
+  Slides in and out; display/overlay stay on until the slide ends (allow-discrete).
+*/
+.drawer {
+  --gap: var(--space-2);
+  inset: var(--gap) var(--gap) var(--gap) auto;
+  width: min(24rem, calc(100vw - 2 * var(--gap)));
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-overlay);
+  overflow: hidden;
+  translate: calc(100% + var(--gap)) 0;
+  transition: translate var(--duration-slow) var(--ease-out),
+    display var(--duration-slow) allow-discrete, overlay var(--duration-slow) allow-discrete;
+}
+
+.drawer:popover-open {
+  display: flex;
+  flex-direction: column;
+  translate: 0 0;
+}
+
+@starting-style {
+  .drawer:popover-open { translate: calc(100% + var(--gap)) 0; }
+}
+
+/* The blur is static (animating it redraws the whole window each frame); only the dim fades. */
+.drawer::backdrop {
+  background: rgb(0 0 0 / 0);
+  backdrop-filter: blur(4px);
+  transition: background var(--duration-slow) var(--ease-out),
+    display var(--duration-slow) allow-discrete, overlay var(--duration-slow) allow-discrete;
+}
+
+.drawer:popover-open::backdrop {
+  background: rgb(0 0 0 / 0.3);
+}
+
+@starting-style {
+  .drawer:popover-open::backdrop { background: rgb(0 0 0 / 0); }
+}
+
+.drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--header-height);
+  flex-shrink: 0;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.drawer__title {
+  font-size: var(--text-md);
+}
+
+.drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
