@@ -14,6 +14,8 @@ from app import config
 
 # The supported image formats: Pillow format name -> extension of the stored file.
 EXTENSIONS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "BMP": "bmp", "TIFF": "tif"}
+SUFFIXES = {f".{ext}" for ext in EXTENSIONS.values()} | {".jpeg", ".tiff"}  # file names to look for
+FORMATS_TEXT = "JPEG, PNG, WebP, BMP and TIFF"  # for people
 THUMB_SIZE = 256  # longest side, in pixels
 
 

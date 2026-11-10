@@ -5,12 +5,39 @@
   <h1>{{ project.name }}</h1>
   {% if project.description %}<p class="muted">{{ project.description }}</p>{% endif %}
 
+  <div class="actions">
+    <button class="button" type="button" popovertarget="add-images">Add images</button>
+  </div>
+
+  <div id="add-images" class="dialog" popover aria-labelledby="add-images-title">
+    <form method="post" action="/projects/{{ project.id }}/import" data-background-form>
+      <h2 id="add-images-title">Add images</h2>
+      <p class="muted">{{ image_formats }} images. A folder brings its subfolders too. Images already in the project are skipped.</p>
+      <div class="fields">
+        <div class="dropzone" id="add-images-drop" data-drop-paths data-name="paths" data-accept="{{ image_suffixes }}"
+             role="button" tabindex="0">
+          <p>Drop images or folders here, or click to choose images</p>
+          <ul></ul>
+        </div>
+        <label class="field">
+          Or enter a path
+          <input name="paths" placeholder="/Volumes/NAS/datasets/coco/val2017">
+        </label>
+      </div>
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="add-images" popovertargetaction="hide">Cancel</button>
+        <button class="button" type="submit">Import</button>
+      </div>
+    </form>
+  </div>
+
   <p>
     {% for class in project.classes %}
       <span class="badge" style="--badge-color: {{ class.color }}">{{ class.name }}</span>
     {% endfor %}
   </p>
 
+  <div id="project-images" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
   {% if project.images %}
     <div class="grid">
       {% for image in project.images %}
@@ -49,4 +76,5 @@
   {% else %}
     <p class="muted">No images yet.</p>
   {% endif %}
+  </div>
 {% endblock %}

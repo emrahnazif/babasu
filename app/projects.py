@@ -115,8 +115,8 @@ def add_image(
     filename: str,
     annotations: list[dict] | None = None,
     split: str | None = None,
-) -> None:
-    """Add a stored media file to a project (skipped if it's already there). Caller commits.
+) -> bool:
+    """Add a stored media file to a project. Returns False if it was already there. Caller commits.
 
     Raises pydantic.ValidationError for a malformed annotation, ValueError for an unknown class.
     """
@@ -126,12 +126,14 @@ def add_image(
     unknown = {o.class_id for o in objects} - {c["id"] for c in json.loads(project["classes"])}
     if unknown:
         raise ValueError(f"unknown class ids: {sorted(unknown)}")
-    conn.execute(
+    added = conn.execute(
         """INSERT INTO project_media (project_id, media_id, filename, split, annotations)
            VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""",
         (project_id, media_id, filename, split, json.dumps([o.model_dump(exclude_none=True) for o in objects])),
-    )
-    _touch(conn, project_id)
+    ).rowcount == 1
+    if added:
+        _touch(conn, project_id)
+    return added
 
 
 def _editable(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row:
