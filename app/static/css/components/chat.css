@@ -1,0 +1,79 @@
+/*
+  Agent chat in the left sidebar (behaviour in js/chat.js).
+  A full-height column: the messages scroll, the form stays at the bottom.
+*/
+.chat {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chat__messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;  /* a classic scrollbar doesn't cover the user's bubbles */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Shown until the first message; centred in the message area. */
+.chat__empty {
+  margin: auto;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.chat__empty h2 {
+  margin-bottom: var(--space-1);
+  font-size: var(--text-md);
+  color: var(--color-text);
+}
+
+/* Assistant messages are plain text across the full width; the user's are bubbles on the right. */
+.chat__message {
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat__message--user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-accent-bg);
+}
+
+/* The form looks like one input box; the textarea inside has no border of its own. */
+.chat__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.chat__form:focus-within {
+  border-color: var(--color-text-muted);
+}
+
+/* Grows with its text (field-sizing) up to max-height, then scrolls. */
+.chat__input {
+  field-sizing: content;
+  min-height: 2lh;
+  max-height: 12rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  resize: none;
+  outline: none;
+}
+
+.chat__send {
+  align-self: flex-end;
+}

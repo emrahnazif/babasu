@@ -1,0 +1,14 @@
+{# Agent chat, the default sidebar content. Behaviour in js/chat.js; not connected to an agent yet. #}
+<div class="chat">
+  <div class="chat__messages" role="log" aria-label="Messages">
+    <div class="chat__empty">
+      <h2>What should we build?</h2>
+      <p>Ask the agent about your data, or to build a view.</p>
+    </div>
+  </div>
+
+  <form class="chat__form">
+    <textarea class="chat__input" name="message" placeholder="Ask the agent…" aria-label="Message"></textarea>
+    <button class="icon-button icon-button--primary chat__send" type="submit" aria-label="Send" title="Send">{{ icon("arrow-up") }}</button>
+  </form>
+</div>

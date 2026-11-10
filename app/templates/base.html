@@ -10,6 +10,7 @@
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='css/main.css') }}">
   <script type="module" src="{{ url_for('static', path='js/sidebar.js') }}"></script>
+  <script type="module" src="{{ url_for('static', path='js/chat.js') }}"></script>
 </head>
 <body>
   <div class="app{% if collapsed %} app--collapsed{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
@@ -22,10 +23,7 @@
     </div>
 
     <aside class="app__sidebar">
-      {% block sidebar %}
-        <h2 class="sidebar__title">Agent</h2>
-        <p class="sidebar__empty">No messages yet.</p>
-      {% endblock %}
+      {% block sidebar %}{% include "partials/chat.html" %}{% endblock %}
     </aside>
 
     <div class="app__resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"

@@ -1,12 +1,7 @@
-/* Content of the left sidebar: the agent chat, or a page's own menu (e.g. Settings). */
+/* A page's own sidebar menu (e.g. Settings); the default sidebar is the chat (chat.css). */
 .sidebar__title {
   font-size: var(--text-sm);
   margin-bottom: var(--space-2);
-}
-
-.sidebar__empty {
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
 }
 
 /* Vertical list of links; the current one has aria-current="page". */
