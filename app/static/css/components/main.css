@@ -32,6 +32,71 @@
   margin-top: var(--space-6);
 }
 
+/* Responsive grid of equal columns (cards, images); as many as fit. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  align-items: start;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+/* A bordered box; works as a link (<a class="card">) too. */
+.card {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: inherit;
+  text-decoration: none;
+}
+
+a.card:hover { background: var(--color-accent-bg); }
+
+.card > h2 { font-size: var(--text-md); }
+
+.card > p { font-size: var(--text-sm); }
+
+/* Image tile with a one-line caption: <figure class="thumb"><img or svg><figcaption>. */
+.thumb {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.thumb > svg,
+.thumb > img {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+}
+
+.thumb > figcaption {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Small label. A coloured dot comes from style="--badge-color: #e11d48". */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+}
+
+.badge::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--badge-color, var(--color-text-muted));
+}
 
 /* Row of buttons, aligned right. Variant: "actions divided" adds a line above (form footers). */
 .actions {
