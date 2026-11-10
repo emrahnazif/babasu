@@ -9,6 +9,9 @@ from app import config
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
+# SQL expression for "now" in the format all timestamp columns use (UTC, ISO 8601).
+NOW = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
+
 
 def connect() -> sqlite3.Connection:
     # check_same_thread=False: FastAPI may open the connection in one worker thread
@@ -16,6 +19,9 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(config.DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # With WAL this stays crash-safe (a power cut can lose the last commits, never corrupt),
+    # and commits don't wait for a disk sync, which matters for jobs that commit per item.
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 

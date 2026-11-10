@@ -10,7 +10,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, model_validator
 
-from app import media
+from app import db, media
 
 # Pixel coordinate on the original image, rounded to 1 decimal.
 Coord = Annotated[float, AfterValidator(lambda v: round(v, 1))]
@@ -128,6 +128,6 @@ def _editable(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row:
 
 def _touch(conn: sqlite3.Connection, project_id: int) -> None:
     conn.execute(
-        "UPDATE project SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+        f"UPDATE project SET updated_at = {db.NOW} WHERE id = ?",
         (project_id,),
     )
