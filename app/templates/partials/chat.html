@@ -31,6 +31,7 @@
 <div class="chat">
   <div class="chat__messages" role="log" aria-label="Messages">
     <div class="chat__empty" {% if chat.turns %}hidden{% endif %}>
+      {{ logo() }}
       <h2>What should we build?</h2>
       {% if chat.agents %}
         <p>Ask the agent about your data, or to build a view.</p>

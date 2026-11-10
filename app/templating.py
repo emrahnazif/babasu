@@ -11,11 +11,20 @@ ICONS_DIR = config.STATIC_DIR / "icons"
 
 
 @cache
+def _inline_svg(path) -> Markup:
+    return Markup(path.read_text())
+
+
 def icon(name: str) -> Markup:
     """Inline an SVG from static/icons, so it takes the surrounding text colour."""
     if not re.fullmatch(r"[a-z0-9-]+", name):
         raise ValueError(f"invalid icon name: {name!r}")
-    return Markup((ICONS_DIR / f"{name}.svg").read_text())
+    return _inline_svg(ICONS_DIR / f"{name}.svg")
+
+
+def logo() -> Markup:
+    """The babasu logo, inlined like the icons; where it's shown sets its colour and line width."""
+    return _inline_svg(config.BRAND_DIR / "logo.svg")
 
 
 def jobs_overview() -> dict:
@@ -41,6 +50,7 @@ templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
 templates.env.globals["app_name"] = config.APP_NAME
 templates.env.globals["nav"] = config.NAV
 templates.env.globals["icon"] = icon
+templates.env.globals["logo"] = logo
 templates.env.globals["settings"] = settings.get
 templates.env.globals["sidebar_min_width"] = settings.SIDEBAR_MIN_WIDTH
 templates.env.globals["sidebar_max_width"] = settings.SIDEBAR_MAX_WIDTH

@@ -27,6 +27,20 @@
   color: var(--color-text-muted);
 }
 
+/* The logo, large and faint, drawn in the text colour with a fixed line width. */
+.chat__empty svg {
+  width: 6rem;
+  height: auto;
+  margin: 0 auto var(--space-4);
+  stroke: currentColor;
+  opacity: 0.35;
+}
+
+.chat__empty svg * {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.5px;
+}
+
 .chat__empty h2 {
   margin-bottom: var(--space-1);
   font-size: var(--text-md);
