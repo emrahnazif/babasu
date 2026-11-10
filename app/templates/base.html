@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='css/main.css') }}">
   <script type="module" src="{{ url_for('static', path='js/sidebar.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/chat.js') }}"></script>
+  <script type="module" src="{{ url_for('static', path='js/jobs.js') }}"></script>
 </head>
 <body>
   <div class="app{% if collapsed %} app--collapsed{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
@@ -45,6 +46,11 @@
       </nav>
 
       <div class="topbar__right">
+        {% set job_overview = jobs_overview() %}
+        <button class="icon-button jobs-button" type="button" popovertarget="jobs-drawer" aria-label="Jobs" title="Jobs">
+          {{ icon("queue-list") }}
+          <span class="jobs-button__count" id="jobs-count" {% if not job_overview.active %}hidden{% endif %}>{{ job_overview.active }}</span>
+        </button>
         <button class="icon-button" type="button" popovertarget="confirm-delete" aria-label="Delete" title="Delete">{{ icon("trash") }}</button>
 
         {# Test alert dialog: Cancel closes, Continue does nothing yet. #}
@@ -66,6 +72,17 @@
     <main class="app__main">
       {% block content %}{% endblock %}
     </main>
+  </div>
+
+  {# Jobs drawer: opens from the jobs button, no JS needed to open or close it. #}
+  <div id="jobs-drawer" class="drawer" popover aria-labelledby="jobs-drawer-title">
+    <div class="drawer__header">
+      <h2 class="drawer__title" id="jobs-drawer-title">Jobs</h2>
+      <button class="icon-button" type="button" popovertarget="jobs-drawer" popovertargetaction="hide" aria-label="Close" title="Close">{{ icon("x-mark") }}</button>
+    </div>
+    <div class="drawer__body" id="jobs-panel">
+      {% with jobs = job_overview.jobs, active = job_overview.active %}{% include "partials/jobs.html" %}{% endwith %}
+    </div>
   </div>
 
   {# Toasts: js/toast.js clones the template; "manual" keeps the stack open above everything. #}

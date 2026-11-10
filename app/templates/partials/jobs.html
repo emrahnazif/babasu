@@ -1,0 +1,41 @@
+{# The job list in the jobs drawer. Rendered with the page, and again by GET /jobs/panel,
+   which js/jobs.js fetches to keep it current; there is no second renderer in JS.
+   What each job can do, and its summary line, come from app/jobs.py (the API returns the same). #}
+<div class="job-list" data-active="{{ active }}">
+  {% for job in jobs %}
+    <div class="job job--{{ job.status }}" data-id="{{ job.id }}" data-status="{{ job.status }}"
+         data-title="{{ job.title }}" data-summary="{{ job.summary }}" data-project-id="{{ job.project_id or '' }}">
+      <div class="job__head">
+        <span class="job__title">{{ job.title }}</span>
+        <span class="job__status">{{ job.status }}</span>
+      </div>
+      {% if job.project_name %}<p class="job__meta">{{ job.project_name }}</p>{% endif %}
+
+      {% if job.status == "running" %}
+        {% if job.total %}
+          <div class="progress" role="progressbar" aria-label="{{ job.title }}" aria-valuemin="0"
+               aria-valuemax="{{ job.total }}" aria-valuenow="{{ job.done }}" style="--value: {{ job.done / job.total }}"></div>
+          <p class="job__meta">{{ "{:,}".format(job.done) }} / {{ "{:,}".format(job.total) }} · {{ (100 * job.done / job.total) | round | int }}%</p>
+        {% else %}
+          <div class="progress indeterminate" role="progressbar" aria-label="{{ job.title }}"></div>
+        {% endif %}
+        {% if job.message %}<p class="job__meta job__message">{{ job.message }}</p>{% endif %}
+      {% elif job.summary %}
+        <p class="{{ 'job__error' if job.error else 'job__meta' }}">{{ job.summary }}</p>
+      {% endif %}
+
+      <div class="job__actions">
+        {% if job.active %}
+          <button class="job__action" type="button" data-job-action="cancel" {% if not job.can_cancel %}disabled{% endif %}>
+            {{ "Cancel" if job.can_cancel else "Stopping…" }}
+          </button>
+        {% elif job.can_retry %}
+          <button class="job__action" type="button" data-job-action="retry">Retry</button>
+        {% endif %}
+        <a class="job__action" href="/jobs/{{ job.id }}">Log</a>
+      </div>
+    </div>
+  {% else %}
+    <p class="job-list__empty">No jobs yet.</p>
+  {% endfor %}
+</div>

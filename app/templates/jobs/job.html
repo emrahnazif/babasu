@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} · Jobs · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <h1>{{ job.title }}</h1>
+  <p class="muted">
+    {{ job.status | capitalize }}{% if job.project_name %} · {{ job.project_name }}{% endif %}
+    · started {{ job.started_at or "—" }}{% if job.finished_at %} · finished {{ job.finished_at }}{% endif %}
+  </p>
+  {% if job.total %}<p class="muted">{{ job.done }} / {{ job.total }}</p>{% endif %}
+  {% if job.error %}<p>{{ job.error }}</p>{% endif %}
+
+  <h2>Log</h2>
+  {% if log %}<pre>{{ log }}</pre>{% else %}<p class="muted">Nothing logged.</p>{% endif %}
+{% endblock %}

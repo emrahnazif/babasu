@@ -1,0 +1,88 @@
+/* Jobs: the count on the top-bar button, and the job list in the jobs drawer. */
+.jobs-button {
+  position: relative;
+}
+
+.jobs-button__count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-full);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: 0.625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1rem;
+}
+
+.job-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.job-list__empty {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.job {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+}
+
+.job__head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.job__title {
+  font-weight: var(--weight-medium);
+}
+
+.job__status,
+.job__meta {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The current item, e.g. a file name: one line, cut with an ellipsis. */
+.job__message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job--failed .job__status,
+.job__error {
+  color: var(--color-destructive);
+  overflow-wrap: anywhere;
+}
+
+.job__actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.job__action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.job__action:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}

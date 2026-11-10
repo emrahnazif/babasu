@@ -24,5 +24,6 @@
 @import url("components/chat.css") layer(components);
 @import url("components/drawer.css") layer(components);
 @import url("components/toast.css") layer(components);
+@import url("components/jobs.css") layer(components);
 @import url("components/progress.css") layer(components);
 @import url("components/main.css") layer(components);

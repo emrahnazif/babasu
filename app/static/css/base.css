@@ -20,9 +20,19 @@ h1 { font-size: var(--text-lg); }
 
 h1 + p { margin-top: var(--space-1); }
 
-code {
+code,
+pre {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+}
+
+pre {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  white-space: pre-wrap;
 }
 
 input,

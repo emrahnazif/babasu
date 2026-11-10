@@ -1,4 +1,4 @@
-"""Jobs API, shared by the UI and the agent.
+"""Jobs: the drawer's list fragment, a page per job, and the JSON API shared by the UI and the agent.
 
 Jobs are started by the feature they belong to (e.g. a project import); here they are listed,
 followed, cancelled and retried.
@@ -7,9 +7,11 @@ followed, cancelled and retried.
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 
 from app import db, jobs
+from app.templating import templates
 
 router = APIRouter()
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -20,6 +22,21 @@ def _get(conn: sqlite3.Connection, job_id: int) -> dict:
     if job is None:
         raise HTTPException(404, "Job not found")
     return job
+
+
+# --- Pages ---
+
+
+@router.get("/jobs/panel", response_class=HTMLResponse)
+def job_panel(request: Request, conn: DB):
+    """The job list alone, for js/jobs.js to swap into the drawer."""
+    return templates.TemplateResponse(request, "partials/jobs.html", jobs.overview(conn))
+
+
+@router.get("/jobs/{job_id}", response_class=HTMLResponse)
+def job_page(request: Request, job_id: int, conn: DB):
+    log, _ = jobs.read_log(job_id, offset=None)  # the tail
+    return templates.TemplateResponse(request, "jobs/job.html", {"job": _get(conn, job_id), "log": log})
 
 
 # --- API ---
