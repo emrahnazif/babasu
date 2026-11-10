@@ -160,10 +160,34 @@ a.card:hover { background: var(--color-accent-bg); }
   background: var(--color-bg);
   color: var(--color-text);
   box-shadow: var(--shadow-overlay);
+  /* Fades and grows in, and back out: display/overlay stay on until the transition ends. */
+  opacity: 0;
+  scale: 0.96;
+  transition: opacity var(--duration-fast) var(--ease-out), scale var(--duration-fast) var(--ease-out),
+    display var(--duration-fast) allow-discrete, overlay var(--duration-fast) allow-discrete;
+}
+
+.dialog:popover-open {
+  opacity: 1;
+  scale: 1;
+}
+
+@starting-style {
+  .dialog:popover-open { opacity: 0; scale: 0.96; }
 }
 
 .dialog::backdrop {
+  background: rgb(0 0 0 / 0);
+  transition: background var(--duration-fast) var(--ease-out),
+    display var(--duration-fast) allow-discrete, overlay var(--duration-fast) allow-discrete;
+}
+
+.dialog:popover-open::backdrop {
   background: rgb(0 0 0 / 0.5);
+}
+
+@starting-style {
+  .dialog:popover-open::backdrop { background: rgb(0 0 0 / 0); }
 }
 
 .dialog h2 {
