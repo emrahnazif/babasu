@@ -5,6 +5,7 @@ out of every read here, together with their annotations.
 """
 
 import json
+import math
 import sqlite3
 from typing import Annotated
 
@@ -38,6 +39,9 @@ class Annotation(BaseModel):
         return self
 
 
+PAGE_SIZE = 100  # images per page
+
+
 class FrozenError(Exception):
     """Raised on any write to a frozen project."""
 
@@ -56,23 +60,34 @@ def list_all(conn: sqlite3.Connection) -> list[dict]:
     return [_project(row) for row in rows]
 
 
-def detail(conn: sqlite3.Connection, project_id: int) -> dict | None:
-    """A project with its images and their annotations."""
+def get(conn: sqlite3.Connection, project_id: int) -> dict | None:
     row = conn.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
-    if row is None:
+    return _project(row) if row else None
+
+
+def detail(conn: sqlite3.Connection, project_id: int, page: int = 1) -> dict | None:
+    """A project with one page of its images and their annotations."""
+    project = get(conn, project_id)
+    if project is None:
         return None
-    project = _project(row)
+    image_count = conn.execute(
+        "SELECT count(*) FROM project_media WHERE project_id = ?", (project_id,)
+    ).fetchone()[0]
+    pages = max(1, math.ceil(image_count / PAGE_SIZE))
+    page = min(max(page, 1), pages)
     class_ids = {c["id"] for c in project["classes"]}
-    return project | {"images": _images(conn, project_id, class_ids)}
+    images = _images(conn, project_id, class_ids, offset=(page - 1) * PAGE_SIZE)
+    return project | {"image_count": image_count, "page": page, "pages": pages, "images": images}
 
 
-def _images(conn: sqlite3.Connection, project_id: int, class_ids: set[int]) -> list[dict]:
+def _images(conn: sqlite3.Connection, project_id: int, class_ids: set[int], offset: int) -> list[dict]:
     rows = conn.execute(
         """SELECT project_media.media_id, project_media.filename, project_media.split,
                   project_media.annotations, media.sha256, media.ext, media.width, media.height
            FROM project_media JOIN media ON media.id = project_media.media_id
-           WHERE project_media.project_id = ? ORDER BY project_media.filename""",
-        (project_id,),
+           WHERE project_media.project_id = ? ORDER BY project_media.filename
+           LIMIT ? OFFSET ?""",
+        (project_id, PAGE_SIZE, offset),
     ).fetchall()
     return [
         dict(row)

@@ -39,6 +39,13 @@
         </figure>
       {% endfor %}
     </div>
+    {% if project.pages > 1 %}
+      <div class="actions">
+        <span class="muted">Page {{ project.page }} of {{ project.pages }} · {{ project.image_count }} images</span>
+        {% if project.page > 1 %}<a class="button secondary" href="?page={{ project.page - 1 }}">Previous</a>{% endif %}
+        {% if project.page < project.pages %}<a class="button secondary" href="?page={{ project.page + 1 }}">Next</a>{% endif %}
+      </div>
+    {% endif %}
   {% else %}
     <p class="muted">No images yet.</p>
   {% endif %}
