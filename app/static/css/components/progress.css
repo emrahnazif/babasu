@@ -1,0 +1,35 @@
+/*
+  Progress bar, a component for any region (main area, agent views, the jobs drawer):
+  <div class="progress" role="progressbar" style="--value: 0.56" aria-valuenow="56" aria-valuemax="100"></div>
+  --value goes from 0 to 1, and the bar glides to each new value. Variant "progress indeterminate"
+  while the total is unknown: a stripe slides along the track.
+*/
+.progress {
+  position: relative;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-bg);
+  overflow: hidden;
+}
+
+.progress::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--color-text);
+  transform-origin: left;
+  scale: var(--value, 0) 1;
+  transition: scale var(--duration-slow) var(--ease-out);
+}
+
+.progress.indeterminate::before {
+  right: auto;
+  width: 40%;
+  scale: 1;
+  animation: progress-slide 1.4s var(--ease-out) infinite;
+}
+
+@keyframes progress-slide {
+  from { translate: -100% 0; }
+  to { translate: 250% 0; }
+}
