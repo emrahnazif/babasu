@@ -22,7 +22,9 @@ BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
-# The user's workspace: settings now, datasets and models later.
+# The user's workspace: settings, database and media files.
 # macOS ~/Library/Application Support/babasu, Windows %LOCALAPPDATA%\babasu,
 # Linux ~/.local/share/babasu.
 DATA_DIR = Path(platformdirs.user_data_dir(APP_NAME, appauthor=False))
+DB_FILE = DATA_DIR / "babasu.db"
+MEDIA_DIR = DATA_DIR / "media"

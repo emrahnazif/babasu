@@ -2,16 +2,26 @@
 
 import threading
 import time
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app import config
+from app import config, db
 from app.routes import pages, settings
 
-app = FastAPI(title=config.APP_NAME, docs_url=None, redoc_url=None, openapi_url=None)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.migrate()
+    yield
+
+
+app = FastAPI(title=config.APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
+# check_dir=False: the folder appears with the first stored file.
+app.mount("/media", StaticFiles(directory=config.MEDIA_DIR, check_dir=False), name="media")
 app.include_router(pages.router)
 app.include_router(settings.router)
 

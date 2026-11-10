@@ -10,6 +10,7 @@ dependencies = [
     "pywebview>=5.3",
     "platformdirs>=4.14.5",
     "python-multipart>=0.0.33",
+    "pillow>=13.0.0",
 ]
 
 [dependency-groups]
