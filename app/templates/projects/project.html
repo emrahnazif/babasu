@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <h1>{{ project.name }}</h1>
+  {% if project.description %}<p class="muted">{{ project.description }}</p>{% endif %}
+
+  <p>
+    {% for class in project.classes %}
+      <span class="badge" style="--badge-color: {{ class.color }}">{{ class.name }}</span>
+    {% endfor %}
+  </p>
+
+  {% if project.images %}
+    <div class="grid">
+      {% for image in project.images %}
+        <figure class="thumb">
+          {# The image and its annotations share one coordinate system: the image's own pixels. #}
+          <svg viewBox="0 0 {{ image.width }} {{ image.height }}" role="img" aria-label="{{ image.filename }}">
+            <image href="{{ image.url }}" width="{{ image.width }}" height="{{ image.height }}"/>
+            {% for a in image.annotations %}
+              {% set color = (project.classes | selectattr("id", "equalto", a.class_id) | first).color %}
+              {% if a.type == "bbox" %}
+                <rect x="{{ a.bbox[0] }}" y="{{ a.bbox[1] }}" width="{{ a.bbox[2] }}" height="{{ a.bbox[3] }}"
+                      fill="none" stroke="{{ color }}" stroke-width="2" vector-effect="non-scaling-stroke"/>
+              {% elif a.type == "polygon" %}
+                <polygon points="{% for x, y in a.segments %}{{ x }},{{ y }} {% endfor %}"
+                         fill="{{ color }}" fill-opacity="0.2" stroke="{{ color }}" stroke-width="2" vector-effect="non-scaling-stroke"/>
+              {% endif %}
+            {% endfor %}
+          </svg>
+          <figcaption>{{ image.filename }}</figcaption>
+        </figure>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No images yet.</p>
+  {% endif %}
+{% endblock %}

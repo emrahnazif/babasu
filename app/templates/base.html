@@ -40,7 +40,7 @@
 
       <nav class="topbar__center">
         {% for item in nav %}
-          <a class="topbar__link{% if request.url.path == item.href %} topbar__link--active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+          <a class="topbar__link{% if request.url.path == item.href or request.url.path.startswith(item.href ~ "/") %} topbar__link--active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
         {% endfor %}
       </nav>
 

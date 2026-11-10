@@ -12,7 +12,3 @@ router = APIRouter()
 def home(request: Request):
     return templates.TemplateResponse(request, "pages/home.html", {"message": "Hello, world"})
 
-
-@router.get("/datasets", response_class=HTMLResponse)
-def datasets(request: Request):
-    return templates.TemplateResponse(request, "pages/datasets.html")

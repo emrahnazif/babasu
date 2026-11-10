@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app import config, db
-from app.routes import pages, settings
+from app.routes import pages, projects, settings
 
 
 @asynccontextmanager
@@ -23,6 +23,7 @@ app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
 # check_dir=False: the folder appears with the first stored file.
 app.mount("/media", StaticFiles(directory=config.MEDIA_DIR, check_dir=False), name="media")
 app.include_router(pages.router)
+app.include_router(projects.router)
 app.include_router(settings.router)
 
 
