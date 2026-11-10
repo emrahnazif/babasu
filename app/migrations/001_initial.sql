@@ -26,7 +26,7 @@ CREATE TABLE project_media (
   media_id    INTEGER NOT NULL REFERENCES media(id),  -- a media row can't be deleted while used
   filename    TEXT NOT NULL,
   split       TEXT,                            -- 'train', 'val', 'test' or NULL
-  annotations TEXT NOT NULL DEFAULT '[]',      -- JSON: [{"class_id", "type", "bbox" | "segments"}]
+  annotations TEXT NOT NULL DEFAULT '[]',      -- JSON list of projects.Annotation
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   PRIMARY KEY (project_id, media_id)
