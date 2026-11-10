@@ -4,7 +4,7 @@ import json
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, StringConstraints
 
@@ -31,6 +31,19 @@ async def send_message(message: NewMessage) -> StreamingResponse:
 def conversation(conn: DB) -> list[dict]:
     """The current conversation, as the chat shows it."""
     return agent.turns(conn, agent.latest_conversation(conn))
+
+
+class ConversationAgent(BaseModel):
+    agent_id: str
+
+
+@router.put("/api/agent/conversation", status_code=204)
+def switch_agent(change: ConversationAgent, conn: DB) -> None:
+    """Switch the current chat to another agent; it answers from the next message on."""
+    try:
+        agent.set_conversation_agent(conn, change.agent_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
 
 
 @router.post("/agent/new")

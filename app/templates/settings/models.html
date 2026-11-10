@@ -1,0 +1,83 @@
+{% extends "settings/layout.html" %}
+{# Models: connections to an LLM server. Each card: Test, Edit (dialog), Delete. #}
+
+{% macro model_fields(m=none) %}
+  <label class="field">
+    Name
+    <input name="name" required value="{{ m.name if m else '' }}" placeholder="Claude Opus 5.5">
+  </label>
+  <label class="field">
+    Server URL
+    <input name="base_url" required list="model-servers" value="{{ m.base_url if m else '' }}" placeholder="http://localhost:11434/v1">
+  </label>
+  <label class="field">
+    Model
+    <input name="model" required value="{{ m.model if m else '' }}" placeholder="claude-opus-5-5">
+    <span class="muted">The server's name for the model. It must support tool calling.</span>
+  </label>
+  <label class="field">
+    API key
+    <input name="api_key" type="password" autocomplete="off"
+           placeholder="{{ 'Saved, leave blank to keep it' if m and m.api_key else 'Not needed for most local servers' }}">
+    <span class="muted">For testing only, keys are saved in plain text in the workspace's settings file.</span>
+  </label>
+  <input type="hidden" name="next" value="{{ next }}">
+{% endmacro %}
+
+{% macro model_dialog(id, title, action, m=none) %}
+  <div id="{{ id }}" class="dialog" popover aria-labelledby="{{ id }}-title">
+    <form method="post" action="{{ action }}">
+      <h2 id="{{ id }}-title">{{ title }}</h2>
+      <div class="fields">{{ model_fields(m) }}</div>
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="{{ id }}" popovertargetaction="hide">Cancel</button>
+        <button class="button" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+{% endmacro %}
+
+{% block content %}
+  <h1>Models</h1>
+  <p class="muted">Connections to the LLMs your agents run on: any OpenAI-compatible chat API, such as a local server (Ollama, LM Studio, llama.cpp), OpenAI, OpenRouter or Anthropic.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <div class="actions">
+    <button class="button" type="button" popovertarget="add-model">Add model</button>
+  </div>
+  {{ model_dialog("add-model", "Add model", "/settings/models") }}
+
+  <datalist id="model-servers">
+    <option value="http://localhost:11434/v1">Ollama</option>
+    <option value="http://localhost:1234/v1">LM Studio</option>
+    <option value="https://openrouter.ai/api/v1">OpenRouter</option>
+    <option value="https://api.openai.com/v1">OpenAI</option>
+    <option value="https://api.anthropic.com/v1/">Anthropic</option>
+  </datalist>
+
+  {% if models %}
+    <div class="stack">
+      {% for m in models %}
+        <div class="card">
+          <h2>{{ m.name }}</h2>
+          <p class="muted">{{ m.model }} · {{ m.base_url }}</p>
+          {% if test and test.model == m.id %}<p class="{{ 'muted' if test.ok else 'error' }}">{{ test.message }}</p>{% endif %}
+          <div class="actions">
+            <form method="post" action="/settings/models/{{ m.id }}/test">
+              <input type="hidden" name="next" value="{{ next }}">
+              <button class="button secondary" type="submit">Test</button>
+            </form>
+            <button class="button secondary" type="button" popovertarget="edit-model-{{ m.id }}">Edit</button>
+            <form method="post" action="/settings/models/{{ m.id }}/delete">
+              <input type="hidden" name="next" value="{{ next }}">
+              <button class="button secondary" type="submit">Delete</button>
+            </form>
+          </div>
+          {{ model_dialog("edit-model-" ~ m.id, "Edit model", "/settings/models/" ~ m.id, m) }}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No models yet. Add one, then create an agent that uses it.</p>
+  {% endif %}
+{% endblock %}

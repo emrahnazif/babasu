@@ -1,37 +1,45 @@
-"""Settings pages. Save posts the form, then redirects back to where the user came from."""
+"""Settings pages. Forms post, then redirect back (to where the user came from, or to the same
+section with what happened). Models and agents have the same actions as JSON in routes/agents.py."""
 
 from typing import Annotated, get_args
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import ValidationError
 
-from app import agent, config, settings
-from app.routes import safe_next
+from app import agent, agents, config, settings
+from app.agents import AgentForm, ModelForm
+from app.routes import message, safe_next
 from app.templating import templates
 
 router = APIRouter(prefix="/settings")
 
 GENERAL = {"label": "General", "href": "/settings/general"}
-AGENT = {"label": "Agent", "href": "/settings/agent"}
-SECTIONS = [GENERAL, AGENT]
+MODELS = {"label": "Models", "href": "/settings/models"}
+AGENTS = {"label": "Agents", "href": "/settings/agents"}
+SECTIONS = [GENERAL, MODELS, AGENTS]
+
+
+def _back(section: dict, next: str | None, action=None, **query) -> RedirectResponse:
+    """Run `action` (a settings change), then go back to the section, with its error if it failed."""
+    try:
+        if action:
+            action()
+    except ValueError as exc:
+        query["error"] = message(exc)
+    return RedirectResponse(f"{section['href']}?{urlencode({'next': safe_next(next)} | query)}", status_code=303)
+
+
+def _page(request: Request, template: str, section: dict, next: str | None, **context):
+    return templates.TemplateResponse(
+        request, template, {"sections": SECTIONS, "section": section, "next": safe_next(next), **context}
+    )
 
 
 @router.get("/general", response_class=HTMLResponse)
 def general(request: Request, next: str | None = None):
-    return templates.TemplateResponse(
-        request,
-        "settings/general.html",
-        {
-            "sections": SECTIONS,
-            "section": GENERAL,
-            "next": safe_next(next),
-            "current": settings.get(),
-            "themes": get_args(settings.Theme),
-            "data_dir": config.DATA_DIR,
-        },
-    )
+    return _page(request, "settings/general.html", GENERAL, next, current=settings.get(),
+                 themes=get_args(settings.Theme), data_dir=config.DATA_DIR)
 
 
 @router.post("/general")
@@ -43,33 +51,68 @@ def save_general(
     return RedirectResponse(safe_next(next), status_code=303)
 
 
-@router.get("/agent", response_class=HTMLResponse)
-def agent_page(request: Request, next: str | None = None, test: str | None = None, ok: bool = False):
-    return templates.TemplateResponse(
-        request,
-        "settings/agent.html",
-        {"sections": SECTIONS, "section": AGENT, "next": safe_next(next), "current": settings.get(),
-         "test": test, "test_ok": ok},
-    )
+# --- Models ---
 
 
-@router.post("/agent")
-def save_agent(
-    base_url: Annotated[str, Form()] = "",
-    model: Annotated[str, Form()] = "",
-    api_key: Annotated[str, Form()] = "",
-    action: Annotated[str, Form()] = "save",  # "test": save, then try the connection
-    next: Annotated[str | None, Form()] = None,
-):
-    changes = {"agent_base_url": base_url.strip(), "agent_model": model.strip()}
-    if api_key.strip():  # blank keeps the saved key, which the form never shows
-        changes["agent_api_key"] = api_key.strip()
-    settings.update(**changes)
-    if action != "test":
-        return RedirectResponse(safe_next(next), status_code=303)
-    ok, message = agent.test_connection()
-    query = urlencode({"next": safe_next(next), "test": message, "ok": ok})
-    return RedirectResponse(f"/settings/agent?{query}", status_code=303)
+@router.get("/models", response_class=HTMLResponse)
+def models_page(request: Request, next: str | None = None, error: str | None = None,
+                tested: str | None = None, test: str | None = None, ok: bool = False):
+    return _page(request, "settings/models.html", MODELS, next, models=settings.get().models, error=error,
+                 test={"model": tested, "message": test, "ok": ok} if tested else None)
+
+
+@router.post("/models")
+def add_model(form: Annotated[ModelForm, Form()], next: Annotated[str | None, Form()] = None):
+    return _back(MODELS, next, lambda: agents.add_model(form))
+
+
+@router.post("/models/{model_id}")
+def edit_model(model_id: str, form: Annotated[ModelForm, Form()], next: Annotated[str | None, Form()] = None):
+    return _back(MODELS, next, lambda: agents.update_model(model_id, form))
+
+
+@router.post("/models/{model_id}/delete")
+def delete_model(model_id: str, next: Annotated[str | None, Form()] = None):
+    return _back(MODELS, next, lambda: agents.delete_model(model_id))
+
+
+@router.post("/models/{model_id}/test")
+def test_model(model_id: str, next: Annotated[str | None, Form()] = None):
+    model = settings.find_model(model_id)
+    if model is None:
+        return _back(MODELS, next, error="There is no such model.")
+    ok, result = agent.test_connection(model)
+    return _back(MODELS, next, tested=model_id, test=result, ok=ok)
+
+
+# --- Agents ---
+
+
+@router.get("/agents", response_class=HTMLResponse)
+def agents_page(request: Request, next: str | None = None, error: str | None = None):
+    s = settings.get()
+    return _page(request, "settings/agents.html", AGENTS, next, agents=s.agents, models=s.models,
+                 model_names={m.id: m.name for m in s.models}, default_agent=s.default_agent, error=error)
+
+
+@router.post("/agents")
+def add_agent(form: Annotated[AgentForm, Form()], next: Annotated[str | None, Form()] = None):
+    return _back(AGENTS, next, lambda: agents.add_agent(form))
+
+
+@router.post("/agents/{agent_id}")
+def edit_agent(agent_id: str, form: Annotated[AgentForm, Form()], next: Annotated[str | None, Form()] = None):
+    return _back(AGENTS, next, lambda: agents.update_agent(agent_id, form))
+
+
+@router.post("/agents/{agent_id}/delete")
+def delete_agent(agent_id: str, next: Annotated[str | None, Form()] = None):
+    return _back(AGENTS, next, lambda: agents.delete_agent(agent_id))
+
+
+@router.post("/agents/{agent_id}/default")
+def default_agent(agent_id: str, next: Annotated[str | None, Form()] = None):
+    return _back(AGENTS, next, lambda: agents.set_default(agent_id))
 
 
 SIDEBAR_FIELDS = {"sidebar_width", "sidebar_collapsed"}

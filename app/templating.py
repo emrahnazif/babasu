@@ -29,7 +29,7 @@ def agent_chat() -> dict:
     """Shell data for the chat in the sidebar: the current conversation, rendered with every page."""
     with closing(db.connect()) as conn:
         turns = agent.turns(conn, agent.latest_conversation(conn))
-    return {"turns": turns, "configured": agent.configured()}
+    return {"turns": turns, "configured": bool(settings.get().agents)}
 
 
 templates = Jinja2Templates(directory=config.TEMPLATES_DIR)

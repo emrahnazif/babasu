@@ -1,0 +1,75 @@
+{% extends "settings/layout.html" %}
+{# Agents: who answers in the chat. A name, the model it runs on, and its instructions. #}
+
+{% macro agent_dialog(id, title, action, a=none) %}
+  <div id="{{ id }}" class="dialog" popover aria-labelledby="{{ id }}-title">
+    <form method="post" action="{{ action }}">
+      <h2 id="{{ id }}-title">{{ title }}</h2>
+      <div class="fields">
+        <label class="field">
+          Name
+          <input name="name" required value="{{ a.name if a else '' }}" placeholder="Assistant">
+        </label>
+        <label class="field">
+          Model
+          <select name="model_id" required>
+            {% for m in models %}
+              <option value="{{ m.id }}"{% if a and a.model_id == m.id %} selected{% endif %}>{{ m.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          Instructions
+          <textarea name="instructions" rows="6" placeholder="Its role and rules, e.g. Answer from the app's real data and keep answers short.">{{ a.instructions if a else '' }}</textarea>
+          <span class="muted">Every agent is also told what {{ app_name }} is.</span>
+        </label>
+        <input type="hidden" name="next" value="{{ next }}">
+      </div>
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="{{ id }}" popovertargetaction="hide">Cancel</button>
+        <button class="button" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+{% endmacro %}
+
+{% block content %}
+  <h1>Agents</h1>
+  <p class="muted">Who answers in the chat. Pick one under the message box; new chats start with the default agent.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  {% if models %}
+    <div class="actions">
+      <button class="button" type="button" popovertarget="add-agent">Add agent</button>
+    </div>
+    {{ agent_dialog("add-agent", "Add agent", "/settings/agents") }}
+  {% else %}
+    <p class="muted">An agent runs on a model: <a href="/settings/models?next={{ next | urlencode }}">add a model</a> first.</p>
+  {% endif %}
+
+  {% if agents %}
+    <div class="stack">
+      {% for a in agents %}
+        <div class="card">
+          <h2>{{ a.name }} {% if a.id == default_agent %}<span class="badge">Default</span>{% endif %}</h2>
+          <p class="muted">{{ model_names[a.model_id] }}</p>
+          {% if a.instructions %}<p class="muted">{{ a.instructions | truncate(90) }}</p>{% endif %}
+          <div class="actions">
+            {% if a.id != default_agent %}
+              <form method="post" action="/settings/agents/{{ a.id }}/default">
+                <input type="hidden" name="next" value="{{ next }}">
+                <button class="button secondary" type="submit">Make default</button>
+              </form>
+            {% endif %}
+            <button class="button secondary" type="button" popovertarget="edit-agent-{{ a.id }}">Edit</button>
+            <form method="post" action="/settings/agents/{{ a.id }}/delete">
+              <input type="hidden" name="next" value="{{ next }}">
+              <button class="button secondary" type="submit">Delete</button>
+            </form>
+          </div>
+          {{ agent_dialog("edit-agent-" ~ a.id, "Edit agent", "/settings/agents/" ~ a.id, a) }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

@@ -89,6 +89,13 @@
   margin-top: var(--space-6);
 }
 
+/* A vertical list of full-width items (e.g. cards in Settings), one under the other. */
+.stack {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
 /* A bordered box; works as a link (<a class="card">) too. */
 .card {
   display: grid;
@@ -105,6 +112,12 @@ a.card:hover { background: var(--color-accent-bg); }
 .card > h2 { font-size: var(--text-md); }
 
 .card > p { font-size: var(--text-sm); }
+
+/* A card's own buttons sit close under its text, on the left. */
+.card > .actions {
+  justify-content: flex-start;
+  margin-top: var(--space-2);
+}
 
 /* Image tile with a one-line caption: <figure class="thumb"><img or svg><figcaption>. */
 .thumb {

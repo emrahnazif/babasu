@@ -30,7 +30,7 @@
       {% if chat.configured %}
         <p>Ask the agent about your data, or to build a view.</p>
       {% else %}
-        <p>Connect a model in <a href="/settings/agent?next={{ request.url.path | urlencode }}">Settings → Agent</a> to start.</p>
+        <p>Add a model and an agent in <a href="/settings/models?next={{ request.url.path | urlencode }}">Settings</a> to start.</p>
       {% endif %}
     </div>
 

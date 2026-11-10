@@ -20,58 +20,46 @@ from app import agent_tools, config, db, settings
 MAX_ROUNDS = 8  # model calls per turn; each round may run tools
 TITLE_LENGTH = 60
 
-SYSTEM_PROMPT = f"""You are the assistant inside {config.APP_NAME}, a local computer vision app where people \
-import images into projects, annotate them, train models and run workflows.
-Answer from the app's real data: use the tools to look things up instead of guessing. If a tool fails, \
-say so plainly. Keep answers short and concrete."""
+# What every agent is told about the app; the agent's own instructions follow.
+APP_PROMPT = f"""You are an agent inside {config.APP_NAME}, a local computer vision app where people \
+import images into projects, annotate them, train models and run workflows. You can look at the app's data \
+through your tools."""
 
 _running: set[threading.Event] = set()  # the stop flag of each turn in progress
 
 
-class NotConfigured(Exception):
-    """No model is set up yet (Settings → Agent)."""
-
-
-def configured() -> bool:
-    s = settings.get()
-    return bool(s.agent_base_url and s.agent_model)
-
-
-def client() -> tuple[openai.OpenAI, str]:
-    """A client for the configured model, and the model name. Raises NotConfigured."""
-    if not configured():
-        raise NotConfigured("Connect a model first: Settings → Agent.")
-    s = settings.get()
+def client(model: settings.Model) -> openai.OpenAI:
     # Local servers accept any key, but the client requires one.
-    return openai.OpenAI(base_url=s.agent_base_url, api_key=s.agent_api_key or "none", timeout=120), s.agent_model
+    return openai.OpenAI(base_url=model.base_url, api_key=model.api_key or "none", timeout=120)
 
 
-def describe(exc: Exception) -> str:
-    """A one-line explanation of a failed model call, for the chat and the settings page."""
-    if isinstance(exc, NotConfigured):
-        return str(exc)
+def system_prompt(agent: settings.Agent) -> str:
+    return f"{APP_PROMPT}\n\n{agent.instructions}".strip()
+
+
+def describe(exc: Exception, model: settings.Model) -> str:
+    """A one-line explanation of a failed model call, for the chat and the settings pages."""
     if isinstance(exc, openai.APIConnectionError):
-        return f"Couldn't reach the model at {settings.get().agent_base_url}."
+        return f"Couldn't reach {model.name} at {model.base_url}."
     if isinstance(exc, openai.AuthenticationError):
-        return "The model's server refused the API key."
+        return f"The server refused the API key of {model.name}."
     if isinstance(exc, openai.NotFoundError):
-        return f"The model {settings.get().agent_model!r} wasn't found on the server."
+        return f"The server has no model called {model.model!r}."
     if isinstance(exc, openai.APIStatusError):
-        return f"The model's server answered {exc.status_code}: {exc.message}"
-    return f"The model call failed: {exc}"
+        return f"{model.name}: the server answered {exc.status_code}: {exc.message}"
+    return f"{model.name}: the call failed: {exc}"
 
 
-def test_connection() -> tuple[bool, str]:
-    """Ask the configured model for a one-word reply: whether it worked, and a message to show."""
+def test_connection(model: settings.Model) -> tuple[bool, str]:
+    """Ask the model for a one-word reply: whether it worked, and a message to show."""
     try:
-        model_client, model = client()
-        with model_client:
+        with client(model) as model_client:
             response = model_client.chat.completions.create(
-                model=model, messages=[{"role": "user", "content": "Reply with: ok"}], max_tokens=5
+                model=model.model, messages=[{"role": "user", "content": "Reply with: ok"}], max_tokens=5
             )
     except Exception as exc:
-        return False, describe(exc)
-    return True, f"Connected: {model} replied {(response.choices[0].message.content or '').strip()!r}."
+        return False, describe(exc, model)
+    return True, f"Connected: {model.model} replied {(response.choices[0].message.content or '').strip()!r}."
 
 
 # --- Lifecycle: called by the server's lifespan ---
@@ -102,12 +90,27 @@ def new_conversation(conn: sqlite3.Connection) -> int:
         return conn.execute("INSERT INTO conversation DEFAULT VALUES").lastrowid
 
 
+def conversation_agent(conn: sqlite3.Connection, conversation_id: int | None) -> str | None:
+    """The agent a conversation talks to (None: the default agent)."""
+    row = conn.execute("SELECT agent_id FROM conversation WHERE id = ?", (conversation_id,)).fetchone()
+    return row["agent_id"] if row else None
+
+
+def set_conversation_agent(conn: sqlite3.Connection, agent_id: str) -> None:
+    """Switch the current conversation (started if there is none) to an agent, from its next message."""
+    if not any(a.id == agent_id for a in settings.get().agents):
+        raise ValueError("There is no such agent.")
+    conversation_id = latest_conversation(conn) or new_conversation(conn)
+    with conn:
+        conn.execute("UPDATE conversation SET agent_id = ? WHERE id = ?", (agent_id, conversation_id))
+
+
 def _messages(conn: sqlite3.Connection, conversation_id: int | None, tool_results: bool = True) -> list[dict]:
     """The conversation's messages in order, tool calls parsed. tool_results=False leaves out
     the (possibly large) results, which only the model needs."""
     content = "content" if tool_results else "CASE role WHEN 'tool' THEN '' ELSE content END AS content"
     rows = conn.execute(
-        f"SELECT role, {content}, tool_calls, tool_call_id, status, error FROM message "
+        f"SELECT role, {content}, tool_calls, tool_call_id, status, error, agent, model FROM message "
         "WHERE conversation_id = ? ORDER BY id",
         (conversation_id,),
     ).fetchall()
@@ -125,22 +128,23 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
             result.append({"role": "user", "text": m["content"]})
         elif m["role"] == "assistant":
             if not result or result[-1]["role"] != "agent":
-                result.append({"role": "agent", "parts": [], "status": "done", "error": None})
+                result.append({"role": "agent", "parts": [], "status": "done", "error": None, "agent": None, "model": None})
             turn = result[-1]
             if m["content"]:
                 turn["parts"].append({"kind": "text", "text": m["content"]})
             for call in m["tool_calls"]:
                 turn["parts"].append({"kind": "tool", "name": call["name"], "status": tool_status.get(call["id"], "error")})
             turn["status"], turn["error"] = m["status"], m["error"]
+            turn["agent"], turn["model"] = m["agent"] or turn["agent"], m["model"] or turn["model"]
     return result
 
 
-def _history(conn: sqlite3.Connection, conversation_id: int) -> list[dict]:
+def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Agent) -> list[dict]:
     """The conversation as the model gets it. A tool call without a saved result (the app stopped
     in between) is left out, since the API requires every call to have its result."""
     messages = _messages(conn, conversation_id)
     answered = {m["tool_call_id"] for m in messages if m["role"] == "tool"}
-    history = [{"role": "system", "content": SYSTEM_PROMPT}]
+    history = [{"role": "system", "content": system_prompt(agent)}]
     for m in messages:
         if m["role"] == "user":
             history.append({"role": "user", "content": m["content"]})
@@ -198,7 +202,9 @@ async def stream_turn(text: str) -> AsyncIterator[dict]:
 
 
 def run_turn(conversation_id: int, text: str) -> Iterator[dict]:
-    """Send the person's message and yield what happens, for the chat to show as it streams:
+    """Send the person's message to the conversation's agent and yield what happens, for the chat
+    to show as it streams:
+      {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
       {"type": "done"} or {"type": "error", "message": "..."}
@@ -212,26 +218,30 @@ def run_turn(conversation_id: int, text: str) -> Iterator[dict]:
                 (text[:TITLE_LENGTH], conversation_id),
             )
 
+        found = settings.find_agent(conversation_agent(conn, conversation_id))
+        who = (found[0].name, found[1].name) if found else (None, None)
+
         def fail(message: str) -> dict:
             """A turn that ends before any reply: an error message of its own."""
             with conn:
                 conn.execute(
-                    "INSERT INTO message (conversation_id, role, status, error) VALUES (?, 'assistant', 'error', ?)",
-                    (conversation_id, message),
+                    "INSERT INTO message (conversation_id, role, status, error, agent, model) "
+                    "VALUES (?, 'assistant', 'error', ?, ?, ?)",
+                    (conversation_id, message, *who),
                 )
             return {"type": "error", "message": message}
 
-        try:
-            model_client, model = client()
-        except NotConfigured as exc:
-            yield fail(str(exc))
+        if not found:
+            yield fail("Set up an agent first: Settings → Models, then Agents.")
             return
+        agent, model = found
+        yield {"type": "agent", "agent": agent.name, "model": model.name}
 
-        with model_client:
+        with client(model) as model_client:
             for _ in range(MAX_ROUNDS):
                 reply_id = conn.execute(
-                    "INSERT INTO message (conversation_id, role, status) VALUES (?, 'assistant', 'streaming')",
-                    (conversation_id,),
+                    "INSERT INTO message (conversation_id, role, status, agent, model) VALUES (?, 'assistant', 'streaming', ?, ?)",
+                    (conversation_id, *who),
                 ).lastrowid
                 conn.commit()
                 text_parts: list[str] = []
@@ -246,7 +256,8 @@ def run_turn(conversation_id: int, text: str) -> Iterator[dict]:
 
                 try:
                     stream = model_client.chat.completions.create(
-                        model=model, messages=_history(conn, conversation_id), tools=agent_tools.schemas(), stream=True
+                        model=model.model, messages=_history(conn, conversation_id, agent), tools=agent_tools.schemas(),
+                        stream=True,
                     )
                     with stream:
                         for chunk in stream:
@@ -266,8 +277,8 @@ def run_turn(conversation_id: int, text: str) -> Iterator[dict]:
                     finish("stopped")
                     raise
                 except Exception as exc:  # unreachable server, bad key, unknown model…
-                    finish("error", describe(exc))
-                    yield {"type": "error", "message": describe(exc)}
+                    finish("error", describe(exc, model))
+                    yield {"type": "error", "message": describe(exc, model)}
                     return
 
                 tool_calls = list(calls.values())
