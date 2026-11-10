@@ -1,4 +1,5 @@
-"""The agent chat: send a message (the reply streams back), start a new chat, read the conversation."""
+"""The agent chat: send a message (the reply streams back), read the conversation, start a new chat
+or open a past one."""
 
 import json
 import sqlite3
@@ -30,7 +31,20 @@ async def send_message(message: NewMessage) -> StreamingResponse:
 @router.get("/api/agent/messages")
 def conversation(conn: DB) -> list[dict]:
     """The current conversation, as the chat shows it."""
-    return agent.turns(conn, agent.latest_conversation(conn))
+    return agent.turns(conn, agent.current_conversation(conn))
+
+
+class OpenConversation(BaseModel):
+    conversation_id: int | None  # null: a new chat
+
+
+@router.put("/api/agent/current", status_code=204)
+def open_conversation(change: OpenConversation, conn: DB) -> None:
+    """Open a past conversation in the chat, or start a new one."""
+    try:
+        agent.open_conversation(conn, change.conversation_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
 
 
 class ConversationAgent(BaseModel):
@@ -46,7 +60,11 @@ def switch_agent(change: ConversationAgent, conn: DB) -> None:
         raise HTTPException(404, str(exc)) from None
 
 
-@router.post("/agent/new")
-def new_chat(conn: DB, next: Annotated[str, Form()] = "/"):
-    agent.new_conversation(conn)
+@router.post("/agent/open")
+def open_chat(conn: DB, conversation_id: Annotated[int | None, Form()] = None, next: Annotated[str, Form()] = "/"):
+    """New chat (no id), or a past chat. One that's gone (deleted meanwhile) is simply not opened."""
+    try:
+        agent.open_conversation(conn, conversation_id)
+    except ValueError:
+        pass
     return RedirectResponse(safe_next(next), status_code=303)

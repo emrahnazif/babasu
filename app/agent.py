@@ -101,14 +101,29 @@ def stop_all() -> None:
 # --- Conversations ---
 
 
-def latest_conversation(conn: sqlite3.Connection) -> int | None:
-    row = conn.execute("SELECT id FROM conversation ORDER BY id DESC LIMIT 1").fetchone()
-    return row["id"] if row else None
+def _exists(conn: sqlite3.Connection, conversation_id: int) -> bool:
+    return conn.execute("SELECT 1 FROM conversation WHERE id = ?", (conversation_id,)).fetchone() is not None
+
+
+def current_conversation(conn: sqlite3.Connection) -> int | None:
+    """The conversation open in the chat; None for a new chat that hasn't started yet."""
+    conversation_id = settings.get().conversation
+    return conversation_id if conversation_id is not None and _exists(conn, conversation_id) else None
+
+
+def open_conversation(conn: sqlite3.Connection, conversation_id: int | None) -> None:
+    """Show this conversation in the chat; None starts a new chat (made by its first message)."""
+    if conversation_id is not None and not _exists(conn, conversation_id):
+        raise ValueError("There is no such conversation.")
+    settings.update(conversation=conversation_id)
 
 
 def new_conversation(conn: sqlite3.Connection) -> int:
+    """Start a conversation and open it in the chat."""
     with conn:
-        return conn.execute("INSERT INTO conversation DEFAULT VALUES").lastrowid
+        conversation_id = conn.execute("INSERT INTO conversation DEFAULT VALUES").lastrowid
+    settings.update(conversation=conversation_id)
+    return conversation_id
 
 
 def conversation_agent(conn: sqlite3.Connection, conversation_id: int | None) -> str | None:
@@ -121,7 +136,7 @@ def set_conversation_agent(conn: sqlite3.Connection, agent_id: str) -> None:
     """Switch the current conversation (started if there is none) to an agent, from its next message."""
     if not any(a.id == agent_id for a in settings.get().agents):
         raise ValueError("There is no such agent.")
-    conversation_id = latest_conversation(conn) or new_conversation(conn)
+    conversation_id = current_conversation(conn) or new_conversation(conn)
     with conn:
         conn.execute("UPDATE conversation SET agent_id = ? WHERE id = ?", (agent_id, conversation_id))
 
@@ -201,7 +216,7 @@ async def stream_turn(text: str) -> AsyncIterator[dict]:
 
     def run() -> None:
         with closing(db.connect()) as conn:
-            conversation_id = latest_conversation(conn) or new_conversation(conn)
+            conversation_id = current_conversation(conn) or new_conversation(conn)
         turn = run_turn(conversation_id, text)
         try:
             for event in turn:

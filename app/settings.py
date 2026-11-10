@@ -53,6 +53,9 @@ class Settings(BaseModel):
     models: list[Model] = []
     agents: list[Agent] = []
     default_agent: str = ""
+    # The chat open in the sidebar (None: a new chat, started by its first message). Set by the
+    # chat (New chat, history), not by the Settings form.
+    conversation: int | None = None
 
     @model_validator(mode="before")
     @classmethod

@@ -23,7 +23,7 @@
     <div class="app__sidebar-bar">
       <div class="topbar" data-window-drag>
         {% if collapsible %}
-          <form class="topbar__right" method="post" action="/agent/new">
+          <form class="topbar__right" method="post" action="/agent/open">
             <input type="hidden" name="next" value="{{ request.url.path }}">
             <button class="icon-button" type="submit" aria-label="New chat" title="New chat">{{ icon("pencil-square") }}</button>
           </form>

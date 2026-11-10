@@ -38,7 +38,7 @@ def agent_chat() -> dict:
     """Shell data for the chat in the sidebar: the current conversation and its agent, and the
     agents to pick from, rendered with every page."""
     with closing(db.connect()) as conn:
-        conversation_id = agent.latest_conversation(conn)
+        conversation_id = agent.current_conversation(conn)
         turns = agent.turns(conn, conversation_id)
         agent_id = agent.conversation_agent(conn, conversation_id)
     s = settings.get()
