@@ -1,0 +1,117 @@
+/*
+  Command dialog: a search field over a list of results, in the middle of the window
+  (a popover, opened by its popovertarget or a shortcut; behaviour in js/command.js).
+    command__input   the search field
+    command__list    the results, replaced as you type
+    command__group   a heading between results
+    command__item    one result: command__label, and command__meta on the right;
+                     aria-selected marks the one Enter picks, aria-current the one already open
+    command__empty   what shows when nothing matches
+  Fades and grows in and out; display/overlay stay on until the transition ends (allow-discrete).
+*/
+.command {
+  width: min(36rem, calc(100% - 2 * var(--space-4)));
+  max-height: min(28rem, calc(100% - 2 * var(--space-8)));
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-overlay);
+  overflow: hidden;
+  opacity: 0;
+  scale: 0.96;
+  transition: opacity var(--duration-fast) var(--ease-out), scale var(--duration-fast) var(--ease-out),
+    display var(--duration-fast) allow-discrete, overlay var(--duration-fast) allow-discrete;
+}
+
+.command:popover-open {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+  scale: 1;
+}
+
+@starting-style {
+  .command:popover-open { opacity: 0; scale: 0.96; }
+}
+
+.command::backdrop {
+  background: rgb(0 0 0 / 0);
+  transition: background var(--duration-fast) var(--ease-out),
+    display var(--duration-fast) allow-discrete, overlay var(--duration-fast) allow-discrete;
+}
+
+.command:popover-open::backdrop {
+  background: rgb(0 0 0 / 0.3);
+}
+
+@starting-style {
+  .command:popover-open::backdrop { background: rgb(0 0 0 / 0); }
+}
+
+.command__input {
+  padding: var(--space-4);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.command__results {
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.command__group {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.command__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.command__item[aria-selected="true"] {
+  background: var(--color-accent-bg);
+}
+
+.command__item[aria-current="true"] .command__label {
+  font-weight: var(--weight-semibold);
+}
+
+.command__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command__meta {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.command__empty {
+  padding: var(--space-6) var(--space-2);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
