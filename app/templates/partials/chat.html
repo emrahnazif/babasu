@@ -17,6 +17,11 @@
   </div>
 {%- endmacro %}
 
+{# Who wrote an agent turn: the agent's name, with its model on hover. #}
+{% macro by_line(agent, model) -%}
+  <p class="chat__by" title="{{ agent }} · {{ model }}">{{ agent }}</p>
+{%- endmacro %}
+
 {% macro note(kind, text) -%}
   {# kind: "status" (shimmering, while working), "error" or "stopped" #}
   <p class="chat__note chat__note--{{ kind }}">{{ text }}</p>
@@ -27,7 +32,7 @@
   <div class="chat__messages" role="log" aria-label="Messages">
     <div class="chat__empty" {% if chat.turns %}hidden{% endif %}>
       <h2>What should we build?</h2>
-      {% if chat.configured %}
+      {% if chat.agents %}
         <p>Ask the agent about your data, or to build a view.</p>
       {% else %}
         <p>Add a model and an agent in <a href="/settings/models?next={{ request.url.path | urlencode }}">Settings</a> to start.</p>
@@ -44,6 +49,7 @@
           {% endfor %}
           {% if turn.status == "error" %}{{ note("error", turn.error) }}{% endif %}
           {% if turn.status == "stopped" %}{{ note("stopped", "Stopped") }}{% endif %}
+          {% if turn.agent %}{{ by_line(turn.agent, turn.model) }}{% endif %}
         </div>
       {% endif %}
     {% endfor %}
@@ -51,9 +57,19 @@
 
   <form class="chat__form">
     <textarea class="chat__input" name="message" placeholder="Ask the agent…" aria-label="Message"></textarea>
-    <button class="icon-button icon-button--primary chat__send" type="submit" aria-label="Send" title="Send">
-      {{ icon("arrow-up") }}{{ icon("stop") }}
-    </button>
+    <div class="chat__bar">
+      {% if chat.agents %}
+        {# The agent this chat talks to; changing it applies from the next message. #}
+        <select class="chat__agent" name="agent" aria-label="Agent">
+          {% for a in chat.agents %}
+            <option value="{{ a.id }}"{% if a.id == chat.agent_id %} selected{% endif %}>{{ a.name }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
+      <button class="icon-button icon-button--primary chat__send" type="submit" aria-label="Send" title="Send">
+        {{ icon("arrow-up") }}{{ icon("stop") }}
+      </button>
+    </div>
   </form>
 
   <template id="chat-user">{{ user_message("") }}</template>
@@ -63,4 +79,5 @@
   <template id="chat-status">{{ note("status", "Thinking…") }}</template>
   <template id="chat-error">{{ note("error", "") }}</template>
   <template id="chat-stopped">{{ note("stopped", "Stopped") }}</template>
+  <template id="chat-by">{{ by_line("", "") }}</template>
 </div>

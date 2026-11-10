@@ -27,6 +27,7 @@ if (chat) {
     const turn = append(messages, clone("chat-agent"));
     let status = append(turn, clone("chat-status")); // "Thinking…" while the agent works
     let text = null; // the text part being written; a tool call ends it
+    let byLine = null; // who answers; added under everything else when the turn ends
     const tools = new Map();
 
     function clearStatus() {
@@ -55,13 +56,21 @@ if (chat) {
         // After a tool and between rounds, show that the agent is still working.
         if (state !== "running") status = append(turn, clone("chat-status"));
       },
+      by(agent, model) {
+        const line = clone("chat-by");
+        line.textContent = agent;
+        line.title = `${agent} · ${model}`;
+        byLine = line;
+      },
       end(state, message) {
         clearStatus();
         turn.dataset.status = state;
-        if (state === "done") return;
-        const note = clone(state === "error" ? "chat-error" : "chat-stopped");
-        if (message) note.textContent = message;
-        append(turn, note);
+        if (state !== "done") {
+          const note = clone(state === "error" ? "chat-error" : "chat-stopped");
+          if (message) note.textContent = message;
+          append(turn, note);
+        }
+        if (byLine) append(turn, byLine);
       },
     };
   }
@@ -97,7 +106,8 @@ if (chat) {
         buffer = lines.pop();
         for (const line of lines.filter(Boolean)) {
           const event = JSON.parse(line);
-          if (event.type === "text") turn.text(event.delta);
+          if (event.type === "agent") turn.by(event.agent, event.model);
+          else if (event.type === "text") turn.text(event.delta);
           else if (event.type === "tool") turn.tool(event);
           else if (event.type === "done") (turn.end("done"), (ended = true));
           else if (event.type === "error") (turn.end("error", event.message), (ended = true));
@@ -132,6 +142,15 @@ if (chat) {
     if (!text) return;
     input.value = "";
     send(text);
+  });
+
+  // Switch this chat's agent; it answers from the next message on.
+  chat.querySelector(".chat__agent")?.addEventListener("change", (event) => {
+    fetch("/api/agent/conversation", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_id: event.target.value }),
+    });
   });
 
   messages.scrollTop = messages.scrollHeight; // open at the latest message
