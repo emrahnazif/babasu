@@ -18,9 +18,9 @@
   <script type="module" src="{{ url_for('static', path='js/model-test.js') }}"></script>
 </head>
 <body>
-  <div class="app{% if collapsed %} app--collapsed{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
+  <div class="app{% if collapsed %} app--collapsed{% endif %}{% if unified_title_bar %} app--unified-title-bar{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
     <div class="app__sidebar-bar">
-      <div class="topbar">
+      <div class="topbar" data-window-drag>
         {% if collapsible %}
           <form class="topbar__right" method="post" action="/agent/new">
             <input type="hidden" name="next" value="{{ request.url.path }}">
@@ -30,9 +30,9 @@
       </div>
     </div>
 
-    {# The sidebar toggle stays at the top left, open or collapsed. #}
+    {# The sidebar toggle stays at the top left, open or collapsed (next to the macOS traffic lights). #}
     {% if collapsible %}
-      <div class="app__toggle">
+      <div class="app__toggle" data-window-drag>
         <button class="icon-button" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("panel") }}</button>
       </div>
     {% endif %}
@@ -45,7 +45,7 @@
          aria-valuemin="{{ sidebar_min_width }}" aria-valuemax="{{ sidebar_max_width }}" aria-valuenow="{{ s.sidebar_width }}"></div>
 
     <header class="app__main-bar">
-     <div class="topbar">
+     <div class="topbar" data-window-drag>
       <div class="topbar__left">
         <button class="icon-button" type="button" aria-label="Undo" title="Undo">{{ icon("arrow-uturn-left") }}</button>
       </div>

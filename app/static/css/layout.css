@@ -87,3 +87,13 @@
 .app--collapsed .app__resizer {
   display: none;
 }
+
+/* macOS desktop window: the bars are also the title bar (app/desktop.py). The top left leaves
+   room for the traffic lights. */
+.app--unified-title-bar {
+  --header-height: var(--title-bar-height);
+}
+
+.app--unified-title-bar .app__toggle {
+  padding-left: var(--traffic-lights-width);
+}

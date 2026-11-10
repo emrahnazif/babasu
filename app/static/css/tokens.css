@@ -49,6 +49,9 @@
 
   /* Layout (the sidebar width comes from settings, set on .app) */
   --header-height: 48px;
+  /* macOS desktop window: the bars are the title bar (app/desktop.py, layout.css) */
+  --title-bar-height: 52px;     /* the standard height, with the traffic lights centred */
+  --traffic-lights-width: 84px; /* from the window's left edge, plus a gap */
 }
 
 :root[data-theme="light"] { color-scheme: light; }

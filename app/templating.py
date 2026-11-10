@@ -48,3 +48,4 @@ templates.env.globals["jobs_overview"] = jobs_overview
 templates.env.globals["image_formats"] = media.FORMATS_TEXT
 templates.env.globals["image_suffixes"] = ",".join(sorted(media.SUFFIXES))
 templates.env.globals["agent_chat"] = agent_chat
+templates.env.globals["unified_title_bar"] = False  # macOS desktop window: app/desktop.py
