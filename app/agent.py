@@ -40,26 +40,47 @@ def system_prompt(agent: settings.Agent) -> str:
 def describe(exc: Exception, model: settings.Model) -> str:
     """A one-line explanation of a failed model call, for the chat and the settings pages."""
     if isinstance(exc, openai.APIConnectionError):
-        return f"Couldn't reach {model.name} at {model.base_url}."
+        return f"Couldn't reach {model.name} at {model.base_url}. Is the server running?"
     if isinstance(exc, openai.AuthenticationError):
         return f"The server refused the API key of {model.name}."
     if isinstance(exc, openai.NotFoundError):
-        return f"The server has no model called {model.model!r}."
+        # A wrong address and an unknown model both come back as 404.
+        return (f"Nothing found at {model.base_url} for {model.model!r}: check the server URL and the model name. "
+                f"{URL_HINT}")
     if isinstance(exc, openai.APIStatusError):
         return f"{model.name}: the server answered {exc.status_code}: {exc.message}"
     return f"{model.name}: the call failed: {exc}"
 
 
+URL_HINT = "The URL is the server's OpenAI-compatible address, which usually ends in /v1 (Ollama: http://localhost:11434/v1)."
+
+
 def test_connection(model: settings.Model) -> tuple[bool, str]:
-    """Ask the model for a one-word reply: whether it worked, and a message to show."""
+    """Check the server, the model name and a one-word reply: whether it worked, and a message to show.
+
+    The server's model list (if it has one) tells a wrong address apart from a wrong model name.
+    """
+    available: list[str] | None = None
     try:
         with client(model) as model_client:
+            try:
+                available = [m.id for m in model_client.models.list()]
+            except openai.APIStatusError:
+                available = None  # not every server lists its models; the reply below still tells
+            if available and model.model not in available:
+                return False, f"The server has no model {model.model!r}. It has: {', '.join(available[:15])}."
             response = model_client.chat.completions.create(
                 model=model.model, messages=[{"role": "user", "content": "Reply with: ok"}], max_tokens=5
             )
+    except openai.NotFoundError as exc:
+        if available is None:  # neither a model list nor a reply: the address is wrong
+            return False, f"No OpenAI-compatible API at {model.base_url}. {URL_HINT}"
+        return False, describe(exc, model)
     except Exception as exc:
         return False, describe(exc, model)
-    return True, f"Connected: {model.model} replied {(response.choices[0].message.content or '').strip()!r}."
+    reply = (response.choices[0].message.content or "").strip()
+    # A reasoning model may spend the few tokens allowed here thinking, and reply with nothing.
+    return True, f"Connected: {model.model} replied {reply!r}." if reply else f"Connected: {model.model} answered."
 
 
 # --- Lifecycle: called by the server's lifespan ---
