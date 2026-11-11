@@ -84,13 +84,19 @@ main > :first-child { margin-top: 0; }
 
 .dropzone ul:empty { display: none; }
 
-/* Responsive grid of equal columns (cards, images); as many as fit. */
+/* Responsive grid of equal columns (cards, images); as many as fit. Variant: "grid wide" for
+   bigger cards (e.g. with a cover), the same height across a row. */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
   align-items: start;
   gap: var(--space-4);
   margin-top: var(--space-6);
+}
+
+.grid.wide {
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  align-items: stretch;  /* cards in a row share a height */
 }
 
 /* A vertical list of full-width items (e.g. cards in Settings), one under the other. */
@@ -100,9 +106,12 @@ main > :first-child { margin-top: 0; }
   margin-top: var(--space-6);
 }
 
-/* A bordered box; works as a link (<a class="card">) too. */
+/* A bordered box; works as a link (<a class="card">) too. Optional parts, in order: a .cover,
+   a <header> (title with a muted note at its right), text, .actions. */
 .card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);  /* long one-line text (.clip) cuts instead of widening it */
+  align-content: start;
   gap: var(--space-1);
   padding: var(--space-4);
   border: 1px solid var(--color-border);
@@ -113,7 +122,29 @@ main > :first-child { margin-top: 0; }
 
 a.card:hover { background: var(--color-accent-bg); }
 
-.card > h2 { font-size: var(--text-md); }
+.card > h2,
+.card > header > h2 {
+  min-width: 0;
+  font-size: var(--text-md);
+}
+
+.card > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.card > header > .muted {
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+}
+
+/* A cover at the top runs to the card's edges. */
+.card > .cover {
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) var(--space-2);
+  border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+}
 
 .card > p { font-size: var(--text-sm); }
 
@@ -139,6 +170,41 @@ a.card:hover { background: var(--color-accent-bg); }
 .thumb > figcaption {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Up to four images filling a 4:3 tile, 2×2: one fills it, two sit side by side, of three the
+   first takes the left half. Without images, put a short <p> in it. */
+.cover {
+  display: grid;
+  grid-template: repeat(2, minmax(0, 1fr)) / repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-bg);
+}
+
+.cover > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover > img:only-child { grid-area: span 2 / span 2; }
+.cover > img:first-child:nth-last-child(-n + 3),
+.cover > img:nth-child(2):last-child { grid-row: span 2; }
+
+.cover > p {
+  grid-area: span 2 / span 2;
+  place-self: center;
+  font-size: var(--text-sm);
+}
+
+/* One line of text, cut with "…" when it doesn't fit (put the full text in title). */
+.clip {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
