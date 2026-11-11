@@ -1,13 +1,15 @@
 /*
   Top bar with left, center and right slots.
 
-  The center is exactly centred in the bar: the two side tracks are both
-  minmax(0, 1fr), so they are always equal width whatever they contain.
+  The center is centred in the bar: the two side tracks share the free space
+  equally (1fr). The right one (actions) is at least as wide as its content,
+  so it's never covered; the left one (where you are, e.g. a breadcrumb)
+  shrinks instead, and in a narrow bar the center moves left.
   Each slot is optional; it keeps its column even when the others are absent.
 */
 .topbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   gap: var(--space-4);
   padding: 0 var(--space-4);
@@ -40,4 +42,12 @@
 .topbar__link--active {
   color: var(--color-text);
   background: var(--color-accent-bg);
+}
+
+/* A thin line between groups in a slot, e.g. a page's actions and the app-wide ones. */
+.topbar__divider {
+  width: 1px;
+  height: 1.25rem;
+  margin: 0 var(--space-1);
+  background: var(--color-border);
 }
