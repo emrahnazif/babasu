@@ -1,0 +1,75 @@
+/*
+  Menu that drops down from the button that opens it (popovertarget, no JS).
+  Esc or a click outside closes it. The popover is anchored to the button that
+  opened it, so it opens under it (above when there's no room below).
+  Items are links or buttons; the current one
+  (aria-current="page") shows its check icon.
+    menu             the popover
+    menu__item       a link or button, an optional check icon first
+    menu__separator  a line between groups
+*/
+.menu {
+  inset: auto;
+  position-area: block-end span-inline-end;
+  position-try-fallbacks: flip-block;
+  margin: var(--space-1) 0;
+  min-width: 11rem;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-overlay);
+  opacity: 0;
+  translate: 0 calc(-1 * var(--space-1));
+  transition: opacity var(--duration-fast) var(--ease-out), translate var(--duration-fast) var(--ease-out),
+    display var(--duration-fast) allow-discrete, overlay var(--duration-fast) allow-discrete;
+}
+
+.menu:popover-open {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+  translate: 0 0;
+}
+
+@starting-style {
+  .menu:popover-open { opacity: 0; translate: 0 calc(-1 * var(--space-1)); }
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.menu__item:hover,
+.menu__item:focus-visible {
+  background: var(--color-accent-bg);
+  outline: none;
+}
+
+.menu__item svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  visibility: hidden;
+}
+
+.menu__item[aria-current="page"] svg { visibility: visible; }
+
+.menu__separator {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--color-border);
+}
