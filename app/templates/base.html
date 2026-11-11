@@ -60,7 +60,7 @@
         {# Where you are: the section (a menu to switch to another), then the page's `crumbs`,
            (label, href) pairs set at the top of its template; the last one is this page. #}
         <nav class="breadcrumb" aria-label="Breadcrumb">
-          <button class="breadcrumb__switch" type="button" popovertarget="sections"
+          <button class="topbar__button breadcrumb__switch" type="button" popovertarget="sections"
                   aria-label="Go to section" title="Go to section">{{ here.label if here else app_name }}{{ icon("chevron-up-down") }}</button>
           {% for label, href in trail %}
             <span class="breadcrumb__separator" aria-hidden="true">›</span>
@@ -96,6 +96,11 @@
       </div>
      </div>
     </header>
+
+    {# A page's own toolbar under the main bar (filters, search, counts): {% block toolbar %},
+       filled with .topbar slots. Pages without one don't get the row. #}
+    {% set toolbar %}{% block toolbar %}{% endblock %}{% endset %}
+    {% if toolbar | trim %}<div class="app__main-toolbar"><div class="topbar">{{ toolbar }}</div></div>{% endif %}
 
     <main class="app__main">
       {% block content %}{% endblock %}

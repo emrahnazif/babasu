@@ -1,18 +1,22 @@
 /*
   Top bar with left, center and right slots.
 
-  The center is centred in the bar: the two side tracks share the free space
-  equally (1fr). The right one (actions) is at least as wide as its content,
-  so it's never covered; the left one (where you are, e.g. a breadcrumb)
-  shrinks instead, and in a narrow bar the center moves left.
+  The right slot (actions) is always as wide as its content, so it's never
+  covered; the left one (where you are, e.g. a breadcrumb) takes the rest and
+  shrinks. With a center, it's centred: the side tracks share the free space
+  equally (1fr), and in a narrow bar the center moves left.
   Each slot is optional; it keeps its column even when the others are absent.
 */
 .topbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto max-content;
   align-items: center;
   gap: var(--space-4);
   padding: 0 var(--space-4);
+}
+
+.topbar:has(> .topbar__center) {
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
 }
 
 .topbar__left,
@@ -23,11 +27,39 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
+  max-width: 100%;  /* never wider than its column, so long content (a breadcrumb) shortens */
 }
+
+/* A slot whose items go onto more lines when they don't fit (e.g. many filter chips). */
+.topbar__left--wrap { flex-wrap: wrap; }
 
 .topbar__left   { grid-column: 1; justify-self: start; }
 .topbar__center { grid-column: 2; }
 .topbar__right  { grid-column: 3; justify-self: end; }
+
+/* A button with text in a bar (e.g. "Filter"), an icon before or after it; quiet until hovered. */
+.topbar__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font: inherit;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.topbar__button:hover { background: var(--color-accent-bg); }
+
+.topbar__button svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-text-muted);
+}
 
 /* A thin line between groups in a slot, e.g. a page's actions and the app-wide ones. */
 .topbar__divider {

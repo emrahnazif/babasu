@@ -15,29 +15,8 @@
   font-weight: var(--weight-medium);
 }
 
-.breadcrumb__switch {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex-shrink: 0;
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  font: inherit;
-  color: var(--color-text);
-  cursor: pointer;
-}
-
-.breadcrumb__switch:hover {
-  background: var(--color-accent-bg);
-}
-
-.breadcrumb__switch svg {
-  width: 1rem;
-  height: 1rem;
-  color: var(--color-text-muted);
-}
+/* Looks like the bar's other text buttons (with .topbar__button); here it never shrinks. */
+.breadcrumb__switch { flex-shrink: 0; }
 
 .breadcrumb__separator {
   flex-shrink: 0;

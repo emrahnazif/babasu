@@ -2,17 +2,19 @@
   App shell (ours only, BEM names). Two full-height columns:
     sidebar column: its own top bar + sidebar content (agent chat by default,
                     or a page's own menu, e.g. Settings)
-    main column:    the navigation bar + the main area
-  Both bars sit in the same grid row, so they always line up.
+    main column:    the navigation bar + an optional page toolbar + the main area
+  Both bars sit in the same grid row, so they always line up. The toolbar row is
+  empty (zero height) unless a page fills it.
   The window never scrolls; the sidebar and main each scroll vertically on their own.
 */
 .app {
   height: 100%;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  grid-template-rows: var(--header-height) minmax(0, 1fr);
+  grid-template-rows: var(--header-height) auto minmax(0, 1fr);
   grid-template-areas:
     "sidebar-bar main-bar"
+    "sidebar     main-toolbar"
     "sidebar     main";
 }
 
@@ -20,10 +22,12 @@
 .app__sidebar-bar { grid-area: sidebar-bar; display: grid; }
 .app__main-bar    { grid-area: main-bar; display: grid; }
 .app__sidebar     { grid-area: sidebar; }
+.app__main-toolbar { grid-area: main-toolbar; display: grid; padding: var(--space-2); font-size: var(--text-sm); }
 .app__main        { grid-area: main; }
 
 .app__sidebar-bar,
 .app__main-bar,
+.app__main-toolbar,
 .app--collapsed .app__toggle {
   border-bottom: 1px solid var(--color-border);
 }
@@ -99,8 +103,9 @@
 .app--collapsed {
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas:
-    "sidebar-bar main-bar"
-    "main        main";
+    "sidebar-bar  main-bar"
+    "main-toolbar main-toolbar"
+    "main         main";
 }
 
 .app--collapsed .app__sidebar-bar,
