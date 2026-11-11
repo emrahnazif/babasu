@@ -1,12 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Projects · {{ app_name }}{% endblock %}
+
+{% block actions %}
+  <button class="icon-button" type="button" popovertarget="new-project" aria-label="New project" title="New project">{{ icon("plus") }}</button>
+{% endblock %}
 
 {% block content %}
-  <h1>Projects</h1>
-  <div class="actions">
-    <button class="button" type="button" popovertarget="new-project">New project</button>
-  </div>
-
   <div id="new-project" class="dialog" popover aria-labelledby="new-project-title">
     <form method="post" action="/projects">
       <h2 id="new-project-title">New project</h2>

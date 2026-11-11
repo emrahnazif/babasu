@@ -1,13 +1,12 @@
 {% extends "base.html" %}
-{% block title %}{{ project.name }} · {{ app_name }}{% endblock %}
+{% set crumbs = [(project.name, None)] %}
+
+{% block actions %}
+  <button class="icon-button" type="button" popovertarget="add-images" aria-label="Add images" title="Add images">{{ icon("plus") }}</button>
+{% endblock %}
 
 {% block content %}
-  <h1>{{ project.name }}</h1>
   {% if project.description %}<p class="muted">{{ project.description }}</p>{% endif %}
-
-  <div class="actions">
-    <button class="button" type="button" popovertarget="add-images">Add images</button>
-  </div>
 
   <div id="add-images" class="dialog" popover aria-labelledby="add-images-title">
     <form method="post" action="/projects/{{ project.id }}/import" data-background-form>

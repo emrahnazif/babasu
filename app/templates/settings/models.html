@@ -42,14 +42,14 @@
   </div>
 {% endmacro %}
 
+{% block actions %}
+  <button class="icon-button" type="button" popovertarget="add-model" aria-label="Add model" title="Add model">{{ icon("plus") }}</button>
+{% endblock %}
+
 {% block content %}
-  <h1>Models</h1>
   <p class="muted">Connections to the LLMs your agents run on: any OpenAI-compatible chat API, such as a local server (Ollama, LM Studio, llama.cpp), OpenAI, OpenRouter or Anthropic.</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
-  <div class="actions">
-    <button class="button" type="button" popovertarget="add-model">Add model</button>
-  </div>
   {{ model_dialog("add-model", "Add model", "/settings/models") }}
 
   <datalist id="model-servers">

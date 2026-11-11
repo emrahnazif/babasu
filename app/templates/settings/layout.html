@@ -11,7 +11,7 @@
 {# The sidebar is this page's menu, so it never collapses here. #}
 {% set sidebar_collapsible = false %}
 
-{% block title %}{{ section.label }} · Settings · {{ app_name }}{% endblock %}
+{% set crumbs = [("Settings", None), (section.label, None)] %}
 
 {% block sidebar %}
   <h2 class="sidebar__title">Settings</h2>
@@ -24,7 +24,6 @@
 
 {% block content %}
   <form method="post">
-    <h1>{{ section.label }}</h1>
     <input type="hidden" name="next" value="{{ next }}">
 
     <div class="fields">

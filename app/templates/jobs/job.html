@@ -1,8 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ job.title }} · Jobs · {{ app_name }}{% endblock %}
+{% set crumbs = [("Jobs", None), (job.title, None)] %}
 
 {% block content %}
-  <h1>{{ job.title }}</h1>
   <p class="muted">
     {{ job.status | capitalize }}{% if job.project_name %} · {{ job.project_name }}{% endif %}
     · started {{ job.started_at or "—" }}{% if job.finished_at %} · finished {{ job.finished_at }}{% endif %}
