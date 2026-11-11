@@ -2,6 +2,7 @@ import re
 from contextlib import closing
 from datetime import UTC, datetime
 from functools import cache
+from urllib.parse import urlencode
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
@@ -85,6 +86,13 @@ def ago(timestamp: str) -> str:
     return f"{local:%b} {local.day}"
 
 
+def query(params: dict, **changes) -> str:
+    """A link's query string: params with changes, leaving out empty values (None, "").
+    query({"q": "night"}, show="labelled") -> "?q=night&show=labelled"; query({}) -> "?"."""
+    kept = {k: v for k, v in (params | changes).items() if v not in (None, "")}
+    return "?" + urlencode(kept)
+
+
 def plural(n: int, word: str) -> str:
     """A count with its noun: "1 image", "1,240 images", "3 classes"."""
     return f"{n:,} {word if n == 1 else word + ('es' if word.endswith('s') else 's')}"
@@ -113,6 +121,7 @@ templates.env.globals["app_name"] = config.APP_NAME
 templates.env.globals["nav"] = config.NAV
 templates.env.globals["section_of"] = section_of
 templates.env.globals["under"] = under
+templates.env.globals["query"] = query
 templates.env.globals["icon"] = icon
 templates.env.globals["logo"] = logo
 templates.env.globals["settings"] = settings.get

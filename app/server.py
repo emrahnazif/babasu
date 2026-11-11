@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app import agent, config, db, jobs
+from app.filters import FilterError
 from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
 from app.routes import jobs as jobs_routes
@@ -36,6 +37,7 @@ app.include_router(settings.router)
 app.include_router(jobs_routes.router)
 app.include_router(agent_routes.router)
 app.include_router(agents_routes.router)
+app.add_exception_handler(FilterError, projects.filter_error)
 
 
 def start_server() -> tuple[uvicorn.Server, threading.Thread, str]:

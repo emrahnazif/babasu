@@ -5,6 +5,7 @@ Each image also gets a small WebP thumbnail next to it (<sha256>.thumb.webp) for
 
 import hashlib
 import io
+import json
 import sqlite3
 from pathlib import Path
 
@@ -77,6 +78,22 @@ def store(conn: sqlite3.Connection, data: bytes) -> int:
         "INSERT INTO media (sha256, ext, width, height) VALUES (?, ?, ?, ?)",
         (sha256, ext, width, height),
     ).lastrowid
+
+
+def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> list[Path]:
+    """Of these media, delete the rows no project uses any more, and return their files (with
+    thumbnails). The caller commits first, then deletes the files, so a failed commit never
+    loses a file that's still in use."""
+    if not media_ids:
+        return []
+    rows = conn.execute(
+        """DELETE FROM media WHERE id IN (SELECT value FROM json_each(?))
+           AND NOT EXISTS (SELECT 1 FROM project_media WHERE media_id = media.id) RETURNING sha256, ext""",
+        (json.dumps(media_ids),),
+    ).fetchall()
+    return [config.MEDIA_DIR / _relpath(sha, ext) for sha, ext in rows] + [
+        config.MEDIA_DIR / _relpath(sha, "thumb.webp") for sha, _ in rows
+    ]
 
 
 def _thumbnail(image: Image.Image) -> bytes:
