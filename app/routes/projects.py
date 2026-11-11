@@ -160,6 +160,16 @@ def _create(conn: sqlite3.Connection, new: NewProject) -> int:
         return projects.create(conn, new.name, new.description)
 
 
+def _set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[projects.Annotation]) -> None:
+    try:
+        with _writing(conn, project_id):
+            found = projects.set_annotations(conn, project_id, media_id, annotations)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+    if not found:
+        raise HTTPException(404, "Image not found")
+
+
 def _start_import(conn: sqlite3.Connection, project_id: int, request: ImageImport) -> int:
     """Start an import job; the paths are checked by the job, so a bad path shows up in its result."""
     _exists(conn, project_id)
@@ -276,6 +286,12 @@ def api_delete_project(project_id: int, conn: DB) -> None:
 def api_image(project_id: int, media_id: int, conn: DB, where: Where = "") -> dict:
     """One image with its annotations, and its previous and next among the images matching ?where=."""
     return _image(conn, project_id, media_id, Filter.parse(where))
+
+
+@router.put("/api/projects/{project_id}/images/{media_id}/annotations", status_code=204)
+def api_set_annotations(project_id: int, media_id: int, annotations: list[projects.Annotation], conn: DB) -> None:
+    """Replaces the image's annotations (those of active classes, as the image's read returns them)."""
+    _set_annotations(conn, project_id, media_id, annotations)
 
 
 @router.post("/api/projects/{project_id}/import", status_code=202)

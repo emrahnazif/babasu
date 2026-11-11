@@ -385,6 +385,31 @@ def add_image(
     return added
 
 
+def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[Annotation]) -> bool:
+    """Replace an image's annotations with these, as the editor and the agent see them: of active
+    classes. Those of inactive classes are shown nowhere, so they're kept as they are. Returns
+    False if the image isn't in the project. Caller commits.
+
+    Raises FrozenError, or ValueError for a class the project doesn't have (or has deleted)."""
+    project = _editable(conn, project_id)
+    active = {c["id"] for c in _project(project)["classes"]}
+    unknown = {a.class_id for a in annotations} - active
+    if unknown:
+        raise ValueError(f"unknown class ids: {sorted(unknown)}")
+    row = conn.execute(
+        "SELECT annotations FROM project_media WHERE project_id = ? AND media_id = ?", (project_id, media_id)
+    ).fetchone()
+    if row is None:
+        return False
+    kept = [a for a in json.loads(row["annotations"]) if a["class_id"] not in active]
+    conn.execute(
+        f"UPDATE project_media SET annotations = ?, updated_at = {db.NOW} WHERE project_id = ? AND media_id = ?",
+        (json.dumps([a.model_dump(exclude_none=True) for a in annotations] + kept), project_id, media_id),
+    )
+    _touch(conn, project_id)
+    return True
+
+
 def _editable(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row:
     """The project row, for a write; raises FrozenError if it's frozen."""
     row = conn.execute("SELECT frozen_at, classes FROM project WHERE id = ?", (project_id,)).fetchone()
