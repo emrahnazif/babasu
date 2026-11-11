@@ -4,6 +4,10 @@
   document on one screen; it is what the agent writes with.
 */
 
+/* Blocks below space themselves from what's above them (margin-top), so the first one on a
+   page starts at the top. */
+main > :first-child { margin-top: 0; }
+
 /* Centres its content on both axes, filling the main area. */
 .center {
   min-height: 100%;

@@ -43,7 +43,7 @@
 }
 
 .app__main {
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-6);
 }
 
 /* Drag handle on the sidebar's right border (behaviour in js/sidebar.js): a 6px strip to grab,
