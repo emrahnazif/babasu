@@ -87,6 +87,7 @@ if (chat) {
     chat.classList.add("chat--busy");
     messages.setAttribute("aria-busy", "true");
     let ended = false;
+    let open = null; // a page the agent wants to show; opened when the reply is done
     try {
       const response = await fetch("/api/agent/messages", {
         method: "POST",
@@ -110,11 +111,13 @@ if (chat) {
           if (event.type === "agent") turn.by(event.agent, event.model);
           else if (event.type === "text") turn.text(event.delta);
           else if (event.type === "tool") turn.tool(event);
+          else if (event.type === "open") open = event.url;
           else if (event.type === "done") (turn.end("done"), (ended = true));
           else if (event.type === "error") (turn.end("error", event.message), (ended = true));
         }
       }
       if (!ended) turn.end("error", "The reply ended unexpectedly.");
+      if (open) location.assign(open); // the chat is saved, so it's there on the new page
     } catch (error) {
       if (error.name === "AbortError") turn.end("stopped");
       else turn.end("error", error.message || "The app didn't answer.");

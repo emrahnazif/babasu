@@ -285,6 +285,7 @@ def run_turn(conversation_id: int, text: str, page: str | None = None, page_titl
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
+      {"type": "open", "url": "/projects/3?where=car"}      a page to show once the reply is done
       {"type": "done"} or {"type": "error", "message": "..."}
     If the generator is closed early (a stop), the reply so far is saved as stopped.
     """
@@ -380,5 +381,8 @@ def run_turn(conversation_id: int, text: str, page: str | None = None, page_titl
                             (conversation_id, result, call["id"], status, error),
                         )
                     yield {"type": "tool", "id": call["id"], "name": call["name"], "status": status}
+                    found = agent_tools.TOOLS.get(call["name"])
+                    if status == "done" and found and found.opens_page:
+                        yield {"type": "open", "url": json.loads(result)["open"]}
 
         yield fail(f"Stopped after {MAX_ROUNDS} rounds of tool calls without an answer.")
