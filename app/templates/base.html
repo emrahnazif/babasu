@@ -56,8 +56,6 @@
     <header class="app__main-bar">
      <div class="topbar" data-window-drag>
       <div class="topbar__left">
-        <button class="icon-button" type="button" aria-label="Undo" title="Undo">{{ icon("arrow-uturn-left") }}</button>
-
         {# Where you are: the section (a menu to switch to another), then the page's `crumbs`,
            (label, href) pairs set at the top of its template; the last one is this page. #}
         <nav class="breadcrumb" aria-label="Breadcrumb">
@@ -73,8 +71,11 @@
           {% endfor %}
         </nav>
         <div id="sections" class="menu" popover>
-          {% for item in nav %}
-            <a class="menu__item" href="{{ item.href }}"{% if item == here %} aria-current="page"{% endif %}>{{ icon("check") }}{{ item.label }}</a>
+          {% for group in nav %}
+            {% if not loop.first %}<div class="menu__separator"></div>{% endif %}
+            {% for item in group %}
+              <a class="menu__item" href="{{ item.href }}"{% if item == here %} aria-current="page"{% endif %}>{{ icon("check") }}{{ item.label }}</a>
+            {% endfor %}
           {% endfor %}
         </div>
       </div>
@@ -83,23 +84,11 @@
         {# The page's own actions, before the app-wide icons. #}
         {% set actions %}{% block actions %}{% endblock %}{% endset %}
         {% if actions | trim %}{{ actions }}<span class="topbar__divider" aria-hidden="true"></span>{% endif %}
-        <a class="icon-button" href="/library"{% if under(request.url.path, "/library") %} aria-current="page"{% endif %} aria-label="Library" title="Library">{{ icon("circle-stack") }}</a>
         {% set job_overview = jobs_overview() %}
         <button class="icon-button jobs-button" type="button" popovertarget="jobs-drawer" aria-label="Jobs" title="Jobs">
           {{ icon("queue-list") }}
           <span class="jobs-button__count" id="jobs-count" {% if not job_overview.active %}hidden{% endif %}>{{ job_overview.active }}</span>
         </button>
-        <button class="icon-button" type="button" popovertarget="confirm-delete" aria-label="Delete" title="Delete">{{ icon("trash") }}</button>
-
-        {# Test alert dialog: Cancel closes, Continue does nothing yet. #}
-        <div id="confirm-delete" class="dialog" popover role="alertdialog" aria-labelledby="confirm-delete-title" aria-describedby="confirm-delete-text">
-          <h2 id="confirm-delete-title">Are you absolutely sure?</h2>
-          <p id="confirm-delete-text" class="muted">This action cannot be undone. This will permanently delete the item.</p>
-          <div class="actions">
-            <button class="button secondary" type="button" popovertarget="confirm-delete" popovertargetaction="hide" autofocus>Cancel</button>
-            <button class="button destructive" type="button">Continue</button>
-          </div>
-        </div>
         {# A page that has its own return target (e.g. settings) passes `next`; keep it. #}
         {% set back = next if next is defined else request.url.path %}
         <a class="icon-button" href="/settings/general?next={{ back | urlencode }}" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</a>

@@ -43,7 +43,7 @@ def under(path: str, href: str) -> bool:
 
 def section_of(path: str) -> dict | None:
     """The app section (config.NAV) a path is in, if any."""
-    return next((item for item in config.NAV if under(path, item["href"])), None)
+    return next((item for group in config.NAV for item in group if under(path, item["href"])), None)
 
 
 def page_name(title: str) -> str:

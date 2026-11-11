@@ -13,10 +13,9 @@ def home():
     return RedirectResponse("/projects")
 
 
-# Pages that aren't built yet: each shows a short note. A section's name is already in the
-# breadcrumb (its switcher); a page outside the sections passes its own crumbs.
-def _coming(request: Request, title: str, crumbs: list | None = None):
-    return templates.TemplateResponse(request, "pages/coming.html", {"title": title, "crumbs": crumbs or []})
+# Sections that aren't built yet: each shows a short note (its name is the breadcrumb's switcher).
+def _coming(request: Request, title: str):
+    return templates.TemplateResponse(request, "pages/coming.html", {"title": title})
 
 
 @router.get("/workflows", response_class=HTMLResponse)
@@ -34,6 +33,6 @@ def models(request: Request):
     return _coming(request, "Models")
 
 
-@router.get("/library", response_class=HTMLResponse)
-def library(request: Request):
-    return _coming(request, "Library", [("Library", None)])
+@router.get("/data-lake", response_class=HTMLResponse)
+def data_lake(request: Request):
+    return _coming(request, "Data lake")

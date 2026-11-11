@@ -11,12 +11,16 @@ WINDOW_MIN_SIZE = (900, 600)
 
 HOST = "127.0.0.1"
 
-# The app's sections, as pills in the middle of the top bar.
+# The app's sections, in the menu of the breadcrumb's first item; each inner list is a group,
+# with a line between groups.
 NAV = [
-    {"label": "Projects", "href": "/projects"},
-    {"label": "Workflows", "href": "/workflows"},
-    {"label": "Studio", "href": "/studio"},
-    {"label": "Models", "href": "/models"},
+    [
+        {"label": "Projects", "href": "/projects"},
+        {"label": "Workflows", "href": "/workflows"},
+        {"label": "Studio", "href": "/studio"},
+        {"label": "Models", "href": "/models"},
+    ],
+    [{"label": "Data lake", "href": "/data-lake"}],
 ]
 
 # Works in dev and in PyInstaller builds (bundled modules get __file__ under _MEIPASS).

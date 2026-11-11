@@ -2,7 +2,6 @@
   Icon-only button for the shell; the label goes in aria-label and title.
     icon-button            transparent and muted (top bars)
     icon-button--primary   solid (e.g. the chat's send button)
-  A link to the current page (aria-current="page") stays highlighted.
 */
 .icon-button {
   display: inline-grid;
@@ -17,10 +16,15 @@
   cursor: pointer;
 }
 
-.icon-button:hover,
-.icon-button[aria-current="page"] {
+.icon-button:hover {
   color: var(--color-text);
   background: var(--color-accent-bg);
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  background: transparent;
+  cursor: default;
 }
 
 .icon-button svg {
