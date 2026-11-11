@@ -1,0 +1,30 @@
+{# One image of a project, large, with its annotations. ← → go through the images the project
+   page was showing (its filter comes along in the URL). The annotation editor will live here. #}
+{% extends "base.html" %}
+{% from "projects/macros.html" import annotated %}
+{% set project, params = image.project, {"where": image.filter} %}
+{% set crumbs = [(project.name, "/projects/" ~ project.id ~ query(params)), (image.filename, None)] %}
+
+{% macro step(media_id, label, icon_name, key) %}
+  {% if media_id %}
+    <a class="icon-button" href="/projects/{{ project.id }}/images/{{ media_id }}{{ query(params) }}"
+       data-shortcut="{{ key }}" aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</a>
+  {% else %}
+    <button class="icon-button" type="button" disabled aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</button>
+  {% endif %}
+{% endmacro %}
+
+{% block toolbar %}
+  <div class="topbar__left">
+    {{ step(image.previous_id, "Previous image", "chevron-left", "arrowleft") }}
+    <span>{{ image.position }} of {{ image.match_count }}</span>
+    {{ step(image.next_id, "Next image", "chevron-right", "arrowright") }}
+  </div>
+  <div class="topbar__right">
+    <span class="muted">{{ image.width }} × {{ image.height }} · {{ image.annotations | length | plural("annotation") }}</span>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <figure class="stage">{{ annotated(image, project.classes, image.url) }}</figure>
+{% endblock %}

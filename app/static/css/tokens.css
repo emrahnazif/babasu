@@ -15,6 +15,8 @@
   --color-destructive: light-dark(#dc2626, #b91c1c);
   --color-destructive-text: #ffffff;
   --color-highlight: light-dark(#0ea5e9, #38bdf8);  /* sky: something you can grab or that's active */
+  --color-scrim: rgb(0 0 0 / 0.55);                  /* behind text laid over an image */
+  --color-scrim-text: #ffffff;
 
   /* Typography */
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -42,6 +44,7 @@
   --radius-xl: 16px;
   --radius-full: 9999px;
   --shadow-overlay: 0 10px 30px rgb(0 0 0 / 0.15);  /* dialogs, toasts */
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.08);     /* the current item of a segmented control */
 
   /* Motion: components animate themselves with these (reduced motion turns it off, reset.css) */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);

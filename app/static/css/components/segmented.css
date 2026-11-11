@@ -1,0 +1,58 @@
+/*
+  A row of choices in a rounded track, one of them current (aria-current="page"), like a
+  segmented control. The items are links (e.g. filters in the URL) or buttons, with text, an
+  icon or both (an icon alone needs aria-label and title); or, in a form, <label>s each holding
+  a radio, the checked one current.
+    segmented        the track
+    segmented__item  one choice
+*/
+.segmented {
+  display: flex;
+  width: fit-content;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-bg);
+}
+
+.segmented__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.segmented__item svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.segmented__item:hover {
+  color: var(--color-text);
+}
+
+.segmented__item > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented__item:has(> input) { cursor: pointer; }
+
+.segmented__item:has(> input:focus-visible) {
+  outline: 2px solid var(--color-highlight);
+  outline-offset: 1px;
+}
+
+.segmented__item:has(> input:checked),
+.segmented__item[aria-current="page"] {
+  color: var(--color-text);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-raised);
+}

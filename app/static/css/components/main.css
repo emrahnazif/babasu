@@ -4,9 +4,9 @@
   document on one screen; it is what the agent writes with.
 */
 
-/* Blocks below space themselves from what's above them (margin-top), so the first one on a
-   page starts at the top. */
-main > :first-child { margin-top: 0; }
+/* Blocks space themselves from what's above them (margin-top), so one that's first in its
+   parent (at any depth, e.g. inside a refresh region) has nothing to space from. */
+:is(.grid, .stack, .fields, .actions):first-child { margin-top: 0; }
 
 /* Centres its content on both axes, filling the main area. */
 .center {
@@ -32,6 +32,18 @@ main > :first-child { margin-top: 0; }
 
 .field .muted { font-weight: var(--weight-normal); }
 
+/* A <fieldset class="field"> labels its group with a <legend>, which sits outside the grid. */
+.field > legend { margin-bottom: var(--space-2); }
+
+/* Two fields for a range, "from – to", side by side. */
+.range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+
 /* Stack of fields; the gap does the spacing, so markup order doesn't matter. */
 .fields {
   display: grid;
@@ -44,7 +56,7 @@ main > :first-child { margin-top: 0; }
   <div class="dropzone" id="…" data-drop-paths data-name="paths" data-accept=".jpg,.png" role="button" tabindex="0">
     <p>Drop files here</p><ul></ul>
   </div>
-  "dropzone over" while something is dragged over it.
+  "dropzone over" while something is dragged over it; "dropzone large" for a big target.
 */
 .dropzone {
   display: grid;
@@ -84,14 +96,25 @@ main > :first-child { margin-top: 0; }
 
 .dropzone ul:empty { display: none; }
 
-/* Responsive grid of equal columns (cards, images); as many as fit. Variant: "grid wide" for
-   bigger cards (e.g. with a cover), the same height across a row. */
+/* "dropzone large": a big target, when dropping is the page's main action. */
+.dropzone.large {
+  min-height: 16rem;
+  align-content: center;
+}
+
+/* Responsive grid of equal columns (cards, images); as many as fit. Variants: "grid dense" for
+   small image tiles, "grid wide" for bigger cards (e.g. with a cover), the same height across a row. */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
   align-items: start;
   gap: var(--space-4);
   margin-top: var(--space-6);
+}
+
+.grid.dense {
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--space-2);
 }
 
 .grid.wide {
@@ -210,7 +233,68 @@ a.card:hover { background: var(--color-accent-bg); }
   white-space: nowrap;
 }
 
-/* Small label. A coloured dot comes from style="--badge-color: #e11d48". */
+/*
+  Image tile that links somewhere: <a class="tile"><svg><span class="badge">3</span><small>name</small></a>.
+  The image is shown whole in a 4:3 box; the badge sits at the top right, the <small> caption
+  shows over the image's bottom edge on hover or focus.
+*/
+.tile {
+  position: relative;
+  display: grid;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-bg);
+  color: inherit;
+  text-decoration: none;
+}
+
+.tile > svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tile > .badge {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  background: var(--color-bg);
+}
+
+.tile > .badge::before { display: none; }
+
+.tile > small {
+  position: absolute;
+  inset: auto 0 0;
+  padding: var(--space-4) var(--space-2) var(--space-1);
+  background: linear-gradient(transparent, var(--color-scrim));
+  color: var(--color-scrim-text);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.tile:hover > small,
+.tile:focus-visible > small { opacity: 1; }
+
+/* One image as large as the main area allows, whole. */
+.stage {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+
+.stage > svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Small label. A coloured dot comes from style="--badge-color: #e11d48"; "badge plain" has none.
+   A link inside it (e.g. an × to remove a filter) sits at its end. */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -221,12 +305,42 @@ a.card:hover { background: var(--color-accent-bg); }
   font-size: var(--text-sm);
 }
 
+.badge svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .badge::before {
   content: "";
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
   background: var(--badge-color, var(--color-text-muted));
+}
+
+.badge.plain::before { display: none; }
+
+/* Its text as a button (e.g. to change a filter). */
+.badge > button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.badge > a {
+  display: inline-grid;
+  margin-right: calc(-1 * var(--space-1));
+  color: var(--color-text-muted);
+}
+
+.badge > a:hover { color: var(--color-text); }
+
+.badge > a svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 /* Row of buttons, aligned right. Variant: "actions divided" adds a line above (form footers). */

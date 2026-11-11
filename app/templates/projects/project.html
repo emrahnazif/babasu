@@ -1,28 +1,205 @@
 {% extends "base.html" %}
+{% from "projects/macros.html" import annotated %}
 {% set crumbs = [(project.name, None)] %}
+{% set params = {"where": project.filter} %}  {# these links keep the filter #}
 
+{# Where images come from: files and folders dropped or chosen, or a typed path (local disk or NAS).
+   Used by the Add images dialog and by an empty project's page. #}
+{% macro import_fields(id, large=false) %}
+  <p class="muted">{{ image_formats }} images. A folder brings its subfolders too. Images already in the project are skipped.</p>
+  <div class="fields">
+    <div class="dropzone{% if large %} large{% endif %}" id="{{ id }}-drop" data-drop-paths data-name="paths" data-accept="{{ image_suffixes }}"
+         role="button" tabindex="0">
+      <p>Drop images or folders here, or click to choose images</p>
+      <ul></ul>
+    </div>
+    <label class="field">
+      Or enter a path
+      <input name="paths" placeholder="/Volumes/NAS/datasets/coco/val2017">
+    </label>
+  </div>
+{% endmacro %}
+
+{# Number fields for a range: "from" and "to", either may be empty. #}
+{% macro range_fields(label, name, r, unit) %}
+  <fieldset class="field">
+    <legend>{{ label }}{% if unit %} <span class="muted">({{ unit }})</span>{% endif %}</legend>
+    <div class="range">
+      <input type="number" name="{{ name }}_min" step="any" min="0" placeholder="from" value="{{ '{:g}'.format(r.min) if r and r.min is not none else '' }}" aria-label="{{ label }} from">
+      <span class="muted">–</span>
+      <input type="number" name="{{ name }}_max" step="any" min="0" placeholder="to" value="{{ '{:g}'.format(r.max) if r and r.max is not none else '' }}" aria-label="{{ label }} to">
+    </div>
+  </fieldset>
+{% endmacro %}
+
+{# A choice of one class for a panel's objects; empty means any class. #}
+{% macro of_class(c) %}
+  <label class="field">
+    Objects of
+    <select name="of_class">
+      <option value="">any class</option>
+      {% for class in project.classes %}
+        <option value="{{ class.name }}" {% if c and c.classes == [class.name] %}selected{% endif %}>{{ class.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+{% endmacro %}
+
+{# One filter, in a small panel under the Filter button: a new condition (index none), or the
+   condition at `index` (its chip opens it), whose other parts the panel leaves as they are. #}
+{% macro panel(part, title, index=none, c=none) %}
+  {% set id = "panel-" ~ part ~ ("-" ~ index if index is not none else "") %}
+  <div id="{{ id }}" class="menu menu--panel" popover style="position-anchor: --filter" aria-label="{{ title }}">
+    <div class="menu__head">
+      <button class="menu__item" type="button" popovertarget="filter-list" aria-label="Back to filters" title="Back">{{ icon("chevron-left") }}</button>
+      {{ title }}
+    </div>
+    {% if part == "count" %}
+      <form method="post" action="/projects/{{ project.id }}/object-count">
+        <input type="hidden" name="where" value="{{ filter.set(objects=none).text() }}">
+        {{ range_fields("Objects in the image", "objects", filter.objects, "") }}
+    {% else %}
+      <form method="post" action="/projects/{{ project.id }}/conditions">
+        <input type="hidden" name="where" value="{{ filter.text() }}">
+        <input type="hidden" name="part" value="{{ part }}">
+        {% if index is not none %}<input type="hidden" name="index" value="{{ index }}">{% endif %}
+        {% if part == "class" %}
+          <div class="segmented" role="radiogroup" aria-label="Has or doesn't have">
+            <label class="segmented__item"><input type="radio" name="negate" value="false" {% if not (c and c.negate) %}checked{% endif %}>Has</label>
+            <label class="segmented__item"><input type="radio" name="negate" value="true" {% if c and c.negate %}checked{% endif %}>Doesn't have</label>
+          </div>
+          <div>
+            {% for class in project.classes %}
+              <label class="menu__item"><input type="checkbox" name="classes" value="{{ class.name }}" {% if c and class.name in c.classes %}checked{% endif %}>
+                <span class="menu__swatch" style="--swatch-color: {{ class.color }}"></span>{{ class.name }}
+                <span class="menu__note">{{ class.annotation_count }}</span></label>
+            {% endfor %}
+          </div>
+        {% else %}
+          {{ of_class(c) }}
+          {% if part == "size" %}
+            {{ range_fields("Width", "w", c.w if c else none, "px") }}
+            {{ range_fields("Height", "h", c.h if c else none, "px") }}
+          {% elif part == "aspect" %}
+            {{ range_fields("Width ÷ height", "aspect", c.aspect if c else none, "") }}
+          {% else %}
+            <div class="segmented" role="radiogroup" aria-label="Touching the edge">
+              <label class="segmented__item"><input type="radio" name="edge" value="true" {% if not c or c.edge != false %}checked{% endif %}>Touching the edge</label>
+              <label class="segmented__item"><input type="radio" name="edge" value="false" {% if c and c.edge == false %}checked{% endif %}>Not touching</label>
+            </div>
+          {% endif %}
+        {% endif %}
+    {% endif %}
+        <div class="actions"><button class="button" type="submit">Apply</button></div>
+      </form>
+  </div>
+{% endmacro %}
+
+{% set parts = [("class", "Class", "tag"), ("size", "Object size", "arrows-pointing-out"), ("aspect", "Aspect", "arrows-right-left"),
+                ("edge", "Touching the edge", "viewfinder-circle"), ("count", "Number of objects", "hashtag")] %}
+
+{# The main bar: the project's own actions. #}
 {% block actions %}
   <button class="icon-button" type="button" popovertarget="add-images" aria-label="Add images" title="Add images">{{ icon("plus") }}</button>
+  <button class="icon-button" type="button" popovertarget="project-menu" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button>
+  <div id="project-menu" class="menu" popover>
+    <button class="menu__item" type="button" popovertarget="edit-project">Edit…</button>
+    <div class="menu__separator"></div>
+    <button class="menu__item menu__item--destructive" type="button" popovertarget="delete-project">Delete project…</button>
+  </div>
+{% endblock %}
+
+{# The filter bar, always there: which images (all, labelled, unlabelled), the Filter button and
+   its list, and one chip per condition (click to change it, × to remove it); on the right, how
+   many images match. The counts refresh when an import into the project ends. #}
+{% block toolbar %}
+  {% set shows = [("all", "All images", project.image_count), ("labelled", "Labelled", project.labelled_count),
+                  ("unlabelled", "Unlabelled", project.image_count - project.labelled_count)] %}
+  {% set chips = filter.chips(project.classes) %}
+  <div class="topbar__left topbar__left--wrap">
+    <span id="project-show" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
+      {% for value, label, count in shows if value == filter.show %}
+        <button class="topbar__button" type="button" popovertarget="show-menu">{{ label }} <span class="muted">{{ count }}</span>{{ icon("chevron-up-down") }}</button>
+      {% endfor %}
+      <div id="show-menu" class="menu" popover>
+        {% for value, label, count in shows %}
+          <a class="menu__item" href="{{ query({'where': filter.set(show=value).text()}) }}" {% if filter.show == value %}aria-current="page"{% endif %}>
+            <span class="menu__check">{{ icon("check") }}</span>{{ label }}<span class="menu__note">{{ count }}</span></a>
+        {% endfor %}
+      </div>
+    </span>
+
+    <button class="topbar__button" type="button" popovertarget="filter-list" style="anchor-name: --filter" data-shortcut="f" title="Filter">{{ icon("funnel") }}Filter</button>
+    {# The list of filters; typing narrows it, and Enter looks for file names containing the text.
+       It and its panels are anchored to the Filter button by name, so they open in the same place
+       whichever button opened them (a panel's ‹ is gone by the time the list opens). #}
+    <form id="filter-list" class="menu" popover role="search" style="position-anchor: --filter">
+      {% if filter.set(name="").text() %}<input type="hidden" name="where" value="{{ filter.set(name='').text() }}">{% endif %}
+      <input class="menu__search" type="search" name="name" placeholder="Filter by…" aria-label="Filter by" autocomplete="off" autofocus>
+      <button class="menu__item" type="submit" data-search-typed hidden>{{ icon("document-text") }}<span>File name contains “<span data-search-echo></span>”</span></button>
+      {% for part, title, icon_name in parts %}
+        <button class="menu__item" type="button" popovertarget="panel-{{ part }}">{{ icon(icon_name) }}{{ title }}</button>
+      {% endfor %}
+    </form>
+
+    {% if error %}<span class="error">{{ error }}</span>{% endif %}
+    {% for chip in chips %}
+      {% set c = filter.conditions[chip.index] if chip.kind == "condition" else none %}
+      {% set opens = "panel-count" if chip.kind == "objects" else ("panel-" ~ c.part() ~ "-" ~ chip.index if c else none) %}
+      <span class="badge{% if not chip.color %} plain{% endif %}" {% if chip.color %}style="--badge-color: {{ chip.color }}"{% endif %}>
+        {% if opens %}<button type="button" popovertarget="{{ opens }}" title="Change">{{ chip.label }}</button>{% else %}{{ chip.label }}{% endif %}
+        <a href="{{ query({'where': chip.without}) }}" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
+    {% endfor %}
+  </div>
+  {% if chips or error %}
+    <div class="topbar__right">
+      {% if not error %}<span class="muted">{{ project.match_count }} of {{ project.image_count | plural("image") }}</span>{% endif %}
+      <a href="{{ query({'where': filter.cleared().text()}) }}">Clear</a>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
-  {% if project.description %}<p class="muted">{{ project.description }}</p>{% endif %}
+  <div id="project-images" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
+  {% if project.images %}
+    <div class="grid dense">
+      {% for image in project.images %}
+        {% set n = image.annotations | length %}
+        <a class="tile" href="/projects/{{ project.id }}/images/{{ image.media_id }}{{ query(params) }}" title="{{ image.filename }}">
+          {{ annotated(image, project.classes, image.thumb_url) }}
+          {% if n %}
+            <span class="badge" title="{{ n | plural('annotation') }}">{{ n }}</span>
+          {% else %}
+            <span class="badge muted" title="Unlabelled" aria-label="Unlabelled">{{ icon("minus-circle") }}</span>
+          {% endif %}
+          <small>{{ image.filename }}</small>
+        </a>
+      {% endfor %}
+    </div>
+    {% if project.pages > 1 %}
+      <div class="actions">
+        <span class="muted">Page {{ project.page }} of {{ project.pages }} · {{ project.match_count | plural("image") }}</span>
+        {% if project.page > 1 %}<a class="button secondary" href="{{ query(params, page=project.page - 1) }}">Previous</a>{% endif %}
+        {% if project.page < project.pages %}<a class="button secondary" href="{{ query(params, page=project.page + 1) }}">Next</a>{% endif %}
+      </div>
+    {% endif %}
+  {% elif project.image_count %}
+    <p class="muted">No images match. <a href="{{ query({}) }}">Show all images</a></p>
+  {% else %}
+    {# An empty project's first step is adding images, so the page itself is the way in. #}
+    <form method="post" action="/projects/{{ project.id }}/import" data-background-form>
+      {{ import_fields("first-images", large=true) }}
+      <div class="actions">
+        <button class="button" type="submit">Import</button>
+      </div>
+    </form>
+  {% endif %}
+  </div>
 
   <div id="add-images" class="dialog" popover aria-labelledby="add-images-title">
     <form method="post" action="/projects/{{ project.id }}/import" data-background-form>
       <h2 id="add-images-title">Add images</h2>
-      <p class="muted">{{ image_formats }} images. A folder brings its subfolders too. Images already in the project are skipped.</p>
-      <div class="fields">
-        <div class="dropzone" id="add-images-drop" data-drop-paths data-name="paths" data-accept="{{ image_suffixes }}"
-             role="button" tabindex="0">
-          <p>Drop images or folders here, or click to choose images</p>
-          <ul></ul>
-        </div>
-        <label class="field">
-          Or enter a path
-          <input name="paths" placeholder="/Volumes/NAS/datasets/coco/val2017">
-        </label>
-      </div>
+      {{ import_fields("add-images") }}
       <div class="actions">
         <button class="button secondary" type="button" popovertarget="add-images" popovertargetaction="hide">Cancel</button>
         <button class="button" type="submit">Import</button>
@@ -30,50 +207,40 @@
     </form>
   </div>
 
-  <p>
-    {% for class in project.classes %}
-      <span class="badge" style="--badge-color: {{ class.color }}">{{ class.name }}</span>
-    {% endfor %}
-  </p>
+  {% for part, title, _ in parts %}{{ panel(part, title) }}{% endfor %}
+  {% for c in filter.conditions %}{{ panel(c.part(), (parts | selectattr(0, "equalto", c.part()) | first)[1], loop.index0, c) }}{% endfor %}
 
-  <div id="project-images" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
-  {% if project.images %}
-    <div class="grid">
-      {% for image in project.images %}
-        <figure class="thumb">
-          {# The image and its annotations share one coordinate system: the original image's pixels.
-             The thumbnail is stretched over that same area, so annotations line up on it. #}
-          <svg viewBox="0 0 {{ image.width }} {{ image.height }}" role="img" aria-label="{{ image.filename }}">
-            <image href="{{ image.thumb_url }}" width="{{ image.width }}" height="{{ image.height }}"/>
-            {% set keypoint_r = ([image.width, image.height] | max / 80) | round(1) %}
-            {% for a in image.annotations %}
-              {% set color = (project.classes | selectattr("id", "equalto", a.class_id) | first).color %}
-              {# An object with a polygon shows the polygon; its box would only repeat the outline. #}
-              {% if a.segments %}
-                <polygon points="{% for x, y in a.segments %}{{ x }},{{ y }} {% endfor %}"
-                         fill="{{ color }}" fill-opacity="0.2" stroke="{{ color }}" stroke-width="2" vector-effect="non-scaling-stroke"/>
-              {% elif a.bbox %}
-                <rect x="{{ a.bbox[0] }}" y="{{ a.bbox[1] }}" width="{{ a.bbox[2] }}" height="{{ a.bbox[3] }}"
-                      fill="none" stroke="{{ color }}" stroke-width="2" vector-effect="non-scaling-stroke"/>
-              {% endif %}
-              {% for k in a.keypoints %}
-                <circle cx="{{ k.point[0] }}" cy="{{ k.point[1] }}" r="{{ keypoint_r }}" fill="{{ color }}"/>
-              {% endfor %}
-            {% endfor %}
-          </svg>
-          <figcaption>{{ image.filename }}</figcaption>
-        </figure>
-      {% endfor %}
-    </div>
-    {% if project.pages > 1 %}
-      <div class="actions">
-        <span class="muted">Page {{ project.page }} of {{ project.pages }} · {{ project.image_count }} images</span>
-        {% if project.page > 1 %}<a class="button secondary" href="?page={{ project.page - 1 }}">Previous</a>{% endif %}
-        {% if project.page < project.pages %}<a class="button secondary" href="?page={{ project.page + 1 }}">Next</a>{% endif %}
+  <div id="edit-project" class="dialog" popover aria-labelledby="edit-project-title">
+    <form method="post" action="/projects/{{ project.id }}/edit">
+      <h2 id="edit-project-title">Edit project</h2>
+      <div class="fields">
+        <label class="field">
+          Name
+          <input name="name" required maxlength="200" value="{{ project.name }}">
+        </label>
+        <label class="field">
+          Description
+          <textarea name="description" rows="3" maxlength="2000">{{ project.description }}</textarea>
+        </label>
       </div>
-    {% endif %}
-  {% else %}
-    <p class="muted">No images yet.</p>
-  {% endif %}
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="edit-project" popovertargetaction="hide">Cancel</button>
+        <button class="button" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="delete-project" class="dialog" popover role="alertdialog" aria-labelledby="delete-project-title" aria-describedby="delete-project-text">
+    <form method="post" action="/projects/{{ project.id }}/delete">
+      <h2 id="delete-project-title">Delete {{ project.name }}?</h2>
+      <p id="delete-project-text" class="muted">
+        Its {{ project.image_count | plural("image") }} and their annotations are removed from it, and image files no other
+        project uses are deleted from the workspace. This can't be undone.
+      </p>
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="delete-project" popovertargetaction="hide" autofocus>Cancel</button>
+        <button class="button destructive" type="submit">Delete</button>
+      </div>
+    </form>
   </div>
 {% endblock %}
