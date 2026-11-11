@@ -285,20 +285,15 @@ a.card:hover { background: var(--color-accent-bg); }
   background: var(--color-bg);
 }
 
-/* One image as large as the main area allows, whole. The annotation editor wraps the image in
-   a box of its own, which fills the stage too. */
+/* One image as large as the main area allows, whole. */
 .stage {
   height: 100%;
 }
 
-.stage > *,
 .stage img {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.stage img {
   object-fit: contain;
 }
 
