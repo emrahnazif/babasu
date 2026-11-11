@@ -5,6 +5,29 @@
 {% endblock %}
 
 {% block content %}
+  {% if projects %}
+    <div class="grid wide">
+      {% for project in projects %}
+        <a class="card" href="/projects/{{ project.id }}">
+          <div class="cover">
+            {% for url in project.covers %}<img src="{{ url }}" alt="" loading="lazy">{% else %}<p class="muted">No images yet</p>{% endfor %}
+          </div>
+          <header>
+            <h2 class="clip" title="{{ project.name }}">{{ project.name }}</h2>
+            <time class="muted" datetime="{{ project.updated_at }}" title="Updated {{ project.updated_at }}">{{ project.updated_at | ago }}</time>
+          </header>
+          {% if project.description %}<p class="muted clip" title="{{ project.description }}">{{ project.description }}</p>{% endif %}
+          <p class="muted">
+            {{ project.image_count | plural("image") }} · {{ project.classes | length | plural("class") }}
+            {% if project.image_count %}· {{ (100 * project.labelled_count / project.image_count) | round | int }}% labelled{% endif %}
+          </p>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No projects yet.</p>
+  {% endif %}
+
   <div id="new-project" class="dialog" popover aria-labelledby="new-project-title">
     <form method="post" action="/projects">
       <h2 id="new-project-title">New project</h2>
@@ -24,18 +47,4 @@
       </div>
     </form>
   </div>
-
-  {% if projects %}
-    <div class="grid">
-      {% for project in projects %}
-        <a class="card" href="/projects/{{ project.id }}">
-          <h2>{{ project.name }}</h2>
-          {% if project.description %}<p class="muted">{{ project.description }}</p>{% endif %}
-          <p class="muted">{{ project.image_count }} images · {{ project.classes | length }} classes</p>
-        </a>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="muted">No projects yet.</p>
-  {% endif %}
 {% endblock %}
