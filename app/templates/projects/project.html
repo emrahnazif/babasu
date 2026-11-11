@@ -164,15 +164,9 @@
   {% if project.images %}
     <div class="grid dense">
       {% for image in project.images %}
-        {% set n = image.annotations | length %}
-        <a class="tile" href="/projects/{{ project.id }}/images/{{ image.media_id }}{{ query(params) }}" title="{{ image.filename }}">
+        <a class="tile" href="/projects/{{ project.id }}/images/{{ image.media_id }}{{ query(params) }}">
           {{ annotated(image, project.classes, image.thumb_url) }}
-          {% if n %}
-            <span class="badge" title="{{ n | plural('annotation') }}">{{ n }}</span>
-          {% else %}
-            <span class="badge muted" title="Unlabelled" aria-label="Unlabelled">{{ icon("minus-circle") }}</span>
-          {% endif %}
-          <small>{{ image.filename }}</small>
+          {% if image.annotations %}<span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span>{% endif %}
         </a>
       {% endfor %}
     </div>

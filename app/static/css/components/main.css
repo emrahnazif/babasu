@@ -234,9 +234,9 @@ a.card:hover { background: var(--color-accent-bg); }
 }
 
 /*
-  Image tile that links somewhere: <a class="tile"><svg><span class="badge">3</span><small>name</small></a>.
-  The image is shown whole in a 4:3 box; the badge sits at the top right, the <small> caption
-  shows over the image's bottom edge on hover or focus.
+  Image tile that links somewhere: <a class="tile"><svg><span class="badge plain">…icon…</span></a>.
+  The image is shown whole in a 4:3 box; a badge with an icon that says something about the image
+  sits at its top right, as a small circle.
 */
 .tile {
   position: relative;
@@ -259,27 +259,10 @@ a.card:hover { background: var(--color-accent-bg); }
   position: absolute;
   top: var(--space-1);
   right: var(--space-1);
+  padding: 0;
+  border: 0;
   background: var(--color-bg);
 }
-
-.tile > .badge::before { display: none; }
-
-.tile > small {
-  position: absolute;
-  inset: auto 0 0;
-  padding: var(--space-4) var(--space-2) var(--space-1);
-  background: linear-gradient(transparent, var(--color-scrim));
-  color: var(--color-scrim-text);
-  font-size: var(--text-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-
-.tile:hover > small,
-.tile:focus-visible > small { opacity: 1; }
 
 /* One image as large as the main area allows, whole. */
 .stage {

@@ -15,8 +15,6 @@
   --color-destructive: light-dark(#dc2626, #b91c1c);
   --color-destructive-text: #ffffff;
   --color-highlight: light-dark(#0ea5e9, #38bdf8);  /* sky: something you can grab or that's active */
-  --color-scrim: rgb(0 0 0 / 0.55);                  /* behind text laid over an image */
-  --color-scrim-text: #ffffff;
 
   /* Typography */
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
