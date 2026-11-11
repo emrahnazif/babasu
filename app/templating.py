@@ -85,6 +85,11 @@ def ago(timestamp: str) -> str:
     return f"{local:%b} {local.day}"
 
 
+def plural(n: int, word: str) -> str:
+    """A count with its noun: "1 image", "1,240 images", "3 classes"."""
+    return f"{n:,} {word if n == 1 else word + ('es' if word.endswith('s') else 's')}"
+
+
 def period(timestamp: str) -> str:
     """Which stretch of time a stored UTC time falls in, for grouping lists: Today, Yesterday,
     Previous 7 days, Previous 30 days, Older (by local calendar days)."""
@@ -103,6 +108,7 @@ def period(timestamp: str) -> str:
 templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
 templates.env.filters["ago"] = ago
 templates.env.filters["period"] = period
+templates.env.filters["plural"] = plural
 templates.env.globals["app_name"] = config.APP_NAME
 templates.env.globals["nav"] = config.NAV
 templates.env.globals["section_of"] = section_of
