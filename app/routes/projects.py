@@ -1,6 +1,7 @@
 """Projects: HTML pages (forms post, then redirect), and the same data and actions as JSON under /api."""
 
 import sqlite3
+from contextlib import contextmanager
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
@@ -129,13 +130,20 @@ def _exists(conn: sqlite3.Connection, project_id: int) -> None:
         raise HTTPException(404, "Project not found")
 
 
-def _update(conn: sqlite3.Connection, project_id: int, changed: NewProject) -> None:
+@contextmanager
+def _writing(conn: sqlite3.Connection, project_id: int):
+    """A change to a project, committed at the end: 404 if there's no such project, 409 if it's frozen."""
     _exists(conn, project_id)
     try:
         with conn:
-            projects.update(conn, project_id, changed.name, changed.description)
+            yield
     except projects.FrozenError:
         raise HTTPException(409, "The project is frozen; duplicate it to change it") from None
+
+
+def _update(conn: sqlite3.Connection, project_id: int, changed: NewProject) -> None:
+    with _writing(conn, project_id):
+        projects.update(conn, project_id, changed.name, changed.description)
 
 
 def _delete(conn: sqlite3.Connection, project_id: int) -> None:
