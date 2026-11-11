@@ -73,11 +73,11 @@ def call(conn: sqlite3.Connection, name: str, arguments: str) -> str:
 # --- The tools ---
 
 
-@tool("List all projects, with their image counts and class names.")
+@tool("List all projects, with their image counts, how many images are labelled, and class names.")
 def list_projects(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return [
         {"id": p["id"], "name": p["name"], "description": p["description"], "images": p["image_count"],
-         "classes": [c["name"] for c in p["classes"]]}
+         "labelled": p["labelled_count"], "classes": [c["name"] for c in p["classes"]]}
         for p in projects.list_all(conn)
     ]
 

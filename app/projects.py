@@ -51,13 +51,46 @@ def _project(row: sqlite3.Row) -> dict:
     return dict(row) | {"classes": classes}
 
 
+COVER_SIZE = 4  # images shown on a project's card
+
+
 def list_all(conn: sqlite3.Connection) -> list[dict]:
+    """Every project, most recently changed first, with its image count, how many of its images
+    are labelled (have an annotation) and the thumbnails of its first few images for its card."""
     rows = conn.execute(
-        """SELECT project.*, count(project_media.media_id) AS image_count
+        """SELECT project.*, count(project_media.media_id) AS image_count,
+                  (SELECT json_group_array(sha256) FROM (
+                      SELECT media.sha256 FROM project_media AS first JOIN media ON media.id = first.media_id
+                      WHERE first.project_id = project.id ORDER BY first.media_id LIMIT ?)) AS covers
            FROM project LEFT JOIN project_media ON project_media.project_id = project.id
-           GROUP BY project.id ORDER BY project.updated_at DESC"""
+           GROUP BY project.id ORDER BY project.updated_at DESC""",
+        (COVER_SIZE,),
     ).fetchall()
-    return [_project(row) for row in rows]
+    labelled = _labelled_counts(conn, rows)
+    return [
+        _project(row)
+        | {"covers": [media.thumb_url(sha) for sha in json.loads(row["covers"])], "labelled_count": labelled.get(row["id"], 0)}
+        for row in rows
+    ]
+
+
+def _labelled_counts(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> dict[int, int]:
+    """Labelled images per project id. An image whose only annotations are of inactive classes
+    isn't labelled. Checking that reads every annotation, so it's done only for the (rare)
+    projects that have an inactive class; the others just count non-empty annotation lists."""
+    counts = dict(conn.execute(
+        "SELECT project_id, count(*) FROM project_media WHERE annotations != '[]' GROUP BY project_id"
+    ).fetchall())
+    for row in rows:
+        inactive = [c["id"] for c in json.loads(row["classes"]) if not c["active"]]
+        if inactive:
+            counts[row["id"]] = conn.execute(
+                f"""SELECT count(*) FROM project_media WHERE project_id = ? AND EXISTS (
+                        SELECT 1 FROM json_each(annotations)
+                        WHERE value->>'class_id' NOT IN ({",".join("?" * len(inactive))}))""",
+                (row["id"], *inactive),
+            ).fetchone()[0]
+    return counts
 
 
 def get(conn: sqlite3.Connection, project_id: int) -> dict | None:
