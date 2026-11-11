@@ -6,7 +6,7 @@
 
 /* Blocks space themselves from what's above them (margin-top), so one that's first in its
    parent (at any depth, e.g. inside a refresh region) has nothing to space from. */
-:is(.grid, .stack, .fields, .actions):first-child { margin-top: 0; }
+:is(.grid, .justified, .stack, .fields, .actions):first-child { margin-top: 0; }
 
 /* Centres its content on both axes, filling the main area. */
 .center {
@@ -102,8 +102,8 @@
   align-content: center;
 }
 
-/* Responsive grid of equal columns (cards, images); as many as fit. Variants: "grid dense" for
-   small image tiles, "grid wide" for bigger cards (e.g. with a cover), the same height across a row. */
+/* Responsive grid of equal columns (cards, images); as many as fit. Variant: "grid wide" for
+   bigger cards (e.g. with a cover), the same height across a row. */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
@@ -112,14 +112,37 @@
   margin-top: var(--space-6);
 }
 
-.grid.dense {
-  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
-  gap: var(--space-2);
-}
-
 .grid.wide {
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
   align-items: stretch;  /* cards in a row share a height */
+}
+
+/*
+  Images in justified rows, like a photo library: in each row the images share a height and
+  keep their shape, and the row fills the width. Each item gives its width / height as
+  style="--ratio: 1.5"; it grows in proportion to it, so a row's heights stay equal. The last
+  row keeps the usual height instead of stretching (the filler after it takes the rest), and no
+  item grows past 1.5 times its usual size (a row that can't be filled keeps a gap at its end).
+*/
+.justified {
+  --row-height: 10rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;  /* each item's height follows its width (stretching would fix it to the row's) */
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+
+.justified > * {
+  flex: calc(var(--ratio) * 100) 1 calc(var(--ratio) * var(--row-height));
+  min-width: 0;
+  max-width: calc(var(--ratio) * var(--row-height) * 1.5);  /* an item alone in its row doesn't balloon */
+  aspect-ratio: var(--ratio);
+}
+
+.justified::after {
+  content: "";
+  flex-grow: 1000000;
 }
 
 /* A vertical list of full-width items (e.g. cards in Settings), one under the other. */
@@ -235,13 +258,12 @@ a.card:hover { background: var(--color-accent-bg); }
 
 /*
   Image tile that links somewhere: <a class="tile"><svg><span class="badge plain">…icon…</span></a>.
-  The image is shown whole in a 4:3 box; a badge with an icon that says something about the image
-  sits at its top right, as a small circle.
+  The image fills the tile (give the tile the image's shape, e.g. in .justified); a badge with an
+  icon that says something about the image sits at its top right, as a small circle.
 */
 .tile {
   position: relative;
   display: grid;
-  aspect-ratio: 4 / 3;
   overflow: hidden;
   border-radius: var(--radius-md);
   background: var(--color-accent-bg);
@@ -252,7 +274,6 @@ a.card:hover { background: var(--color-accent-bg); }
 .tile > svg {
   width: 100%;
   height: 100%;
-  object-fit: contain;
 }
 
 .tile > .badge {
