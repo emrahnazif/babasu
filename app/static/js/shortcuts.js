@@ -43,8 +43,10 @@ const elements = [...document.querySelectorAll("[data-shortcut]")].map((element)
   return { element, shortcut };
 });
 
-document.addEventListener("keydown", (event) => {
-  if (event.repeat || event.isComposing) return;
+// On window, so it runs after listeners on the page (e.g. the annotation editor's, where ← moves
+// the selected box); a key one of them has handled is theirs.
+window.addEventListener("keydown", (event) => {
+  if (event.repeat || event.isComposing || event.defaultPrevented) return;
   const found = elements.find(({ shortcut }) => matches(shortcut, event));
   if (!found || found.element.disabled) return;
   if (!found.shortcut.mod && typing(event.target)) return;
