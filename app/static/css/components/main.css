@@ -285,16 +285,21 @@ a.card:hover { background: var(--color-accent-bg); }
   background: var(--color-bg);
 }
 
-/* One image as large as the main area allows, whole. */
+/* One image as large as the main area allows, whole. The annotation editor wraps the image in
+   a box of its own, which fills the stage too. */
 .stage {
-  display: grid;
-  place-items: center;
   height: 100%;
 }
 
-.stage > svg {
+.stage > *,
+.stage img {
+  display: block;
   width: 100%;
   height: 100%;
+}
+
+.stage img {
+  object-fit: contain;
 }
 
 /* Small label. A coloured dot comes from style="--badge-color: #e11d48"; "badge plain" has none.

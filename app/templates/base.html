@@ -25,6 +25,7 @@
   <script type="module" src="{{ url_for('static', path='js/command.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/shortcuts.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/menu.js') }}"></script>
+  {% block scripts %}{% endblock %}
 </head>
 <body>
   <div class="app{% if collapsed %} app--collapsed{% endif %}{% if unified_title_bar %} app--unified-title-bar{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">

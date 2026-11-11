@@ -1,8 +1,10 @@
-{# One image of a project, large, with its annotations. ← → go through the images the project
-   page was showing (its filter comes along in the URL). The annotation editor will live here. #}
+{# One image of a project, large, in the annotation editor (js/annotation-editor.js). ← → go
+   through the images the project page was showing (its filter comes along in the URL). In the
+   middle, the class (the selected object's, or new objects'). A frozen project, or one without
+   classes, only shows its annotations. #}
 {% extends "base.html" %}
-{% from "projects/macros.html" import annotated %}
 {% set project, params = image.project, {"where": image.filter} %}
+{% set editable = not project.frozen_at and project.classes %}
 {% set crumbs = [(project.name, "/projects/" ~ project.id ~ query(params)), (image.filename, None)] %}
 
 {% macro step(media_id, label, icon_name, key) %}
@@ -14,17 +16,40 @@
   {% endif %}
 {% endmacro %}
 
+{% block scripts %}
+  <script defer src="{{ url_for('static', path='vendor/markin-0.2.0.min.js') }}"></script>
+  <script type="module" src="{{ url_for('static', path='js/annotation-editor.js') }}"></script>
+{% endblock %}
+
 {% block toolbar %}
   <div class="topbar__left">
     {{ step(image.previous_id, "Previous image", "chevron-left", "arrowleft") }}
     <span>{{ image.position }} of {{ image.match_count }}</span>
     {{ step(image.next_id, "Next image", "chevron-right", "arrowright") }}
   </div>
+  {% if editable %}
+    {% set first = project.classes[0] %}
+    <div class="topbar__center">
+      <button class="topbar__button" type="button" popovertarget="class-menu" title="Class">
+        <span class="badge" id="class-shown" style="--badge-color: {{ first.color }}">{{ first.name }}</span>{{ icon("chevron-up-down") }}</button>
+      <div id="class-menu" class="menu" popover>
+        <input class="menu__search" type="search" placeholder="Class…" aria-label="Class" autocomplete="off" autofocus>
+        {% for class in project.classes %}
+          <button class="menu__item" type="button" data-class-id="{{ class.id }}">
+            <span class="menu__swatch" style="--swatch-color: {{ class.color }}"></span>{{ class.name }}</button>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
   <div class="topbar__right">
     <span class="muted">{{ image.width }} × {{ image.height }} · {{ image.annotations | length | plural("annotation") }}</span>
   </div>
 {% endblock %}
 
 {% block content %}
-  <figure class="stage">{{ annotated(image, project.classes, image.url) }}</figure>
+  <figure class="stage">
+    <img src="{{ image.url }}" alt="{{ image.filename }}"
+         data-annotations='{{ image.annotations | tojson }}' data-classes='{{ project.classes | tojson }}'
+         {% if editable %}data-save="/api/projects/{{ project.id }}/images/{{ image.media_id }}/annotations"{% endif %}>
+  </figure>
 {% endblock %}
