@@ -11,10 +11,12 @@ WINDOW_MIN_SIZE = (900, 600)
 
 HOST = "127.0.0.1"
 
-# Header navigation: label and link for each item.
+# The app's sections, as pills in the middle of the top bar.
 NAV = [
-    {"label": "Home", "href": "/"},
     {"label": "Projects", "href": "/projects"},
+    {"label": "Workflows", "href": "/workflows"},
+    {"label": "Studio", "href": "/studio"},
+    {"label": "Models", "href": "/models"},
 ]
 
 # Works in dev and in PyInstaller builds (bundled modules get __file__ under _MEIPASS).
