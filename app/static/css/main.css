@@ -20,6 +20,7 @@
 
 @import url("components/icon-button.css") layer(components);
 @import url("components/topbar.css") layer(components);
+@import url("components/breadcrumb.css") layer(components);
 @import url("components/menu.css") layer(components);
 @import url("components/sidebar.css") layer(components);
 @import url("components/chat.css") layer(components);

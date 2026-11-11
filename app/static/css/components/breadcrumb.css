@@ -1,0 +1,64 @@
+/*
+  Where you are, in the top bar: a switcher, then the trail down to this page.
+    breadcrumb             the row
+    breadcrumb__switch     a button that opens a menu (e.g. the app's sections); never shrinks
+    breadcrumb__separator  the › between items
+    breadcrumb__item       a link up the trail; the current page (aria-current="page") is text
+  In a narrow bar the links shorten first, then the current page; the full name is in title.
+*/
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.breadcrumb__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font: inherit;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.breadcrumb__switch:hover {
+  background: var(--color-accent-bg);
+}
+
+.breadcrumb__switch svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-text-muted);
+}
+
+.breadcrumb__separator {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.breadcrumb__item {
+  min-width: 2.5rem;
+  flex-shrink: 10;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+a.breadcrumb__item:hover {
+  color: var(--color-text);
+}
+
+.breadcrumb__item[aria-current="page"] {
+  flex-shrink: 1;
+  color: var(--color-text);
+}
