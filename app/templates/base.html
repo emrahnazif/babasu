@@ -2,12 +2,17 @@
 {# A page whose sidebar is its own menu (e.g. settings) sets sidebar_collapsible = false. #}
 {% set collapsible = sidebar_collapsible | default(true) %}
 {% set collapsed = collapsible and s.sidebar_collapsed %}
+{# The app section this page is in (config.NAV), and the page's breadcrumb below it. #}
+{% set here = section_of(request.url.path) %}
+{% set trail = crumbs | default([]) %}
 <!doctype html>
 <html lang="en" data-theme="{{ s.theme }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  {# The window title follows the breadcrumb, current page first: "Street cars · babasu". #}
+  {% set names = (trail | map("first") | reverse | list) or ([here.label] if here else []) %}
+  <title>{% block title %}{{ (names + [app_name]) | join(" · ") }}{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='brand/app-icon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='css/main.css') }}">
   <script type="module" src="{{ url_for('static', path='js/sidebar.js') }}"></script>
@@ -52,15 +57,33 @@
      <div class="topbar" data-window-drag>
       <div class="topbar__left">
         <button class="icon-button" type="button" aria-label="Undo" title="Undo">{{ icon("arrow-uturn-left") }}</button>
+
+        {# Where you are: the section (a menu to switch to another), then the page's `crumbs`,
+           (label, href) pairs set at the top of its template; the last one is this page. #}
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          <button class="breadcrumb__switch" type="button" popovertarget="sections"
+                  aria-label="Go to section" title="Go to section">{{ here.label if here else app_name }}{{ icon("chevron-up-down") }}</button>
+          {% for label, href in trail %}
+            <span class="breadcrumb__separator" aria-hidden="true">›</span>
+            {% if href and not loop.last %}
+              <a class="breadcrumb__item" href="{{ href }}" title="{{ label }}">{{ label }}</a>
+            {% else %}
+              <span class="breadcrumb__item" title="{{ label }}"{% if loop.last %} aria-current="page"{% endif %}>{{ label }}</span>
+            {% endif %}
+          {% endfor %}
+        </nav>
+        <div id="sections" class="menu" popover>
+          {% for item in nav %}
+            <a class="menu__item" href="{{ item.href }}"{% if item == here %} aria-current="page"{% endif %}>{{ icon("check") }}{{ item.label }}</a>
+          {% endfor %}
+        </div>
       </div>
 
-      <nav class="topbar__center">
-        {% for item in nav %}
-          <a class="topbar__link{% if request.url.path == item.href or request.url.path.startswith(item.href ~ "/") %} topbar__link--active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
-        {% endfor %}
-      </nav>
-
       <div class="topbar__right">
+        {# The page's own actions, before the app-wide icons. #}
+        {% set actions %}{% block actions %}{% endblock %}{% endset %}
+        {% if actions | trim %}{{ actions }}<span class="topbar__divider" aria-hidden="true"></span>{% endif %}
+        <a class="icon-button" href="/library"{% if under(request.url.path, "/library") %} aria-current="page"{% endif %} aria-label="Library" title="Library">{{ icon("circle-stack") }}</a>
         {% set job_overview = jobs_overview() %}
         <button class="icon-button jobs-button" type="button" popovertarget="jobs-drawer" aria-label="Jobs" title="Jobs">
           {{ icon("queue-list") }}

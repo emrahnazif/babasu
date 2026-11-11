@@ -29,21 +29,6 @@
 .topbar__center { grid-column: 2; }
 .topbar__right  { grid-column: 3; justify-self: end; }
 
-.topbar__link {
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-muted);
-  text-decoration: none;
-}
-
-.topbar__link:hover,
-.topbar__link--active {
-  color: var(--color-text);
-  background: var(--color-accent-bg);
-}
-
 /* A thin line between groups in a slot, e.g. a page's actions and the app-wide ones. */
 .topbar__divider {
   width: 1px;

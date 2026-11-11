@@ -8,7 +8,7 @@
   layout     – app shell regions (.app, .app__main, …). Never put a region class
                and a component class on the same element: components is a later
                layer, so it would override region states such as .app--collapsed.
-  components – shell components use BEM (.topbar, .topbar__link);
+  components – shell components use BEM (.topbar, .topbar__left);
                main-area content uses flat one-word classes (main.css)
 */
 @layer reset, tokens, base, layout, components;

@@ -36,10 +36,19 @@ def jobs_overview() -> dict:
         return jobs.overview(conn)
 
 
+def under(path: str, href: str) -> bool:
+    """Whether a page is at href or below it: /projects/3 is under /projects."""
+    return path == href or path.startswith(href + "/")
+
+
+def section_of(path: str) -> dict | None:
+    """The app section (config.NAV) a path is in, if any."""
+    return next((item for item in config.NAV if under(path, item["href"])), None)
+
+
 def page_name(title: str) -> str:
-    """A page's own name from its title: "COCO val · babasu" -> "COCO val"; Home is just "babasu"."""
-    name = title.strip().removesuffix(f" · {config.APP_NAME}")
-    return "Home" if name in ("", config.APP_NAME) else name
+    """A page's own name from its title: "COCO val · babasu" -> "COCO val"."""
+    return title.strip().removesuffix(f" · {config.APP_NAME}")
 
 
 def agent_chat(request: Request, page_title: str) -> dict:
@@ -96,6 +105,8 @@ templates.env.filters["ago"] = ago
 templates.env.filters["period"] = period
 templates.env.globals["app_name"] = config.APP_NAME
 templates.env.globals["nav"] = config.NAV
+templates.env.globals["section_of"] = section_of
+templates.env.globals["under"] = under
 templates.env.globals["icon"] = icon
 templates.env.globals["logo"] = logo
 templates.env.globals["settings"] = settings.get
