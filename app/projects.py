@@ -195,6 +195,7 @@ def _image(row: sqlite3.Row, class_ids: set[int], matched: set[int] | None = Non
         "annotations": [a for _, a in kept],
         "url": media.url(row["sha256"], row["ext"]),
         "thumb_url": media.thumb_url(row["sha256"]),
+        "aspect": round(row["width"] / row["height"], 3),  # width / height
     }
     if matched is not None:
         image["matches"] = [n for n, (i, _) in enumerate(kept) if i in matched]
