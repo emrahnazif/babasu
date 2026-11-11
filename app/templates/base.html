@@ -24,6 +24,7 @@
   <script type="module" src="{{ url_for('static', path='js/model-test.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/command.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/shortcuts.js') }}"></script>
+  <script type="module" src="{{ url_for('static', path='js/menu.js') }}"></script>
 </head>
 <body>
   <div class="app{% if collapsed %} app--collapsed{% endif %}{% if unified_title_bar %} app--unified-title-bar{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
@@ -74,7 +75,7 @@
           {% for group in nav %}
             {% if not loop.first %}<div class="menu__separator"></div>{% endif %}
             {% for item in group %}
-              <a class="menu__item" href="{{ item.href }}"{% if item == here %} aria-current="page"{% endif %}>{{ icon("check") }}{{ item.label }}</a>
+              <a class="menu__item" href="{{ item.href }}"{% if item == here %} aria-current="page"{% endif %}><span class="menu__check">{{ icon("check") }}</span>{{ item.label }}</a>
             {% endfor %}
           {% endfor %}
         </div>

@@ -1,17 +1,26 @@
 /*
-  Menu that drops down from the button that opens it (popovertarget, no JS).
-  Esc or a click outside closes it. The popover is anchored to the button that
-  opened it, so it opens under it (above when there's no room below).
-  Items are links or buttons; the current one
-  (aria-current="page") shows its check icon.
+  Menu that drops down from the button that opens it (popovertarget, no JS needed to open it).
+  Esc, a click outside or picking an item (js/menu.js) closes it. The popover is anchored to
+  the button that opened it, so it opens under it (above when there's no room below); one
+  opened from another menu names its anchor instead (style="position-anchor: --name" here,
+  style="anchor-name: --name" on the button).
     menu             the popover
-    menu__item       a link or button, an optional check icon first
+    menu--panel      a wider menu holding a small form (e.g. one filter), padded
+    menu__head       a title row, e.g. a ‹ back item and the panel's name
+    menu__search     a field that narrows the items to what's typed (js/menu.js); an element
+                     with data-search-echo shows the text, an item with data-search-typed shows
+                     only while there's some
+    menu__item       a link, button or label (e.g. holding a checkbox)
+    menu__check      a check icon at an item's start, shown when the item is aria-current="page"
+    menu__item--destructive  an item that deletes or can't be undone
+    menu__swatch     a colour dot before an item's text (style="--swatch-color: …")
+    menu__note       a short muted note at the item's end, e.g. a count
     menu__separator  a line between groups
 */
 .menu {
   inset: auto;
   position-area: block-end span-inline-end;
-  position-try-fallbacks: flip-block;
+  position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline;
   margin: var(--space-1) 0;
   min-width: 11rem;
   padding: var(--space-1);
@@ -63,10 +72,59 @@
   width: 1rem;
   height: 1rem;
   flex-shrink: 0;
-  visibility: hidden;
 }
 
-.menu__item[aria-current="page"] svg { visibility: visible; }
+.menu__item[hidden] { display: none; }
+
+.menu__check { display: inline-grid; visibility: hidden; }
+
+.menu__item[aria-current="page"] > .menu__check { visibility: visible; }
+
+.menu--panel {
+  width: 18rem;
+  padding: var(--space-3);
+}
+
+.menu--panel:popover-open { gap: var(--space-3); }
+
+/* Its form spaces its parts with the gap, so their own margins (e.g. a row of actions) go. */
+.menu--panel form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.menu--panel form > * { margin: 0; }
+
+.menu__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.menu__head > .menu__item { padding: var(--space-1); }
+
+.menu__search {
+  margin-bottom: var(--space-1);
+  width: 100%;
+}
+
+.menu__item--destructive { color: var(--color-destructive); }
+
+.menu__swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--swatch-color);
+}
+
+.menu__note {
+  margin-left: auto;
+  padding-left: var(--space-4);
+  color: var(--color-text-muted);
+}
 
 .menu__separator {
   height: 1px;
