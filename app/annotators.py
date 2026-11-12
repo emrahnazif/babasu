@@ -157,10 +157,8 @@ def try_(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), a
          class_ids: list[int] | None = None, prompts: dict[int, str] | None = None) -> dict | None:
     """Try the annotator on TRY_IMAGES of the project's images matching `filter`, picked at
     random, writing nothing to the project; returns {run_id, job_id, images}. `prompts`: prompts
-    to try instead of some classes' saved ones. None if there's no such project. ValueError: as
-    _prompts(), a prompt for a class not tried, or no images."""
-    if prompts and class_ids is not None and set(prompts) - set(class_ids):
-        raise ValueError(f"prompts for classes not tried: {sorted(set(prompts) - set(class_ids))}")
+    to try instead of some classes' saved ones (those of classes not tried are left aside). None
+    if there's no such project. ValueError: as _prompts(), or no images."""
     found = _prompts(conn, project_id, annotator, class_ids, prompts)
     if found is None:
         return None
@@ -187,6 +185,13 @@ def results(conn: sqlite3.Connection, run_id: int) -> dict | None:
                               for a in to_annotations(pf.Detections.from_dict(r["result"]["detections"]), run["classes"])]}
              for r in run["results"]]
     return run | {"results": found}
+
+
+def latest_try(conn: sqlite3.Connection, project_id: int) -> dict | None:
+    """The project's latest Try, as results() gives it; None if it has none."""
+    row = conn.execute("SELECT id FROM run WHERE project_id = ? AND classes IS NOT NULL AND NOT annotates "
+                       "ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
+    return row and results(conn, row[0])
 
 
 @jobs.kind(KIND, lane="gpu", title="Auto-annotate")

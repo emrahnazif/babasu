@@ -1,8 +1,9 @@
 // Background form: a form sent without leaving the page, with the button that sent it.
 //   <form method="post" action="…" data-background-form>
 // On success the form is reset (data-background-form="keep": left as typed), the popover around
-// it closes, and a "submitted" event bubbles from the form (js/jobs.js refreshes its list). On
-// failure a toast gives the server's reason. Without JS the form simply posts as usual.
+// it closes (not when the button has data-stay), and a "submitted" event bubbles from the form
+// (detail: the form's data-* values, e.g. projectId; js/jobs.js refreshes its list). On failure a toast gives the server's reason. Without JS the
+// form simply posts as usual.
 import { toast } from "./toast.js";
 
 // The server's reason for refusing, if it gave one in words (FastAPI's {"detail": "…"}).
@@ -31,6 +32,6 @@ document.addEventListener("submit", async (event) => {
     return;
   }
   if (form.dataset.backgroundForm !== "keep") form.reset();
-  form.closest("[popover]")?.hidePopover();
-  form.dispatchEvent(new CustomEvent("submitted", { bubbles: true }));
+  if (!event.submitter?.hasAttribute("data-stay")) form.closest("[popover]")?.hidePopover();
+  form.dispatchEvent(new CustomEvent("submitted", { bubbles: true, detail: { ...form.dataset } }));
 });

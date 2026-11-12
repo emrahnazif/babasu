@@ -214,7 +214,7 @@
   {% if project.classes and project.image_count %}
   <div id="auto-annotate" class="dialog" popover aria-labelledby="auto-annotate-title">
     <form id="auto-annotate-form" method="post" action="/projects/{{ project.id }}/annotate" data-background-form="keep"
-          data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
+          data-project-id="{{ project.id }}">
       <h2 id="auto-annotate-title">Auto-annotate</h2>
       <input type="hidden" name="where" value="{{ where }}">
       {% if auto.annotator %}
@@ -235,7 +235,7 @@
                 <span class="badge" style="--badge-color: {{ class.color }}">{{ class.name }}</span></label></td>
               <td><input type="hidden" name="class_id" value="{{ class.id }}">
                 <input name="prompt" value="{{ class.prompt }}" placeholder="{{ class.name }}" maxlength="500" aria-label="Prompt for {{ class.name }}"></td>
-              <td>{{ auto.pending[class.id] }}</td>
+              <td id="pending-{{ class.id }}" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">{{ auto.pending[class.id] }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -250,10 +250,31 @@
       {% if auto.to_download %}
         <p>Download first: {{ auto.to_download | join(", ") }}. <a href="/models">Models page</a></p>
       {% endif %}
+      {# The latest Try: the ticked classes' prompts, as typed, on a few of the images; nothing is
+         saved. Refreshed when it starts (the form is sent) and when it ends. #}
+      <div id="try-results" data-refresh-on="submitted job-ended" data-refresh-if="projectId={{ project.id }}">
+        {% if tried and tried.status in ("queued", "running") %}
+          <p class="muted">Trying on a few images…</p>
+        {% elif tried and tried.status == "failed" %}
+          <p class="error">The try failed; the jobs list says why.</p>
+        {% elif tried %}
+          <div class="grid">
+            {% for image in tried.results %}
+              <figure class="thumb">
+                {{ annotated(image, project.classes, image.thumb_url) }}
+                <figcaption>{{ image.annotations | length | plural("object") }} · {{ image.filename }}</figcaption>
+              </figure>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
       <div class="actions">
         <button class="button secondary" type="button" popovertarget="auto-annotate" popovertargetaction="hide">Cancel</button>
         <button class="button secondary" type="submit" name="step" value="save">Save prompts</button>
-        {% if auto.annotator and not auto.to_download %}<button class="button" type="submit" name="step" value="run">Run</button>{% endif %}
+        {% if auto.annotator and not auto.to_download %}
+          <button class="button secondary" type="submit" name="step" value="try" data-stay>Try</button>
+          <button class="button" type="submit" name="step" value="run">Run</button>
+        {% endif %}
       </div>
     </form>
   </div>

@@ -123,7 +123,7 @@ class AutoAnnotate(BaseModel):
 
 class AutoAnnotateForm(BaseModel):
     """The auto-annotate dialog: each class's prompt (class_id and prompt in the same order), the
-    classes to run (`use`), and whether to save the prompts only or run too."""
+    classes to run (`use`), and whether to save the prompts, run (saving them too), or try them."""
 
     where: str = Field("", max_length=2000)
     class_id: list[int] = []
@@ -131,7 +131,7 @@ class AutoAnnotateForm(BaseModel):
     use: list[int] = []
     min_score: float = Field(0.0, ge=0, le=1)
     again: bool = False
-    step: Literal["run", "save"] = "run"  # not "action": a field by that name hides the form's action
+    step: Literal["run", "save", "try"] = "run"  # not "action": a field by that name hides the form's action
 
 
 class TryAnnotator(BaseModel):
@@ -260,7 +260,7 @@ def project_page(request: Request, project_id: int, conn: DB, where: Where = "",
         filter, error = Filter(), str(e)
         project = _detail(conn, project_id, 1, filter)
     context = {"project": project, "filter": filter, "error": error, "where": where,
-               "auto": annotators.overview(conn, project_id, filter)}
+               "auto": annotators.overview(conn, project_id, filter), "tried": annotators.latest_try(conn, project_id)}
     return templates.TemplateResponse(request, "projects/project.html", context)
 
 
@@ -303,15 +303,21 @@ def edit_project(project_id: int, changed: Annotated[ProjectChanges, Form()], co
 
 @router.post("/projects/{project_id}/annotate")
 def auto_annotate(project_id: int, form: Annotated[AutoAnnotateForm, Form()], conn: DB):
-    """Save the dialog's prompts, then (Run) start auto-annotating the classes ticked."""
+    """Try the dialog's prompts on a few images (nothing saved), or save them, then (Run) start
+    auto-annotating the classes ticked."""
+    filter = Filter.parse(form.where)
     try:
-        with _writing(conn, project_id):
-            projects.set_prompts(conn, project_id, dict(zip(form.class_id, form.prompt, strict=True)))
+        prompts = dict(zip(form.class_id, form.prompt, strict=True))
+        if form.step == "try":
+            _started(lambda: annotators.try_(conn, project_id, filter, class_ids=form.use, prompts=prompts))
+        else:
+            with _writing(conn, project_id):
+                projects.set_prompts(conn, project_id, prompts)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
     if form.step == "run":
-        _started(lambda: annotators.start(conn, project_id, Filter.parse(form.where), class_ids=form.use,
-                                          min_score=form.min_score, again=form.again))
+        _started(lambda: annotators.start(conn, project_id, filter, class_ids=form.use, min_score=form.min_score,
+                                          again=form.again))
     return RedirectResponse(f"/projects/{project_id}{query({'where': form.where})}", status_code=303)
 
 
