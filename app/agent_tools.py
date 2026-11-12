@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app import jobs, projects, vision
+from app import jobs, projects, runs, vision
 from app.filters import Filter
 
 
@@ -51,6 +51,17 @@ class StatsArgs(FilterArgs):
 
 class JobArgs(BaseModel):
     job_id: int = Field(description="The job's id, from list_jobs.")
+
+
+class RunArgs(FilterArgs):
+    workflow_id: str = Field(description="The workflow's id, from list_workflows.")
+    count: int | None = Field(None, ge=1, le=1000, description="How many of the matching images, picked at random; empty for all of them.")
+    prompts: list[str] | None = Field(None, description="What to find, as text prompts (one per class); empty for the project's class prompts.")
+    name: str | None = Field(None, description="A name for the run; empty for one made from the workflow and the image count.")
+
+
+class RunIdArgs(BaseModel):
+    run_id: int = Field(description="The run's id, from start_run or list_runs.")
 
 
 class ModelArgs(BaseModel):
@@ -215,3 +226,49 @@ def load_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
 @tool("Unload a vision model from memory, freeing it (e.g. before training).", ModelArgs)
 def unload_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
     return {"unloaded": vision.unload(args.family, args.variant)}
+
+
+@tool(
+    "List the workflows that can be run (mozo graphs: e.g. SAM 3, Grounding DINO, Grounding DINO → EdgeTAM), each "
+    "with the models it uses: licence and bytes left to download (0: ready). A model must be downloaded before a run."
+)
+def list_workflows(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
+    keep = ("family", "variant", "license", "size")
+    return [w | {"models": [{k: m[k] for k in keep} for m in w["models"]]} if "models" in w else w for w in runs.workflows()]
+
+
+@tool(
+    "Run a workflow over a project's images matching a filter (all, or `count` picked at random), as a background job. "
+    "It finds the prompts (the project's class prompts unless given) and keeps what it found per image. Follow the job "
+    "with get_job, then read the results with get_run.",
+    RunArgs,
+)
+def start_run(conn: sqlite3.Connection, args: RunArgs) -> dict:
+    media_ids = projects.sample(conn, args.project_id, Filter.parse(args.where), args.count)
+    if media_ids is None:
+        raise ToolError(f"There is no project {args.project_id}.")
+    if not media_ids:
+        raise ToolError("No images match that filter.")
+    prompts = args.prompts if args.prompts is not None else [c["prompt"] for c in projects.get(conn, args.project_id)["classes"]]
+    if not prompts:
+        raise ToolError("Nothing to find: the project has no classes, so give prompts.")
+    run_id, job_id = runs.start(conn, args.workflow_id, media_ids, {"text": prompts}, args.project_id, args.name)
+    return {"run_id": run_id, "job_id": job_id, "images": len(media_ids), "prompts": prompts}
+
+
+@tool("List workflow runs, newest first: name, workflow, project, job status, and how many images have results.")
+def list_runs(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
+    return runs.list_all(conn)
+
+
+@tool(
+    "Read a run's results, per result label (a run can keep several, e.g. two models side by side): how many objects "
+    "of each class were found with their average score, and for the first 20 images the objects found (class, score, "
+    "box in pixels).",
+    RunIdArgs,
+)
+def get_run(conn: sqlite3.Connection, args: RunIdArgs) -> dict:
+    run = runs.summary(conn, args.run_id)
+    if run is None:
+        raise ToolError(f"There is no run {args.run_id}.")
+    return run

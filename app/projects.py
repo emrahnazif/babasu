@@ -155,6 +155,18 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     }
 
 
+def sample(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), count: int | None = None) -> list[int] | None:
+    """The media ids of the project's images matching `filter`: all of them, or `count` picked at
+    random. None if there's no such project; FilterError as detail()."""
+    row = _row(conn, project_id)
+    if row is None:
+        return None
+    where, params = _where(row, filter)
+    order = "ORDER BY random() LIMIT ?" if count else "ORDER BY project_media.filename LIMIT ?"
+    rows = conn.execute(f"SELECT media_id FROM project_media WHERE {where} {order}", (*params, count or -1))
+    return [r[0] for r in rows]
+
+
 def image(conn: sqlite3.Connection, project_id: int, media_id: int, filter: Filter = Filter()) -> dict | None:
     """One image of a project with its annotations, the project, and where the image is among
     the images matching `filter` (by file name): its position, how many match, and the
