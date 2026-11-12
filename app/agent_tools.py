@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app import jobs, projects, runs, vision
+from app import annotators, jobs, projects, runs, vision
 from app.filters import Filter
 
 
@@ -58,6 +58,20 @@ class RunArgs(FilterArgs):
     count: int | None = Field(None, ge=1, le=1000, description="How many of the matching images, picked at random; empty for all of them.")
     prompts: list[str] | None = Field(None, description="What to find, as text prompts (one per class); empty for the project's class prompts.")
     name: str | None = Field(None, description="A name for the run; empty for one made from the workflow and the image count.")
+
+
+class PromptArgs(ProjectArgs):
+    prompts: dict[int, str] = Field(
+        description="Class id (from get_project) -> its new prompt, the text annotators look for; an empty prompt goes "
+        "back to the class's name. Classes left out keep theirs."
+    )
+
+
+class AutoAnnotateArgs(FilterArgs):
+    count: int | None = Field(None, ge=1, description="How many of the images to do, picked at random among those with work left; empty for all.")
+    class_ids: list[int] | None = Field(None, description="Which classes (ids from get_project); empty for all of them.")
+    min_score: float = Field(0.0, ge=0, le=1, description="Leave out objects scoring below this (0..1), beyond the annotator's own threshold.")
+    again: bool = Field(False, description="Also run images already auto-annotated for a class (new objects that are already there are still left out).")
 
 
 class RunIdArgs(BaseModel):
@@ -254,6 +268,32 @@ def start_run(conn: sqlite3.Connection, args: RunArgs) -> dict:
         raise ToolError("Nothing to find: the project has no classes, so give prompts.")
     run_id, job_id = runs.start(conn, args.workflow_id, media_ids, {"text": prompts}, args.project_id, args.name)
     return {"run_id": run_id, "job_id": job_id, "images": len(media_ids), "prompts": prompts}
+
+
+@tool("Change the prompts of some of a project's classes: the text its annotator looks for (e.g. 'red car' for a class "
+      "named car). Returns the classes with their prompts.", PromptArgs)
+def set_prompts(conn: sqlite3.Connection, args: PromptArgs) -> list[dict]:
+    if projects.get(conn, args.project_id) is None:
+        raise ToolError(f"There is no project {args.project_id}.")
+    with conn:
+        projects.set_prompts(conn, args.project_id, args.prompts)
+    return [{"id": c["id"], "name": c["name"], "prompt": c["prompt"]} for c in projects.get(conn, args.project_id)["classes"]]
+
+
+@tool(
+    "Auto-annotate a project's images matching a filter with its annotator, as a background job: each class is found "
+    "from its prompt and the objects are added to the images, next to the ones there (never replacing them; an object "
+    "already there is left out). An image is done once per class, so running again only does what's new (a class "
+    "added since, images added since). Follow the job with get_job; the run's results are in get_run. The annotator's "
+    "models must be downloaded first (list_workflows).",
+    AutoAnnotateArgs,
+)
+def auto_annotate(conn: sqlite3.Connection, args: AutoAnnotateArgs) -> dict:
+    started = annotators.start(conn, args.project_id, Filter.parse(args.where), args.count, None, args.class_ids,
+                               args.min_score, args.again)
+    if started is None:
+        raise ToolError(f"There is no project {args.project_id}.")
+    return started
 
 
 @tool("List workflow runs, newest first: name, workflow, project, job status, and how many images have results.")
