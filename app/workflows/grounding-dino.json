@@ -1,0 +1,57 @@
+{
+  "nodes": [
+    {
+      "id": "image",
+      "type": "read_media",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "parameters": {}
+      }
+    },
+    {
+      "id": "find",
+      "type": "grounding_dino",
+      "position": {
+        "x": 300,
+        "y": 0
+      },
+      "data": {
+        "parameters": {
+          "text": [],
+          "variant": "tiny",
+          "threshold": 0.3
+        }
+      }
+    },
+    {
+      "id": "keep",
+      "type": "save_to_babasu",
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "data": {
+        "parameters": {
+          "label": "Grounding DINO"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "image",
+      "sourceHandle": "image",
+      "target": "find",
+      "targetHandle": "image"
+    },
+    {
+      "source": "find",
+      "sourceHandle": "detections",
+      "target": "keep",
+      "targetHandle": "detections"
+    }
+  ]
+}

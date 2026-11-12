@@ -1,0 +1,82 @@
+{
+  "nodes": [
+    {
+      "id": "image",
+      "type": "read_media",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "parameters": {}
+      }
+    },
+    {
+      "id": "find",
+      "type": "grounding_dino",
+      "position": {
+        "x": 300,
+        "y": 0
+      },
+      "data": {
+        "parameters": {
+          "text": [],
+          "variant": "tiny",
+          "threshold": 0.3
+        }
+      }
+    },
+    {
+      "id": "segment",
+      "type": "edgetam_boxes",
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "data": {
+        "parameters": {
+          "variant": "edgetam"
+        }
+      }
+    },
+    {
+      "id": "keep",
+      "type": "save_to_babasu",
+      "position": {
+        "x": 900,
+        "y": 0
+      },
+      "data": {
+        "parameters": {
+          "label": "Grounding DINO → EdgeTAM"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "image",
+      "sourceHandle": "image",
+      "target": "find",
+      "targetHandle": "image"
+    },
+    {
+      "source": "image",
+      "sourceHandle": "image",
+      "target": "segment",
+      "targetHandle": "image"
+    },
+    {
+      "source": "find",
+      "sourceHandle": "detections",
+      "target": "segment",
+      "targetHandle": "detections"
+    },
+    {
+      "source": "segment",
+      "sourceHandle": "detections",
+      "target": "keep",
+      "targetHandle": "detections"
+    }
+  ]
+}

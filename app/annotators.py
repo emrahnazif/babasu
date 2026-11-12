@@ -2,11 +2,10 @@
 "Annotation"). A project names the one it uses.
 """
 
-from typing import Literal
+from typing import Literal, get_args
 
-# Built-in annotators that find objects: id -> name. Their workflows ship with the app.
-Finder = Literal["sam3", "grounding-dino-edgetam"]
-FINDERS: dict[Finder, str] = {
-    "sam3": "SAM 3",
-    "grounding-dino-edgetam": "Grounding DINO → EdgeTAM",
-}
+from app import runs
+
+# The built-in workflows that find objects from class prompts: id -> name.
+Finder = Literal["sam3", "grounding-dino", "grounding-dino-edgetam"]
+FINDERS: dict[Finder, str] = {id: runs.BUILTIN[id] for id in get_args(Finder)}

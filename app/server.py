@@ -14,6 +14,7 @@ from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
 from app.routes import jobs as jobs_routes
 from app.routes import pages, projects, settings
+from app.routes import runs as runs_routes
 from app.routes import vision as vision_routes
 
 
@@ -41,6 +42,7 @@ app.include_router(jobs_routes.router)
 app.include_router(agent_routes.router)
 app.include_router(agents_routes.router)
 app.include_router(vision_routes.router)
+app.include_router(runs_routes.router)
 app.add_exception_handler(FilterError, projects.filter_error)
 
 
