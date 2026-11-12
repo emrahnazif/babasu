@@ -7,12 +7,20 @@ out of every read here, together with their annotations.
 import json
 import math
 import sqlite3
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from app import db, media
+from app import annotators, db, media
 from app.filters import Filter, FilterError, ObjectCondition, class_ids
+
+# What a project is for. It suggests (an annotator, later what to train), it doesn't restrict:
+# every project may hold every shape. Classification comes later.
+Task = Literal["detection", "segmentation", "keypoints"]
+TASKS: dict[Task, str] = {"detection": "Object detection", "segmentation": "Segmentation", "keypoints": "Keypoint detection"}
+# The annotator a new project of each type gets. None: no model knows the user's own keypoints,
+# so keypoint projects start by hand.
+SUGGESTED: dict[Task, annotators.Finder | None] = {"detection": "sam3", "segmentation": "sam3", "keypoints": None}
 
 # Pixel coordinate on the original image, rounded to 1 decimal.
 Coord = Annotated[float, AfterValidator(lambda v: round(v, 1))]
@@ -328,18 +336,24 @@ def annotation_counts(conn: sqlite3.Connection, project_id: int) -> dict[int, in
     return dict(rows.fetchall())
 
 
-def create(conn: sqlite3.Connection, name: str, description: str = "", classes: list[dict] | None = None) -> int:
-    """Create a project. Caller commits."""
+def create(conn: sqlite3.Connection, name: str, description: str, task: Task, classes: list[dict] | None = None) -> int:
+    """Create a project, with the annotator suggested for its type. Caller commits."""
     return conn.execute(
-        "INSERT INTO project (name, description, classes) VALUES (?, ?, ?)",
-        (name, description, json.dumps(classes or [])),
+        "INSERT INTO project (name, description, task, annotator, classes) VALUES (?, ?, ?, ?, ?)",
+        (name, description, task, SUGGESTED[task], json.dumps(classes or [])),
     ).lastrowid
 
 
-def update(conn: sqlite3.Connection, project_id: int, name: str, description: str) -> None:
-    """Rename a project or change its description. Caller commits. Raises FrozenError."""
+def update(
+    conn: sqlite3.Connection, project_id: int, name: str, description: str, task: Task, annotator: annotators.Finder | None
+) -> None:
+    """Change a project's name, description, type or annotator (None: none). Its annotations stay
+    as they are. Caller commits. Raises FrozenError."""
     _editable(conn, project_id)
-    conn.execute("UPDATE project SET name = ?, description = ? WHERE id = ?", (name, description, project_id))
+    conn.execute(
+        "UPDATE project SET name = ?, description = ?, task = ?, annotator = ? WHERE id = ?",
+        (name, description, task, annotator, project_id),
+    )
     _touch(conn, project_id)
 
 

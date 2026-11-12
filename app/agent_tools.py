@@ -100,16 +100,16 @@ def call(conn: sqlite3.Connection, name: str, arguments: str) -> str:
 # --- The tools ---
 
 
-@tool("List all projects, with their image counts, how many images are labelled, and class names.")
+@tool("List all projects, with their type, image counts, how many images are labelled, and class names.")
 def list_projects(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return [
-        {"id": p["id"], "name": p["name"], "description": p["description"], "images": p["image_count"],
+        {"id": p["id"], "name": p["name"], "description": p["description"], "type": p["task"], "images": p["image_count"],
          "labelled": p["labelled_count"], "classes": [c["name"] for c in p["classes"]]}
         for p in projects.list_all(conn)
     ]
 
 
-@tool("Show one project: its classes with how many annotations each has, and its first image file names.", ProjectArgs)
+@tool("Show one project: its type and annotator, its classes (with the prompt sent to annotators and how many annotations each has), and its first image file names.", ProjectArgs)
 def get_project(conn: sqlite3.Connection, args: ProjectArgs) -> dict:
     project = projects.detail(conn, args.project_id)
     if project is None:
@@ -118,9 +118,12 @@ def get_project(conn: sqlite3.Connection, args: ProjectArgs) -> dict:
         "id": project["id"],
         "name": project["name"],
         "description": project["description"],
+        "type": project["task"],
+        "annotator": project["annotator"],
         "images": project["image_count"],
         "labelled": project["labelled_count"],
-        "classes": [{"id": c["id"], "name": c["name"], "annotations": c["annotation_count"]} for c in project["classes"]],
+        "classes": [{"id": c["id"], "name": c["name"], "prompt": c["prompt"], "annotations": c["annotation_count"]}
+                    for c in project["classes"]],
         "first_images": [image["filename"] for image in project["images"][:20]],
     }
 

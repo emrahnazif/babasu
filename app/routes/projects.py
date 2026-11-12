@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, BeforeValidator, StringConstraints, field_validator
 
-from app import db, imports, jobs, media, projects
+from app import annotators, db, imports, jobs, media, projects
 from app.filters import Filter, FilterError, ObjectCondition, Range
 from app.templating import query, templates
 
@@ -91,10 +91,18 @@ def filter_error(request: Request, error: FilterError) -> JSONResponse:
 
 
 class NewProject(BaseModel):
-    """A project's name and description, when it's created or changed."""
+    """A new project: its name, description and type (it gets the annotator suggested for the type)."""
 
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] = ""
+    task: projects.Task
+
+
+class ProjectChanges(NewProject):
+    """A project's name, description, type and annotator, all of them, when it's changed.
+    Left out (a form's empty choice), the annotator is none."""
+
+    annotator: annotators.Finder | None = None
 
 
 class ImageImport(BaseModel):
@@ -141,9 +149,9 @@ def _writing(conn: sqlite3.Connection, project_id: int):
         raise HTTPException(409, "The project is frozen; duplicate it to change it") from None
 
 
-def _update(conn: sqlite3.Connection, project_id: int, changed: NewProject) -> None:
+def _update(conn: sqlite3.Connection, project_id: int, changed: ProjectChanges) -> None:
     with _writing(conn, project_id):
-        projects.update(conn, project_id, changed.name, changed.description)
+        projects.update(conn, project_id, changed.name, changed.description, changed.task, changed.annotator)
 
 
 def _delete(conn: sqlite3.Connection, project_id: int) -> None:
@@ -157,7 +165,7 @@ def _delete(conn: sqlite3.Connection, project_id: int) -> None:
 
 def _create(conn: sqlite3.Connection, new: NewProject) -> int:
     with conn:
-        return projects.create(conn, new.name, new.description)
+        return projects.create(conn, new.name, new.description, new.task)
 
 
 def _set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[projects.Annotation]) -> None:
@@ -225,7 +233,7 @@ def image_page(request: Request, project_id: int, media_id: int, conn: DB, where
 
 
 @router.post("/projects/{project_id}/edit")
-def edit_project(project_id: int, changed: Annotated[NewProject, Form()], conn: DB):
+def edit_project(project_id: int, changed: Annotated[ProjectChanges, Form()], conn: DB):
     _update(conn, project_id, changed)
     return RedirectResponse(f"/projects/{project_id}", status_code=303)
 
@@ -273,7 +281,7 @@ def api_stats(project_id: int, conn: DB, field: str, where: Where = "") -> dict:
 
 
 @router.patch("/api/projects/{project_id}", status_code=204)
-def api_update_project(project_id: int, changed: NewProject, conn: DB) -> None:
+def api_update_project(project_id: int, changed: ProjectChanges, conn: DB) -> None:
     _update(conn, project_id, changed)
 
 

@@ -217,6 +217,19 @@
           Description
           <textarea name="description" rows="3" maxlength="2000">{{ project.description }}</textarea>
         </label>
+        <label class="field">
+          Type
+          <select name="task">
+            {% for value, label in tasks.items() %}<option value="{{ value }}" {% if value == project.task %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          Annotator
+          <select name="annotator">
+            {% for value, label in annotators.items() %}<option value="{{ value }}" {% if value == project.annotator %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            <option value="" {% if not project.annotator %}selected{% endif %}>None</option>
+          </select>
+        </label>
       </div>
       <div class="actions">
         <button class="button secondary" type="button" popovertarget="edit-project" popovertargetaction="hide">Cancel</button>

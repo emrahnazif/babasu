@@ -18,9 +18,9 @@ from app import db, media, projects
 
 NAME = "Shapes (sample)"
 CLASSES = [
-    {"id": 0, "name": "square", "color": "#e11d48", "active": True},
-    {"id": 1, "name": "circle", "color": "#2563eb", "active": True},
-    {"id": 2, "name": "triangle", "color": "#16a34a", "active": True},
+    {"id": 0, "name": "square", "prompt": "square", "color": "#e11d48", "active": True},
+    {"id": 1, "name": "circle", "prompt": "circle", "color": "#2563eb", "active": True},
+    {"id": 2, "name": "triangle", "prompt": "triangle", "color": "#16a34a", "active": True},
 ]
 IMAGE_COUNT = 24
 WIDTH, HEIGHT = 640, 480
@@ -59,7 +59,7 @@ def main() -> None:
         if conn.execute("SELECT 1 FROM project WHERE name = ?", (NAME,)).fetchone():
             print(f"'{NAME}' already exists; nothing to do.")
             return
-        project_id = projects.create(conn, NAME, "Generated squares, circles and triangles.", CLASSES)
+        project_id = projects.create(conn, NAME, "Generated squares, circles and triangles.", "detection", CLASSES)
         rng = random.Random(0)
         for i in range(IMAGE_COUNT):
             data, annotations = make_image(rng)

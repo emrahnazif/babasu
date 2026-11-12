@@ -8,7 +8,7 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from app import agent, config, db, jobs, media, settings
+from app import agent, annotators, config, db, jobs, media, projects, settings
 
 ICONS_DIR = config.STATIC_DIR / "icons"
 
@@ -129,6 +129,8 @@ templates.env.globals["sidebar_min_width"] = settings.SIDEBAR_MIN_WIDTH
 templates.env.globals["sidebar_max_width"] = settings.SIDEBAR_MAX_WIDTH
 templates.env.globals["jobs_overview"] = jobs_overview
 templates.env.globals["image_formats"] = media.FORMATS_TEXT
+templates.env.globals["tasks"] = projects.TASKS
+templates.env.globals["annotators"] = annotators.FINDERS
 templates.env.globals["image_suffixes"] = ",".join(sorted(media.SUFFIXES))
 templates.env.globals["agent_chat"] = agent_chat
 templates.env.globals["unified_title_bar"] = False  # macOS desktop window: app/desktop.py
