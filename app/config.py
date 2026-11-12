@@ -1,5 +1,6 @@
 """App-wide settings and resource paths."""
 
+import sys
 from pathlib import Path
 
 import platformdirs
@@ -36,3 +37,7 @@ APP_ICON = BRAND_DIR / "app-icon.png"
 DATA_DIR = Path(platformdirs.user_data_dir(APP_NAME, appauthor=False))
 DB_FILE = DATA_DIR / "babasu.db"
 MEDIA_DIR = DATA_DIR / "media"
+WEIGHTS_DIR = DATA_DIR / "weights"  # model weights mozo downloads
+
+# The device vision models run on, one default per platform: Apple silicon, else an NVIDIA GPU.
+DEVICE = "mps" if sys.platform == "darwin" else "cuda"

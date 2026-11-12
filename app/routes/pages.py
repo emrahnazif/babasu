@@ -28,11 +28,6 @@ def studio(request: Request):
     return _coming(request, "Studio")
 
 
-@router.get("/models", response_class=HTMLResponse)
-def models(request: Request):
-    return _coming(request, "Models")
-
-
 @router.get("/data-lake", response_class=HTMLResponse)
 def data_lake(request: Request):
     return _coming(request, "Data lake")

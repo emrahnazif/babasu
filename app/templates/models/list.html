@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{# Models: the vision models mozo publishes, by task. Download and Load start jobs (sent in the
+   background; progress in the jobs drawer); the list refreshes when a job ends. #}
+
+{% macro button(family, variant, action, label, background=false) %}
+  <form method="post" action="/models/{{ family }}/{{ variant }}/{{ action }}"{% if background %} data-background-form{% endif %}>
+    <button class="button secondary" type="submit">{{ label }}</button>
+  </form>
+{% endmacro %}
+
+{% block content %}
+  <div id="models" data-refresh-on="job-ended">
+    <p class="muted">Models mozo publishes, for annotation and workflows. Each carries its own licence. They run on {{ device }}.</p>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+    {% if loaded %}
+      <section class="stack">
+        <h2>Loaded</h2>
+        <div class="card">
+        <table>
+          <thead><tr><th>Model</th><th>Runs on</th><th>Memory (estimate)</th><th></th></tr></thead>
+          <tbody>
+            {% for m in loaded %}
+              <tr>
+                <td>{{ m.family }} <span class="muted">{{ m.variant }}</span></td>
+                <td>{{ m.device }}{% if m.runtime %} <span class="muted">{{ m.runtime }}</span>{% endif %}</td>
+                <td>{{ m.size | filesize if m.size else "—" }}</td>
+                <td>{{ button(m.family, m.variant, "unload", "Unload") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="actions">
+          <form method="post" action="/models/unload-all"><button class="button secondary" type="submit">Unload all</button></form>
+        </div>
+        </div>
+      </section>
+    {% endif %}
+
+    {% for task, families in catalogue | groupby("task") %}
+      <section class="stack">
+      <h2>{{ task | replace("_", " ") | capitalize }}</h2>
+      {% for f in families %}
+        <div class="card">
+          <h2>{{ f.family }}</h2>
+          <p class="muted">{{ f.description }}</p>
+          <table>
+            <thead><tr><th>Variant</th><th>Licence</th><th>Size</th><th>State</th><th></th></tr></thead>
+            <tbody>
+              {% for v in f.variants %}
+                <tr>
+                  <td>{{ v.variant }}</td>
+                  <td><span class="badge plain">{{ v.license }}</span></td>
+                  <td>{{ v.size | filesize }}</td>
+                  {% if v.state in ("downloading", "loading") %}
+                    <td class="muted">{{ v.state | capitalize }}…</td><td></td>
+                  {% elif v.state == "loaded" %}
+                    <td>Loaded</td><td>{{ button(f.family, v.variant, "unload", "Unload") }}</td>
+                  {% elif v.state == "downloaded" %}
+                    <td>Downloaded</td>
+                    <td>{{ button(f.family, v.variant, "load", "Load", background=true) }}{{ button(f.family, v.variant, "remove", "Remove") }}</td>
+                  {% else %}
+                    <td class="muted">{{ v.to_download | filesize }} to download</td>
+                    <td>{{ button(f.family, v.variant, "download", "Download", background=true) }}</td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+      </section>
+    {% endfor %}
+  </div>
+{% endblock %}

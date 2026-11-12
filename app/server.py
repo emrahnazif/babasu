@@ -8,23 +8,26 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app import agent, config, db, jobs
+from app import agent, config, db, jobs, vision
 from app.filters import FilterError
 from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
 from app.routes import jobs as jobs_routes
 from app.routes import pages, projects, settings
+from app.routes import vision as vision_routes
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Owns startup and shutdown of everything long-lived (database schema, job workers)."""
+    """Owns startup and shutdown of everything long-lived (database schema, job workers, loaded models)."""
     db.migrate()
+    vision.setup()
     agent.recover()
     jobs.run_workers()
     yield
     agent.stop_all()
     jobs.shutdown()
+    vision.unload_all()
 
 
 app = FastAPI(title=config.APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -37,6 +40,7 @@ app.include_router(settings.router)
 app.include_router(jobs_routes.router)
 app.include_router(agent_routes.router)
 app.include_router(agents_routes.router)
+app.include_router(vision_routes.router)
 app.add_exception_handler(FilterError, projects.filter_error)
 
 
