@@ -1,5 +1,6 @@
 // Jobs: keeps the drawer's job list and the top-bar count current, handles Cancel and Retry,
-// and raises a toast when a job starts or ends. The list itself is rendered by the server
+// and shows a toast for each job started while the page is open: it follows the job's progress
+// and turns into "Finished" (or failed, cancelled…) when the job ends. The list itself is rendered by the server
 // (partials/jobs.html); this file fetches it again and applies the changes.
 //
 // For other parts of the page: a "job-ended" event fires on document when a job ends (detail:
@@ -50,6 +51,7 @@ function copyAttributes(from, to) {
 
 if (panel) {
   let known = new Map(); // job id -> status, as last seen
+  const notes = new Map(); // job id -> the toast following it
   let lastHtml = "";
   let timer;
 
@@ -57,14 +59,21 @@ if (panel) {
   function update(announce) {
     const seen = new Map();
     for (const job of panel.querySelectorAll(".job")) {
-      const { id, status, title, summary } = job.dataset;
+      const { id, status, title, summary, message, progress, progressText } = job.dataset;
       seen.set(id, status);
       const before = known.get(id);
-      if (!announce || before === status) continue;
-      if (before === undefined && (status === "queued" || status === "running")) {
-        toast(`Started: ${title}`);
-      } else if (ENDED[status]) {
-        toast(`${ENDED[status]}: ${title}`, summary);
+      const active = status === "queued" || status === "running";
+      const started = `Started: ${title}`;
+      if (announce && before === undefined && active) notes.set(id, toast(started));
+      if (active) {
+        // Queued, or running with no total yet: a bar without a known end.
+        notes.get(id)?.set(started, [message, progressText].filter(Boolean).join(" · "),
+          progress === "" ? null : Number(progress));
+      } else if (announce && before !== status && ENDED[status]) {
+        const note = notes.get(id);
+        if (note?.open) note.set(`${ENDED[status]}: ${title}`, summary);
+        else toast(`${ENDED[status]}: ${title}`, summary);
+        notes.delete(id);
         document.dispatchEvent(new CustomEvent("job-ended", { detail: { ...job.dataset } }));
       }
     }

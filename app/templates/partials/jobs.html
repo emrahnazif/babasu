@@ -3,8 +3,17 @@
    What each job can do, and its summary line, come from app/jobs.py (the API returns the same). #}
 <div class="job-list" data-active="{{ active }}">
   {% for job in jobs %}
+    {# A running job's progress: a fraction (none while the total is unknown), and in words. #}
+    {% set fraction = job.done / job.total if job.status == "running" and job.total else none %}
+    {% set counted %}
+      {%- if fraction is not none %}
+        {%- if job.unit == "bytes" %}{{ job.done | filesize }} / {{ job.total | filesize }}
+        {%- else %}{{ "{:,}".format(job.done) }} / {{ "{:,}".format(job.total) }}{% endif %} · {{ (100 * fraction) | round | int }}%
+      {%- endif %}
+    {%- endset %}
     <div class="job job--{{ job.status }}" data-id="{{ job.id }}" data-status="{{ job.status }}"
-         data-title="{{ job.title }}" data-summary="{{ job.summary }}" data-project-id="{{ job.project_id or '' }}">
+         data-title="{{ job.title }}" data-summary="{{ job.summary }}" data-project-id="{{ job.project_id or '' }}"
+         data-progress="{{ fraction if fraction is not none else '' }}" data-progress-text="{{ counted }}" data-message="{{ job.message }}">
       <div class="job__head">
         <span class="job__title">{{ job.title }}</span>
         <span class="job__status">{{ job.status }}</span>
@@ -12,10 +21,10 @@
       {% if job.project_name %}<p class="job__meta">{{ job.project_name }}</p>{% endif %}
 
       {% if job.status == "running" %}
-        {% if job.total %}
+        {% if fraction is not none %}
           <div class="progress" role="progressbar" aria-label="{{ job.title }}" aria-valuemin="0"
-               aria-valuemax="{{ job.total }}" aria-valuenow="{{ job.done }}" style="--value: {{ job.done / job.total }}"></div>
-          <p class="job__meta">{{ "{:,}".format(job.done) }} / {{ "{:,}".format(job.total) }} · {{ (100 * job.done / job.total) | round | int }}%</p>
+               aria-valuemax="{{ job.total }}" aria-valuenow="{{ job.done }}" style="--value: {{ fraction }}"></div>
+          <p class="job__meta">{{ counted }}</p>
         {% else %}
           <div class="progress indeterminate" role="progressbar" aria-label="{{ job.title }}"></div>
         {% endif %}

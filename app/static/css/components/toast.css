@@ -50,3 +50,7 @@
 .toast__text:empty {
   display: none;
 }
+
+.toast__progress {
+  margin-top: var(--space-2);
+}
