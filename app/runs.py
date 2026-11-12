@@ -8,13 +8,17 @@ workflow with two of them (say SAM 3, and Grounding DINO → EdgeTAM) keeps two 
 per image.
 """
 
+import json
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 
-from mozo.workflow import Detections, Workflow, node
+from mozo.workflow import Detections, Workflow, annotation_line, node
 
-from app import config
+from app import config, db, jobs, media, vision
 
 BUILTIN_DIR = config.BASE_DIR / "workflows"
+KIND = "workflow_run"  # job kind
 
 # The built-in workflows: id -> name. mozo's workflow file has no name, so a saved one is named
 # by its id.
@@ -78,3 +82,176 @@ def detail(id: str, workflow: Workflow) -> dict:
         "models": [use._asdict() for use in found.models],
         "missing_files": [{"node": node, "parameter": name, "path": path} for node, name, path in found.missing],
     }
+
+
+# --- Runs ---
+
+
+def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], overrides: dict,
+          project_id: int | None = None, name: str | None = None) -> tuple[int, int]:
+    """Create a run of a workflow over stored images and start its job; returns (run id, job id).
+    `overrides` are parameter values by name, as mozo's run takes them (e.g. {"text": ["car"]}).
+    ValueError: no such workflow, or unknown images. The workflow's own problems (a model not
+    downloaded, a missing file) fail the job, which says why."""
+    workflow = load(workflow_id)
+    if workflow is None:
+        raise ValueError(f"There is no workflow {workflow_id!r}")
+    media_ids = list(dict.fromkeys(media_ids))
+    found = conn.execute("SELECT count(*) FROM media WHERE id IN (SELECT value FROM json_each(?))",
+                         (json.dumps(media_ids),)).fetchone()[0]
+    if not media_ids or found != len(media_ids):
+        raise ValueError("Give stored images (media ids) to run on")
+    count = len(media_ids)
+    name = name or f"{_entry(workflow_id)['name']} · {count:,} image{'' if count == 1 else 's'}"
+    with conn:
+        run_id = conn.execute(
+            "INSERT INTO run (workflow_id, workflow, project_id, name) VALUES (?, ?, ?, ?) RETURNING id",
+            (workflow_id, json.dumps(workflow.to_dict()), project_id, name),
+        ).fetchone()[0]
+    params = {"run_id": run_id, "media_ids": media_ids, "overrides": overrides}
+    job_id = jobs.start(conn, KIND, params, project_id)
+    with conn:
+        conn.execute("UPDATE run SET job_id = ? WHERE id = ?", (job_id, run_id))
+    return run_id, job_id
+
+
+def _kept(workflow: Workflow) -> dict[str, str]:
+    """The save_to_babasu nodes: node id -> the label its results are kept under."""
+    return {step.id: step.parameters.get("label") or step.id
+            for step in workflow.steps.values() if step.spec.name == "save_to_babasu"}
+
+
+@jobs.kind(KIND, lane="gpu", title="Run workflow")
+def run_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict) -> dict:
+    """Crash-safe and safe to retry: each image's results are committed together as it finishes,
+    and a retry skips the images the run already has."""
+    with closing(db.connect()) as conn:
+        row = conn.execute("SELECT workflow, name FROM run WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError("The run was deleted")
+        with conn:
+            conn.execute("UPDATE run SET job_id = ? WHERE id = ?", (ctx.job_id, run_id))
+        ctx.advance(0, row["name"])
+        workflow = Workflow.from_dict(json.loads(row["workflow"]))
+        kept = _kept(workflow)
+        if not kept:
+            raise ValueError("The workflow has no save_to_babasu node, so a run would keep nothing")
+        found = workflow.check(device=config.DEVICE, **overrides)
+        if found.missing:
+            raise ValueError("Missing files: " + ", ".join(path for _, _, path in found.missing))
+        if found.downloads:  # a run never starts a download: that's the Models page's job, with progress
+            left = ", ".join(f"{family} {variant}" for _, family, variant, _ in found.downloads)
+            raise ValueError(f"Download these models first (Models page): {left}")
+
+        done = {r[0] for r in conn.execute("SELECT DISTINCT media_id FROM run_result WHERE run_id = ?", (run_id,))}
+        images = {
+            str(media.path(r["sha256"], r["ext"])): r
+            for r in conn.execute(
+                "SELECT id, sha256, ext, width, height FROM media WHERE id IN (SELECT value FROM json_each(?))",
+                (json.dumps([m for m in media_ids if m not in done]),),
+            )
+        }
+        ctx.total(len(media_ids))
+        ctx.advance(len(media_ids) - len(images))
+        failed = 0
+
+        def skip(item, event) -> None:
+            nonlocal failed
+            failed += 1
+            ctx.log(f"Failed on {item} at {event.node}: {event.error}")
+            ctx.advance()
+
+        # Closing the results stops the pipeline: no image starts a node after that.
+        with closing(workflow.run_many(list(images), models=vision.load, on_error=skip, **overrides)) as results:
+            for path, outputs in results:
+                image = images[path]
+                with conn:
+                    conn.executemany(
+                        "INSERT OR REPLACE INTO run_result (run_id, media_id, label, result) VALUES (?, ?, ?, ?)",
+                        [(run_id, image["id"], label,
+                          annotation_line(outputs[node], label=image["sha256"], width=image["width"], height=image["height"]))
+                         for node, label in kept.items()],
+                    )
+                ctx.advance()
+                if ctx.cancelled:
+                    break
+    return {"images": ctx.done - failed, "failed": failed}
+
+
+_RUNS = """SELECT run.id, run.name, run.workflow_id, run.project_id, run.job_id, run.created_at,
+                  job.status AS status,
+                  (SELECT count(DISTINCT media_id) FROM run_result WHERE run_id = run.id) AS images
+           FROM run LEFT JOIN job ON job.id = run.job_id"""
+
+
+def list_all(conn: sqlite3.Connection) -> list[dict]:
+    """Every run, newest first: its name, workflow, project, when, its job's status, and how many
+    images have results."""
+    return [dict(r) for r in conn.execute(f"{_RUNS} ORDER BY run.id DESC")]
+
+
+def _run(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | None:
+    return conn.execute(f"{_RUNS} WHERE run.id = ?", (run_id,)).fetchone()
+
+
+def _results(conn: sqlite3.Connection, run_id: int) -> list[dict]:
+    """Per image and label: media id, sha256, the image's file name in the run's project (None
+    without one), and the result, mozo's annotation line (detections with boxes, classes, scores
+    and masks; the image's width and height)."""
+    rows = conn.execute(
+        """SELECT r.media_id, m.sha256, pm.filename, r.label, r.result
+           FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
+           LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
+           WHERE r.run_id = ? ORDER BY r.media_id, r.label""",
+        (run_id,),
+    ).fetchall()
+    return [dict(r) | {"result": json.loads(r["result"])} for r in rows]
+
+
+def get(conn: sqlite3.Connection, run_id: int) -> dict | None:
+    """The run with all its results (see _results)."""
+    run = _run(conn, run_id)
+    return None if run is None else dict(run) | {"results": _results(conn, run_id)}
+
+
+def summary(conn: sqlite3.Connection, run_id: int, images: int = 20) -> dict | None:
+    """The run in brief, per result label: objects found per class with their average score, and
+    for the first `images` images (`image_count`: all of them) each object's class, score and box
+    in pixels. No masks."""
+    run = _run(conn, run_id)
+    if run is None:
+        return None
+    labels: dict[str, dict] = {}
+    for r in _results(conn, run_id):
+        found = [{"class": d.get("class_name"), "score": d.get("confidence"), "box": d.get("bbox")}
+                 for d in r["result"]["detections"]]
+        label = labels.setdefault(r["label"], {"scores": {}, "image_count": 0, "images": []})
+        for f in found:
+            label["scores"].setdefault(f["class"], []).append(f["score"] or 0)
+        label["image_count"] += 1
+        if len(label["images"]) < images:
+            label["images"].append({"image": r["filename"] or r["sha256"][:12], "objects": found})
+    for label in labels.values():
+        label["classes"] = {name: {"objects": len(s), "average_score": round(sum(s) / len(s), 3)}
+                            for name, s in label.pop("scores").items()}
+    return dict(run) | {"results": labels}
+
+
+def rename(conn: sqlite3.Connection, run_id: int, name: str) -> bool:
+    with conn:
+        return conn.execute("UPDATE run SET name = ? WHERE id = ?", (name, run_id)).rowcount > 0
+
+
+def delete(conn: sqlite3.Connection, run_id: int) -> list[Path] | None:
+    """Delete a run and its results; returns the image files no project or run uses any more, for
+    the caller to delete after this commits. None if there's no such run. ValueError while its job
+    is queued or running."""
+    row = _run(conn, run_id)
+    if row is None:
+        return None
+    if row["status"] in jobs.ACTIVE:
+        raise ValueError("The run's job is still going; cancel it first")
+    with conn:
+        used = [r[0] for r in conn.execute("SELECT DISTINCT media_id FROM run_result WHERE run_id = ?", (run_id,))]
+        conn.execute("DELETE FROM run WHERE id = ?", (run_id,))
+        return media.remove_unused(conn, used)

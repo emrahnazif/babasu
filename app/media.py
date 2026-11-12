@@ -29,6 +29,11 @@ def _relpath(sha256: str, ext: str) -> str:
     return f"{sha256[:2]}/{sha256}.{ext}"
 
 
+def path(sha256: str, ext: str) -> Path:
+    """The stored file on disk."""
+    return config.MEDIA_DIR / _relpath(sha256, ext)
+
+
 def url(sha256: str, ext: str) -> str:
     return f"/media/{_relpath(sha256, ext)}"
 
@@ -64,10 +69,10 @@ def store(conn: sqlite3.Connection, data: bytes) -> int:
 
         # Files first, then the row: a crash in between leaves only unused files.
         # Existing files are kept, so a missing thumbnail is also recreated here.
-        path = config.MEDIA_DIR / _relpath(sha256, ext)
-        if not path.exists():
-            _write(path, data)
-        thumb = config.MEDIA_DIR / _relpath(sha256, "thumb.webp")
+        file = path(sha256, ext)
+        if not file.exists():
+            _write(file, data)
+        thumb = path(sha256, "thumb.webp")
         if not thumb.exists():
             _write(thumb, _thumbnail(upright))
 
@@ -81,19 +86,18 @@ def store(conn: sqlite3.Connection, data: bytes) -> int:
 
 
 def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> list[Path]:
-    """Of these media, delete the rows no project uses any more, and return their files (with
-    thumbnails). The caller commits first, then deletes the files, so a failed commit never
+    """Of these media, delete the rows no project or run uses any more, and return their files
+    (with thumbnails). The caller commits first, then deletes the files, so a failed commit never
     loses a file that's still in use."""
     if not media_ids:
         return []
     rows = conn.execute(
         """DELETE FROM media WHERE id IN (SELECT value FROM json_each(?))
-           AND NOT EXISTS (SELECT 1 FROM project_media WHERE media_id = media.id) RETURNING sha256, ext""",
+           AND NOT EXISTS (SELECT 1 FROM project_media WHERE media_id = media.id)
+           AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id) RETURNING sha256, ext""",
         (json.dumps(media_ids),),
     ).fetchall()
-    return [config.MEDIA_DIR / _relpath(sha, ext) for sha, ext in rows] + [
-        config.MEDIA_DIR / _relpath(sha, "thumb.webp") for sha, _ in rows
-    ]
+    return [path(sha, ext) for sha, ext in rows] + [path(sha, "thumb.webp") for sha, _ in rows]
 
 
 def _thumbnail(image: Image.Image) -> bytes:
