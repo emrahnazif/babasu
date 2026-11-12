@@ -10,6 +10,7 @@ per image.
 
 import json
 import sqlite3
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 
@@ -87,32 +88,57 @@ def detail(id: str, workflow: Workflow) -> dict:
 # --- Runs ---
 
 
-def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], overrides: dict,
-          project_id: int | None = None, name: str | None = None) -> tuple[int, int]:
-    """Create a run of a workflow over stored images and start its job; returns (run id, job id).
-    `overrides` are parameter values by name, as mozo's run takes them (e.g. {"text": ["car"]}).
-    ValueError: no such workflow, or unknown images. The workflow's own problems (a model not
-    downloaded, a missing file) fail the job, which says why."""
+def run_name(label: str, images: int) -> str:
+    """A run's name: "<label> · N images"."""
+    return f"{label} · {images:,} image{'' if images == 1 else 's'}"
+
+
+def to_download(workflow_id: str) -> list[str]:
+    """The models the workflow uses that aren't downloaded yet (for config.DEVICE), as
+    "family variant"; empty when it's ready to run."""
+    return [f"{use.family} {use.variant}" for use in load(workflow_id).check(device=config.DEVICE).models if use.size]
+
+
+def create(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], project_id: int | None = None,
+           name: str | None = None, classes: list[int] | None = None, annotates: bool = False) -> int:
+    """Create a run of a workflow over stored images (no repeats), without its job (launch() starts
+    one), and commit it; returns its id. `classes`: the project classes its prompts stand for, in
+    order; `annotates`: its results become the project's annotations. ValueError: no such
+    workflow, or unknown images."""
     workflow = load(workflow_id)
     if workflow is None:
         raise ValueError(f"There is no workflow {workflow_id!r}")
-    media_ids = list(dict.fromkeys(media_ids))
     found = conn.execute("SELECT count(*) FROM media WHERE id IN (SELECT value FROM json_each(?))",
                          (json.dumps(media_ids),)).fetchone()[0]
     if not media_ids or found != len(media_ids):
         raise ValueError("Give stored images (media ids) to run on")
-    count = len(media_ids)
-    name = name or f"{_entry(workflow_id)['name']} · {count:,} image{'' if count == 1 else 's'}"
     with conn:
-        run_id = conn.execute(
-            "INSERT INTO run (workflow_id, workflow, project_id, name) VALUES (?, ?, ?, ?) RETURNING id",
-            (workflow_id, json.dumps(workflow.to_dict()), project_id, name),
+        return conn.execute(
+            """INSERT INTO run (workflow_id, workflow, project_id, name, classes, annotates)
+               VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
+            (workflow_id, json.dumps(workflow.to_dict()), project_id, name or run_name(_entry(workflow_id)["name"], len(media_ids)),
+             classes and json.dumps(classes), annotates),
         ).fetchone()[0]
-    params = {"run_id": run_id, "media_ids": media_ids, "overrides": overrides}
-    job_id = jobs.start(conn, KIND, params, project_id)
+
+
+def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict, project_id: int | None = None) -> int:
+    """Start the job that does a run's work (a job kind built on execute(), given the run id) and
+    return its id."""
+    job_id = jobs.start(conn, kind, {"run_id": run_id} | params, project_id)
     with conn:
         conn.execute("UPDATE run SET job_id = ? WHERE id = ?", (job_id, run_id))
-    return run_id, job_id
+    return job_id
+
+
+def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], overrides: dict,
+          project_id: int | None = None, name: str | None = None) -> tuple[int, int]:
+    """Create a run of a workflow over stored images and start its job; returns (run id, job id).
+    `overrides` are parameter values by name, as mozo's run takes them (e.g. {"text": ["car"]}).
+    ValueError as create(). The workflow's own problems (a model not downloaded, a missing file)
+    fail the job, which says why."""
+    media_ids = list(dict.fromkeys(media_ids))
+    run_id = create(conn, workflow_id, media_ids, project_id, name)
+    return run_id, launch(conn, run_id, KIND, {"media_ids": media_ids, "overrides": overrides}, project_id)
 
 
 def _kept(workflow: Workflow) -> dict[str, str]:
@@ -121,9 +147,23 @@ def _kept(workflow: Workflow) -> dict[str, str]:
             for step in workflow.steps.values() if step.spec.name == "save_to_babasu"}
 
 
+# Called as each image finishes, in the transaction that stores its results: (connection, the
+# image's media row: id, sha256, ext, width, height, its results: label -> detections). What it
+# writes commits with the results, or not at all; raising fails the job before the image counts.
+OnImage = Callable[[sqlite3.Connection, sqlite3.Row, dict[str, Detections]], None]
+
+
 @jobs.kind(KIND, lane="gpu", title="Run workflow")
 def run_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict) -> dict:
-    """Crash-safe and safe to retry: each image's results are committed together as it finishes,
+    return execute(ctx, run_id, media_ids, overrides)
+
+
+def execute(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict,
+            on_image: OnImage | None = None) -> dict:
+    """A run's work, inside a job: the workflow over the images, keeping each image's results.
+    A job kind built on runs (auto-annotate) does more per image with `on_image`.
+
+    Crash-safe and safe to retry: each image's results are committed together as it finishes,
     and a retry skips the images the run already has."""
     with closing(db.connect()) as conn:
         row = conn.execute("SELECT workflow, name FROM run WHERE id = ?", (run_id,)).fetchone()
@@ -165,13 +205,16 @@ def run_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dic
         with closing(workflow.run_many(list(images), models=vision.load, on_error=skip, **overrides)) as results:
             for path, outputs in results:
                 image = images[path]
+                found = {label: outputs[node] for node, label in kept.items()}
                 with conn:
                     conn.executemany(
                         "INSERT OR REPLACE INTO run_result (run_id, media_id, label, result) VALUES (?, ?, ?, ?)",
                         [(run_id, image["id"], label,
-                          annotation_line(outputs[node], label=image["sha256"], width=image["width"], height=image["height"]))
-                         for node, label in kept.items()],
+                          annotation_line(detections, label=image["sha256"], width=image["width"], height=image["height"]))
+                         for label, detections in found.items()],
                     )
+                    if on_image:
+                        on_image(conn, image, found)
                 ctx.advance()
                 if ctx.cancelled:
                     break
