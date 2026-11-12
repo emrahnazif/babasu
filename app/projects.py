@@ -9,7 +9,7 @@ import math
 import sqlite3
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from app import db, media
 from app.filters import Filter, FilterError, ObjectCondition, class_ids
@@ -32,6 +32,8 @@ class Annotation(BaseModel):
     bbox: tuple[Coord, Coord, Coord, Coord] | None = None  # x, y, w, h
     segments: list[tuple[Coord, Coord]] | None = None  # polygon points
     keypoints: list[Keypoint] | None = None
+    # The model's confidence, on an object a model made and nobody has reviewed yet.
+    score: Annotated[float, Field(ge=0, le=1), AfterValidator(lambda v: round(v, 3))] | None = None
 
     @model_validator(mode="after")
     def _has_a_shape(self):
