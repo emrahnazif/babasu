@@ -229,27 +229,33 @@ def execute(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dic
 
 
 _RUNS = """SELECT run.id, run.name, run.workflow_id, run.project_id, run.job_id, run.created_at,
-                  job.status AS status,
+                  run.classes, run.annotates, job.status AS status,
                   (SELECT count(DISTINCT media_id) FROM run_result WHERE run_id = run.id) AS images
            FROM run LEFT JOIN job ON job.id = run.job_id"""
 
 
+def _dict(row: sqlite3.Row) -> dict:
+    return dict(row) | {"classes": row["classes"] and json.loads(row["classes"]), "annotates": bool(row["annotates"])}
+
+
 def list_all(conn: sqlite3.Connection) -> list[dict]:
-    """Every run, newest first: its name, workflow, project, when, its job's status, and how many
-    images have results."""
-    return [dict(r) for r in conn.execute(f"{_RUNS} ORDER BY run.id DESC")]
+    """Every run, newest first: its name, workflow, project, when, the project classes its prompts
+    stood for (None: other prompts or none) and whether it annotated the project, its job's
+    status, and how many images have results."""
+    return [_dict(r) for r in conn.execute(f"{_RUNS} ORDER BY run.id DESC")]
 
 
-def _run(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | None:
-    return conn.execute(f"{_RUNS} WHERE run.id = ?", (run_id,)).fetchone()
+def _run(conn: sqlite3.Connection, run_id: int) -> dict | None:
+    row = conn.execute(f"{_RUNS} WHERE run.id = ?", (run_id,)).fetchone()
+    return row and _dict(row)
 
 
 def _results(conn: sqlite3.Connection, run_id: int) -> list[dict]:
-    """Per image and label: media id, sha256, the image's file name in the run's project (None
-    without one), and the result, mozo's annotation line (detections with boxes, classes, scores
+    """Per image and label: media id, sha256, the image's file name in the run's project (without
+    one, the start of its sha256), and the result, mozo's annotation line (detections with boxes, classes, scores
     and masks; the image's width and height)."""
     rows = conn.execute(
-        """SELECT r.media_id, m.sha256, pm.filename, r.label, r.result
+        """SELECT r.media_id, m.sha256, coalesce(pm.filename, substr(m.sha256, 1, 12)) AS filename, r.label, r.result
            FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
            LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
            WHERE r.run_id = ? ORDER BY r.media_id, r.label""",
@@ -261,7 +267,7 @@ def _results(conn: sqlite3.Connection, run_id: int) -> list[dict]:
 def get(conn: sqlite3.Connection, run_id: int) -> dict | None:
     """The run with all its results (see _results)."""
     run = _run(conn, run_id)
-    return None if run is None else dict(run) | {"results": _results(conn, run_id)}
+    return None if run is None else run | {"results": _results(conn, run_id)}
 
 
 def summary(conn: sqlite3.Connection, run_id: int, images: int = 20) -> dict | None:
@@ -280,11 +286,11 @@ def summary(conn: sqlite3.Connection, run_id: int, images: int = 20) -> dict | N
             label["scores"].setdefault(f["class"], []).append(f["score"] or 0)
         label["image_count"] += 1
         if len(label["images"]) < images:
-            label["images"].append({"image": r["filename"] or r["sha256"][:12], "objects": found})
+            label["images"].append({"image": r["filename"], "objects": found})
     for label in labels.values():
         label["classes"] = {name: {"objects": len(s), "average_score": round(sum(s) / len(s), 3)}
                             for name, s in label.pop("scores").items()}
-    return dict(run) | {"results": labels}
+    return run | {"results": labels}
 
 
 def rename(conn: sqlite3.Connection, run_id: int, name: str) -> bool:

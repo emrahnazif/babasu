@@ -15,7 +15,7 @@ from typing import Literal, get_args
 
 import pixelflow as pf
 
-from app import db, jobs, projects, runs
+from app import db, jobs, media, projects, runs
 from app.filters import Filter
 from app.projects import Task
 
@@ -169,6 +169,24 @@ def try_(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), a
     if not media_ids:
         raise ValueError("No images match the filter")
     return _launch(conn, project_id, annotator, "Try", media_ids, tried, runs.KIND)
+
+
+def results(conn: sqlite3.Connection, run_id: int) -> dict | None:
+    """A run made from a project's class prompts (auto-annotate, Try), with its results as the
+    project's annotations: per image and result label, the image (media id, file name, width,
+    height, thumbnail) and its objects with their scores. None if there's no such run.
+    ValueError if its prompts weren't a project's classes."""
+    run = runs.get(conn, run_id)
+    if run is None:
+        return None
+    if run["classes"] is None:
+        raise ValueError("The run's prompts weren't a project's classes")
+    found = [{"media_id": r["media_id"], "filename": r["filename"], "label": r["label"],
+              "width": r["result"]["width"], "height": r["result"]["height"], "thumb_url": media.thumb_url(r["sha256"]),
+              "annotations": [a.model_dump(exclude_none=True)
+                              for a in to_annotations(pf.Detections.from_dict(r["result"]["detections"]), run["classes"])]}
+             for r in run["results"]]
+    return run | {"results": found}
 
 
 @jobs.kind(KIND, lane="gpu", title="Auto-annotate")

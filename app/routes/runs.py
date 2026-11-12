@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from mozo.workflow import WorkflowError
 from pydantic import BaseModel, StringConstraints
 
-from app import db, runs
+from app import annotators, db, runs
 
 router = APIRouter(prefix="/api")
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -105,3 +105,12 @@ def api_delete_run(run_id: int, conn: DB) -> None:
     for path in unused:
         path.unlink(missing_ok=True)
 
+
+@router.get("/runs/{run_id}/annotations")
+def api_run_annotations(run_id: int, conn: DB) -> dict:
+    """A run made from a project's class prompts (auto-annotate, Try), its results as the
+    project's annotations, per image and result label. 422 for a run with other prompts."""
+    try:
+        return _found(annotators.results(conn, run_id))
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
