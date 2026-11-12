@@ -1,7 +1,8 @@
 """Tools the agent can call: babasu's own functions, the same ones the UI and the API use.
 
 Each tool's arguments are a pydantic model, so the JSON schema the model sees is generated, never
-written by hand. Read-only for now; tools that change data will ask for confirmation first.
+written by hand. Tools that change things (downloading, loading models) don't ask for
+confirmation yet; some may later (product.md "The agent").
 A tool registered with opens_page=True returns {"open": "/a/page", …}: that page is shown to the
 person once the reply is done (app/agent.py, run_turn).
 """
@@ -15,7 +16,7 @@ from urllib.parse import urlencode
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app import jobs, projects
+from app import jobs, projects, vision
 from app.filters import Filter
 
 
@@ -50,6 +51,11 @@ class StatsArgs(FilterArgs):
 
 class JobArgs(BaseModel):
     job_id: int = Field(description="The job's id, from list_jobs.")
+
+
+class ModelArgs(BaseModel):
+    family: str = Field(description="The model family, from list_models, e.g. sam3.")
+    variant: str = Field(description="The variant within it, from list_models, e.g. sam3.")
 
 
 @dataclass(frozen=True)
@@ -185,3 +191,27 @@ def get_job(conn: sqlite3.Connection, args: JobArgs) -> dict:
         raise ToolError(f"There is no job {args.job_id}.")
     return {key: job[key] for key in ("id", "title", "project_name", "status", "done", "total", "result", "error",
                                       "created_at", "started_at", "finished_at")}
+
+
+@tool(
+    "List the vision models mozo publishes (for annotation and workflows), by family: task, description, and per "
+    "variant its licence, size in bytes, bytes left to download, and state (not downloaded, downloading, downloaded, "
+    "loading, loaded). Mention a model's licence when you suggest it."
+)
+def list_models(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
+    return vision.catalogue(conn)
+
+
+@tool("Download a vision model's files, as a background job (follow it with get_job). Large models take a while.", ModelArgs)
+def download_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
+    return {"job_id": vision.start_download(conn, args.family, args.variant)}
+
+
+@tool("Load a downloaded vision model into memory, as a background job (follow it with get_job).", ModelArgs)
+def load_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
+    return {"job_id": vision.start_load(conn, args.family, args.variant)}
+
+
+@tool("Unload a vision model from memory, freeing it (e.g. before training).", ModelArgs)
+def unload_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
+    return {"unloaded": vision.unload(args.family, args.variant)}
