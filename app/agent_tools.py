@@ -266,7 +266,7 @@ def start_run(conn: sqlite3.Connection, args: RunArgs) -> dict:
     prompts = args.prompts if args.prompts is not None else [c["prompt"] for c in projects.get(conn, args.project_id)["classes"]]
     if not prompts:
         raise ToolError("Nothing to find: the project has no classes, so give prompts.")
-    run_id, job_id = runs.start(conn, args.workflow_id, media_ids, {"text": prompts}, args.project_id, args.name)
+    run_id, job_id = runs.start(conn, args.workflow_id, media_ids, project_id=args.project_id, name=args.name, prompts=prompts)
     return {"run_id": run_id, "job_id": job_id, "images": len(media_ids), "prompts": prompts}
 
 

@@ -68,10 +68,10 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "jinja2", specifier = ">=3.1" },
-    { name = "mozo", specifier = ">=1.5.1" },
+    { name = "mozo", specifier = ">=1.6.0" },
     { name = "openai", specifier = ">=3.49.0" },
     { name = "pillow", specifier = ">=13.0.0" },
-    { name = "pixelflow", specifier = ">=0.6" },
+    { name = "pixelflow", specifier = ">=0.7" },
     { name = "platformdirs", specifier = ">=4.14.5" },
     { name = "python-multipart", specifier = ">=0.0.33" },
     { name = "pywebview", specifier = ">=5.3" },
@@ -370,7 +370,7 @@ wheels = [
 
 [[package]]
 name = "mozo"
-version = "1.5.1"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -386,9 +386,9 @@ dependencies = [
     { name = "torchvision" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d3/ab/a37cdf1e2563644dce4271a8957b15815662c35503b0a10c6c56f0959062/mozo-1.5.1.tar.gz", hash = "sha256:35924b2ac2839047a0f193ea8f73c1e83bd4348b6abf6940141f05e83900a26c", size = 9786304, upload-time = "2026-11-12T15:04:34.026Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/11/05858ef9b382cb8ca3d20559bf1061011d2702a78bd7bd0e9b5b50cbe8c9/mozo-1.6.0.tar.gz", hash = "sha256:1082c9e905a452b2d731740f8e97ababe122da7b28f23c6ac02c604f3cbbbe6a", size = 9712071, upload-time = "2026-11-12T22:42:29.134Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/73/b0ce58c0ae2f1544337f50afb37bc38f879ec06e034af602dc93a651f55b/mozo-1.5.1-py3-none-any.whl", hash = "sha256:f7af112502670db8f9a0c1dac4f01d18521c9aa62d747f640231db85648a28eb", size = 9893129, upload-time = "2026-11-12T15:04:31.721Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/af/fe58b4fac5038b0bae24bf7f9d597d87dcf56d24ae9d9b5ba6f6f7dd39fe/mozo-1.6.0-py3-none-any.whl", hash = "sha256:5c6bbad3641251dbc4715ca2db8e21580c53e0ca520af8e1f3838410fd35a2f4", size = 9818371, upload-time = "2026-11-12T22:42:26.826Z" },
 ]
 
 [[package]]
@@ -692,7 +692,7 @@ wheels = [
 
 [[package]]
 name = "pixelflow"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
@@ -701,9 +701,9 @@ dependencies = [
     { name = "scipy" },
     { name = "shapely" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/94/1e/851d18f6d5d6c8748f497b1e4164ab31eac680912bb3a2eb6012b9668de3/pixelflow-0.6.0.tar.gz", hash = "sha256:ecebbdbf6e50fd5f70aea47279b44f50ca8bf197d13f773d74dd4a5977dfe668", size = 183989, upload-time = "2026-11-12T01:51:34.129Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/27/afafbf6269c9a104ccdf58cf10a764af0e9f3f13190953f668c57b6437e8/pixelflow-0.7.0.tar.gz", hash = "sha256:b179addb267daef89db34ce711945f26fbf8ecc5a7c3055e2557bbdea8aac70a", size = 187883, upload-time = "2026-11-12T22:11:24.318Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/eb/81/0d7022e99954a4be22639f3d805800d77d751d0018202e54464ea1262b32/pixelflow-0.6.0-py3-none-any.whl", hash = "sha256:bf6fbf2745e99d07bf88c8f2c88f659981a0b0d3c40015356cb55b2539a8d212", size = 209020, upload-time = "2026-11-12T01:51:32.2Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/e8/5f3d3b8086b07c1069fa2d2139f4fbba365a2e28e6e9bb1f56e623a7ddea/pixelflow-0.7.0-py3-none-any.whl", hash = "sha256:2aa6f22fbf6dc9bea124554d05ce6122bb0ff31f8425c0ffe627c71299fc238d", size = 213198, upload-time = "2026-11-12T22:11:22.605Z" },
 ]
 
 [[package]]

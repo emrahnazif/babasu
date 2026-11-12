@@ -1,4 +1,6 @@
 {
+  "name": "Grounding DINO",
+  "description": "Finds each prompt's objects, as boxes.",
   "nodes": [
     {
       "id": "image",

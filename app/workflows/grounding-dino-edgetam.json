@@ -1,4 +1,6 @@
 {
+  "name": "Grounding DINO → EdgeTAM",
+  "description": "Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one.",
   "nodes": [
     {
       "id": "image",

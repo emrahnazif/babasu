@@ -23,7 +23,7 @@ KIND = "auto_annotate"  # job kind
 
 # The built-in workflows that find objects from class prompts: id -> name.
 Finder = Literal["sam3", "grounding-dino", "grounding-dino-edgetam"]
-FINDERS: dict[Finder, str] = {id: runs.BUILTIN[id] for id in get_args(Finder)}
+FINDERS: dict[Finder, str] = {id: runs.load(id).name for id in get_args(Finder)}
 
 # The annotator a new project of each type gets. None: no model knows the user's own keypoints,
 # so keypoint projects start by hand.
@@ -111,7 +111,7 @@ def _launch(conn: sqlite3.Connection, project_id: int, annotator: Finder, label:
     order) and start its job: {run_id, job_id, images}."""
     name = runs.run_name(f"{label} · {FINDERS[annotator]}", len(media_ids))
     run_id = runs.create(conn, annotator, media_ids, project_id, name, list(prompts), annotates)
-    params = {"media_ids": media_ids, "overrides": {"text": list(prompts.values())}} | (params or {})
+    params = {"media_ids": media_ids, "prompts": list(prompts.values())} | (params or {})
     return {"run_id": run_id, "job_id": runs.launch(conn, run_id, kind, params, project_id), "images": len(media_ids)}
 
 
@@ -172,7 +172,7 @@ def try_(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), a
 
 
 @jobs.kind(KIND, lane="gpu", title="Auto-annotate")
-def annotate_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict, min_score: float,
+def annotate_job(ctx: jobs.Context, run_id: int, media_ids: list[int], prompts: list[str], min_score: float,
                  again: bool) -> dict:
     """The run, and each image's objects added to the project as it finishes, in the same commit
     as its results: of the classes the image needed, not already there (projects.add_annotations)."""
@@ -194,4 +194,4 @@ def annotate_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides
                if a.class_id in want and (a.score is None or a.score >= min_score)]
         added += projects.add_annotations(conn, project_id, image["id"], new) or 0
 
-    return runs.execute(ctx, run_id, media_ids, overrides, on_image=add) | {"objects": added}
+    return runs.execute(ctx, run_id, media_ids, prompts=prompts, on_image=add) | {"objects": added}

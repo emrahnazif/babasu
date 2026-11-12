@@ -4,6 +4,7 @@ import sqlite3
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from mozo.workflow import WorkflowError
 from pydantic import BaseModel, StringConstraints
 
 from app import db, runs
@@ -23,7 +24,7 @@ def api_workflow(workflow_id: str) -> dict:
     """The workflow's graph, the models it uses (licence, bytes left to download) and any missing files."""
     try:
         workflow = runs.load(workflow_id)
-    except (KeyError, ValueError) as e:  # mozo's refusal of the file
+    except WorkflowError as e:
         raise HTTPException(422, f"The workflow doesn't load: {e}") from None
     if workflow is None:
         raise HTTPException(404, "Workflow not found")
@@ -37,11 +38,13 @@ Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 
 
 class NewRun(BaseModel):
-    """A run of a workflow over stored images. `overrides`: parameter values by name, as mozo's
-    run takes them, e.g. {"text": ["car", "person"]} for the prompts."""
+    """A run of a workflow over stored images. `prompts`: what to look for, given to every prompted
+    node (e.g. ["car", "person"]); `overrides`: parameter values as mozo's run takes them, by name
+    or one node's (e.g. {"dino.threshold": 0.4})."""
 
     workflow_id: str
     media_ids: list[int]
+    prompts: list[str] | None = None
     overrides: dict[str, Any] = {}
     project_id: int | None = None
     name: Name | None = None
@@ -61,7 +64,7 @@ def _found(run: dict | None) -> dict:
 def api_start_run(new: NewRun, conn: DB) -> dict:
     """Starts a run; follow its job at /api/jobs/{job_id}, read its results at /api/runs/{run_id}."""
     try:
-        run_id, job_id = runs.start(conn, new.workflow_id, new.media_ids, new.overrides, new.project_id, new.name)
+        run_id, job_id = runs.start(conn, new.workflow_id, new.media_ids, new.overrides, new.project_id, new.name, new.prompts)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
     return {"run_id": run_id, "job_id": job_id}
@@ -101,3 +104,4 @@ def api_delete_run(run_id: int, conn: DB) -> None:
         raise HTTPException(404, "Run not found")
     for path in unused:
         path.unlink(missing_ok=True)
+

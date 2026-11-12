@@ -14,20 +14,15 @@ from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 
-from mozo.workflow import Detections, Workflow, annotation_line, node
+from mozo.workflow import Detections, Workflow, WorkflowError, annotation_line, node
 
 from app import config, db, jobs, media, vision
 
 BUILTIN_DIR = config.BASE_DIR / "workflows"
 KIND = "workflow_run"  # job kind
 
-# The built-in workflows: id -> name. mozo's workflow file has no name, so a saved one is named
-# by its id.
-BUILTIN = {
-    "sam3": "SAM 3",
-    "grounding-dino": "Grounding DINO",
-    "grounding-dino-edgetam": "Grounding DINO → EdgeTAM",
-}
+# The built-in workflows' ids (their names are in their files).
+BUILTIN = ("sam3", "grounding-dino", "grounding-dino-edgetam")
 
 
 @node(category="Output")
@@ -48,27 +43,29 @@ def _files() -> dict[str, Path]:
     return files | {path.stem: path for path in saved if path.stem not in files}
 
 
-def _entry(id: str) -> dict:
-    return {"id": id, "name": BUILTIN.get(id, id), "builtin": id in BUILTIN}
+def _entry(id: str, workflow: Workflow | None = None) -> dict:
+    """A workflow's id, name (its file's, or its id), description and whether it's built in."""
+    name, description = (workflow.name, workflow.description) if workflow else (None, None)
+    return {"id": id, "name": name or id, "description": description, "builtin": id in BUILTIN}
 
 
 def workflows() -> list[dict]:
-    """Every workflow: id, name, whether it's built in, and the models it uses (as detail() lists
-    them), or `error`: why mozo doesn't load it."""
+    """Every workflow: id, name, description, whether it's built in, and the models it uses (as
+    detail() lists them), or `error`: why mozo doesn't load it."""
     out = []
     for id, path in _files().items():
         try:
-            models = Workflow.load(path).check(device=config.DEVICE).models
-        except (KeyError, ValueError) as e:  # mozo's refusal of the file
+            workflow = Workflow.load(path)
+        except WorkflowError as e:
             out.append(_entry(id) | {"error": str(e)})
             continue
-        out.append(_entry(id) | {"models": [use._asdict() for use in models]})
+        out.append(_entry(id, workflow) | {"models": [use._asdict() for use in workflow.check(device=config.DEVICE).models]})
     return out
 
 
 def load(id: str) -> Workflow | None:
     """The workflow read from its file, or None if there's no such workflow. A file that doesn't
-    load raises mozo's error: KeyError for a node this mozo doesn't have, ValueError otherwise."""
+    load raises mozo's WorkflowError."""
     path = _files().get(id)
     return Workflow.load(path) if path else None
 
@@ -78,7 +75,7 @@ def detail(id: str, workflow: Workflow) -> dict:
     its licence and the bytes still to download for config.DEVICE, 0 once downloaded) and the
     files it names that are missing."""
     found = workflow.check(device=config.DEVICE)
-    return _entry(id) | {
+    return _entry(id, workflow) | {
         "graph": workflow.to_dict(),
         "models": [use._asdict() for use in found.models],
         "missing_files": [{"node": node, "parameter": name, "path": path} for node, name, path in found.missing],
@@ -116,7 +113,7 @@ def create(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], pro
         return conn.execute(
             """INSERT INTO run (workflow_id, workflow, project_id, name, classes, annotates)
                VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
-            (workflow_id, json.dumps(workflow.to_dict()), project_id, name or run_name(_entry(workflow_id)["name"], len(media_ids)),
+            (workflow_id, json.dumps(workflow.to_dict()), project_id, name or run_name(workflow.name or workflow_id, len(media_ids)),
              classes and json.dumps(classes), annotates),
         ).fetchone()[0]
 
@@ -130,15 +127,17 @@ def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict, proje
     return job_id
 
 
-def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], overrides: dict,
-          project_id: int | None = None, name: str | None = None) -> tuple[int, int]:
+def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], overrides: dict | None = None,
+          project_id: int | None = None, name: str | None = None, prompts: list[str] | None = None) -> tuple[int, int]:
     """Create a run of a workflow over stored images and start its job; returns (run id, job id).
-    `overrides` are parameter values by name, as mozo's run takes them (e.g. {"text": ["car"]}).
-    ValueError as create(). The workflow's own problems (a model not downloaded, a missing file)
-    fail the job, which says why."""
+    `prompts`: what to look for, given to every prompted node (see execute()); `overrides`:
+    parameter values as mozo's run takes them, by name or one node's ("dino.threshold").
+    ValueError as create(). The workflow's own problems (a model not downloaded, a missing file,
+    prompts it can't take) fail the job, which says why."""
     media_ids = list(dict.fromkeys(media_ids))
     run_id = create(conn, workflow_id, media_ids, project_id, name)
-    return run_id, launch(conn, run_id, KIND, {"media_ids": media_ids, "overrides": overrides}, project_id)
+    params = {"media_ids": media_ids, "overrides": overrides, "prompts": prompts}
+    return run_id, launch(conn, run_id, KIND, params, project_id)
 
 
 def _kept(workflow: Workflow) -> dict[str, str]:
@@ -154,14 +153,17 @@ OnImage = Callable[[sqlite3.Connection, sqlite3.Row, dict[str, Detections]], Non
 
 
 @jobs.kind(KIND, lane="gpu", title="Run workflow")
-def run_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict) -> dict:
-    return execute(ctx, run_id, media_ids, overrides)
+def run_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict | None = None,
+            prompts: list[str] | None = None) -> dict:
+    return execute(ctx, run_id, media_ids, overrides, prompts)
 
 
-def execute(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict,
-            on_image: OnImage | None = None) -> dict:
+def execute(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict | None = None,
+            prompts: list[str] | None = None, on_image: OnImage | None = None) -> dict:
     """A run's work, inside a job: the workflow over the images, keeping each image's results.
-    A job kind built on runs (auto-annotate) does more per image with `on_image`.
+    `prompts` go to every prompted node (mozo's prompt_parameters: a detection's class_id is its
+    prompt's index), so one list reaches SAM 3 and Grounding DINO side by side. A job kind built
+    on runs (auto-annotate) does more per image with `on_image`.
 
     Crash-safe and safe to retry: each image's results are committed together as it finishes,
     and a retry skips the images the run already has."""
@@ -176,6 +178,11 @@ def execute(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dic
         kept = _kept(workflow)
         if not kept:
             raise ValueError("The workflow has no save_to_babasu node, so a run would keep nothing")
+        if prompts is not None:
+            if not workflow.prompt_parameters:
+                raise ValueError("The workflow takes no prompts")
+            overrides = {key: prompts for key in workflow.prompt_parameters} | (overrides or {})
+        overrides = overrides or {}
         found = workflow.check(device=config.DEVICE, **overrides)
         if found.missing:
             raise ValueError("Missing files: " + ", ".join(path for _, _, path in found.missing))

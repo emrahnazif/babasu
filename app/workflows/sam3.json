@@ -1,4 +1,6 @@
 {
+  "name": "SAM 3",
+  "description": "Finds and outlines every object matching each prompt.",
   "nodes": [
     {
       "id": "image",
