@@ -98,6 +98,9 @@ class NewProject(BaseModel):
     task: projects.Task
 
 
+Prompt = Annotated[str, StringConstraints(max_length=500)]
+
+
 class ProjectChanges(NewProject):
     """A project's name, description, type and annotator, all of them, when it's changed.
     Left out (a form's empty choice), the annotator is none."""
@@ -165,7 +168,7 @@ def _delete(conn: sqlite3.Connection, project_id: int) -> None:
 
 def _create(conn: sqlite3.Connection, new: NewProject) -> int:
     with conn:
-        return projects.create(conn, new.name, new.description, new.task)
+        return projects.create(conn, new.name, new.description, new.task, annotators.SUGGESTED[new.task])
 
 
 def _set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[projects.Annotation]) -> None:
@@ -300,6 +303,16 @@ def api_image(project_id: int, media_id: int, conn: DB, where: Where = "") -> di
 def api_set_annotations(project_id: int, media_id: int, annotations: list[projects.Annotation], conn: DB) -> None:
     """Replaces the image's annotations (those of active classes, as the image's read returns them)."""
     _set_annotations(conn, project_id, media_id, annotations)
+
+
+@router.patch("/api/projects/{project_id}/classes/prompts", status_code=204)
+def api_set_prompts(project_id: int, prompts: dict[int, Prompt], conn: DB) -> None:
+    """Changes some classes' prompts ({class id: prompt}); see projects.set_prompts."""
+    try:
+        with _writing(conn, project_id):
+            projects.set_prompts(conn, project_id, prompts)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
 
 
 @router.post("/api/projects/{project_id}/import", status_code=202)

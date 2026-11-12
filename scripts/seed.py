@@ -14,7 +14,7 @@ from contextlib import closing
 
 from PIL import Image, ImageDraw
 
-from app import db, media, projects
+from app import annotators, db, media, projects
 
 NAME = "Shapes (sample)"
 CLASSES = [
@@ -59,7 +59,8 @@ def main() -> None:
         if conn.execute("SELECT 1 FROM project WHERE name = ?", (NAME,)).fetchone():
             print(f"'{NAME}' already exists; nothing to do.")
             return
-        project_id = projects.create(conn, NAME, "Generated squares, circles and triangles.", "detection", CLASSES)
+        project_id = projects.create(conn, NAME, "Generated squares, circles and triangles.", "detection",
+                                     annotators.SUGGESTED["detection"], CLASSES)
         rng = random.Random(0)
         for i in range(IMAGE_COUNT):
             data, annotations = make_image(rng)

@@ -11,16 +11,13 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from app import annotators, db, media
+from app import db, media
 from app.filters import Filter, FilterError, ObjectCondition, class_ids
 
-# What a project is for. It suggests (an annotator, later what to train), it doesn't restrict:
-# every project may hold every shape. Classification comes later.
+# What a project is for. It suggests (an annotator: annotators.SUGGESTED; later what to train), it
+# doesn't restrict: every project may hold every shape. Classification comes later.
 Task = Literal["detection", "segmentation", "keypoints"]
 TASKS: dict[Task, str] = {"detection": "Object detection", "segmentation": "Segmentation", "keypoints": "Keypoint detection"}
-# The annotator a new project of each type gets. None: no model knows the user's own keypoints,
-# so keypoint projects start by hand.
-SUGGESTED: dict[Task, annotators.Finder | None] = {"detection": "sam3", "segmentation": "sam3", "keypoints": None}
 
 # Pixel coordinate on the original image, rounded to 1 decimal.
 Coord = Annotated[float, AfterValidator(lambda v: round(v, 1))]
@@ -348,16 +345,17 @@ def annotation_counts(conn: sqlite3.Connection, project_id: int) -> dict[int, in
     return dict(rows.fetchall())
 
 
-def create(conn: sqlite3.Connection, name: str, description: str, task: Task, classes: list[dict] | None = None) -> int:
-    """Create a project, with the annotator suggested for its type. Caller commits."""
+def create(conn: sqlite3.Connection, name: str, description: str, task: Task, annotator: str | None,
+           classes: list[dict] | None = None) -> int:
+    """Create a project with an annotator (an id in annotators.FINDERS; None: none). Caller commits."""
     return conn.execute(
         "INSERT INTO project (name, description, task, annotator, classes) VALUES (?, ?, ?, ?, ?)",
-        (name, description, task, SUGGESTED[task], json.dumps(classes or [])),
+        (name, description, task, annotator, json.dumps(classes or [])),
     ).lastrowid
 
 
 def update(
-    conn: sqlite3.Connection, project_id: int, name: str, description: str, task: Task, annotator: annotators.Finder | None
+    conn: sqlite3.Connection, project_id: int, name: str, description: str, task: Task, annotator: str | None
 ) -> None:
     """Change a project's name, description, type or annotator (None: none). Its annotations stay
     as they are. Caller commits. Raises FrozenError."""
@@ -419,11 +417,7 @@ def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, an
     False if the image isn't in the project. Caller commits.
 
     Raises FrozenError, or ValueError for a class the project doesn't have (or has deleted)."""
-    project = _editable(conn, project_id)
-    active = {c["id"] for c in _project(project)["classes"]}
-    unknown = {a.class_id for a in annotations} - active
-    if unknown:
-        raise ValueError(f"unknown class ids: {sorted(unknown)}")
+    active = _check_active(_editable(conn, project_id), {a.class_id for a in annotations})
     row = conn.execute(
         "SELECT annotations FROM project_media WHERE project_id = ? AND media_id = ?", (project_id, media_id)
     ).fetchone()
@@ -436,6 +430,31 @@ def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, an
     )
     _touch(conn, project_id)
     return True
+
+
+def with_prompts(classes: list[dict], prompts: dict[int, str]) -> list[dict]:
+    """The classes with some prompts changed (class id -> prompt); an empty one is the class's name."""
+    return [c | {"prompt": prompts[c["id"]].strip() or c["name"]} if c["id"] in prompts else c for c in classes]
+
+
+def set_prompts(conn: sqlite3.Connection, project_id: int, prompts: dict[int, str]) -> None:
+    """Change the prompts of some classes (class id -> prompt), the text sent to annotators. An
+    empty prompt goes back to the class's name. Caller commits.
+
+    Raises FrozenError, or ValueError for a class the project doesn't have (or has deleted)."""
+    row = _editable(conn, project_id)
+    _check_active(row, set(prompts))
+    classes = with_prompts(json.loads(row["classes"]), prompts)
+    conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(classes), project_id))
+    _touch(conn, project_id)
+
+
+def _check_active(project: sqlite3.Row, class_ids: set[int]) -> set[int]:
+    """The project's active class ids; ValueError if `class_ids` has others (unknown or deleted)."""
+    active = {c["id"] for c in _project(project)["classes"]}
+    if class_ids - active:
+        raise ValueError(f"unknown class ids: {sorted(class_ids - active)}")
+    return active
 
 
 def _editable(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row:
