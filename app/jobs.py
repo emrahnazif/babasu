@@ -24,6 +24,7 @@ import traceback
 from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass
+from typing import Literal
 
 from app import config, db
 
@@ -35,11 +36,16 @@ ACTIVE = ("queued", "running")
 RETRYABLE = ("failed", "cancelled", "interrupted")
 
 
+# What a job's progress (done / total) counts: things (images, files) or bytes (a download).
+Unit = Literal["items", "bytes"]
+
+
 @dataclass(frozen=True)
 class Kind:
     func: Callable[..., dict | None]
     lane: str
     title: str  # shown in the jobs drawer, e.g. "Import images"
+    unit: Unit  # what its progress counts
 
 
 _kinds: dict[str, Kind] = {}
@@ -48,12 +54,12 @@ _stopping = threading.Event()  # ends the worker loops; jobs themselves are stop
 _threads: list[threading.Thread] = []
 
 
-def kind(name: str, lane: str, title: str):
-    """Register a job function under `name`, to run in `lane`."""
+def kind(name: str, lane: str, title: str, unit: Unit = "items"):
+    """Register a job function under `name`, to run in `lane`; its progress counts `unit`."""
     assert lane in LANES, lane
 
     def register(func):
-        _kinds[name] = Kind(func, lane, title)
+        _kinds[name] = Kind(func, lane, title, unit)
         return func
 
     return register
@@ -63,7 +69,7 @@ class Context:
     """What a running job uses to report progress, write its log and notice a stop request."""
 
     def __init__(self, conn: sqlite3.Connection, job_id: int, log):
-        self._conn, self._id, self._log = conn, job_id, log
+        self._conn, self.job_id, self._log = conn, job_id, log
         self.done, self.total_count, self.message = 0, None, ""
         self.stop_reason: str | None = None  # 'user' or 'shutdown', once the job is asked to stop
         self._last_sync = 0.0
@@ -77,6 +83,11 @@ class Context:
         if message is not None:
             self.message = message
         self._sync(force=self.done == self.total_count)
+
+    def progress(self, done: int, total: int) -> None:
+        """Set progress outright, for work that reports its own running count (a download's bytes)."""
+        self.done, self.total_count = done, total
+        self._sync(force=done == total)
 
     def log(self, line: str) -> None:
         self._log.write(line + "\n")
@@ -96,7 +107,7 @@ class Context:
             with self._conn:
                 self.stop_reason = self._conn.execute(
                     "UPDATE job SET done = ?, total = ?, message = ? WHERE id = ? RETURNING stop_reason",
-                    (self.done, self.total_count, self.message, self._id),
+                    (self.done, self.total_count, self.message, self.job_id),
                 ).fetchone()[0]
 
 
@@ -153,6 +164,7 @@ def _job(row: sqlite3.Row) -> dict:
     result = json.loads(row["result"]) if row["result"] else None
     return dict(row) | {
         "title": known.title if known else row["kind"],
+        "unit": known.unit if known else "items",
         "params": json.loads(row["params"]),
         "result": result,
         "summary": _summary(result, row["error"]),
@@ -174,6 +186,14 @@ def overview(conn: sqlite3.Connection) -> dict:
     """What the jobs drawer shows: recent jobs, and how many are active (for the top-bar count)."""
     recent = list_recent(conn)
     return {"jobs": recent, "active": sum(job["active"] for job in recent)}
+
+
+def active_params(conn: sqlite3.Connection, kind_name: str) -> list[dict]:
+    """The parameters of the queued and running jobs of one kind."""
+    rows = conn.execute(
+        f"SELECT params FROM job WHERE kind = ? AND status IN {ACTIVE}", (kind_name,)
+    ).fetchall()
+    return [json.loads(row["params"]) for row in rows]
 
 
 def get(conn: sqlite3.Connection, job_id: int) -> dict | None:

@@ -98,6 +98,17 @@ def plural(n: int, word: str) -> str:
     return f"{n:,} {word if n == 1 else word + ('es' if word.endswith('s') else 's')}"
 
 
+def filesize(n: int) -> str:
+    """Bytes for people, in decimal units as downloads are shown: "820 bytes", "56.1 MB", "3.45 GB"."""
+    if n < 1000:
+        return f"{n:,} bytes"
+    for unit in ("KB", "MB", "GB", "TB"):
+        n /= 1000
+        if n < 1000 or unit == "TB":
+            break
+    return f"{n:.{0 if n >= 100 else 1 if n >= 10 else 2}f} {unit}"
+
+
 def period(timestamp: str) -> str:
     """Which stretch of time a stored UTC time falls in, for grouping lists: Today, Yesterday,
     Previous 7 days, Previous 30 days, Older (by local calendar days)."""
@@ -116,6 +127,7 @@ def period(timestamp: str) -> str:
 templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
 templates.env.filters["ago"] = ago
 templates.env.filters["period"] = period
+templates.env.filters["filesize"] = filesize
 templates.env.filters["plural"] = plural
 templates.env.globals["app_name"] = config.APP_NAME
 templates.env.globals["nav"] = config.NAV
