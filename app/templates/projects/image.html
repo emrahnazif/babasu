@@ -1,7 +1,8 @@
 {# One image of a project, large, in the annotation editor (js/annotation-editor.js). ← → go
    through the images the project page was showing (its filter comes along in the URL). In the
-   middle, the class (the selected object's, or new objects'). A frozen project, or one without
-   classes, only shows its annotations. #}
+   middle, the class (the selected object's, or new objects'). On the right, Auto-annotate: the
+   project's annotator on this image; the editor shows what it added when the job ends. A frozen
+   project, or one without classes, only shows its annotations. #}
 {% extends "base.html" %}
 {% set project, params = image.project, {"where": image.filter} %}
 {% set editable = not project.frozen_at and project.classes %}
@@ -42,7 +43,19 @@
     </div>
   {% endif %}
   <div class="topbar__right">
-    <span class="muted">{{ image.width }} × {{ image.height }} · {{ image.annotations | length | plural("annotation") }}</span>
+    <span id="image-count" class="muted" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
+      {{ image.width }} × {{ image.height }} · {{ image.annotations | length | plural("annotation") }}</span>
+    {% if editable and project.annotator %}
+      <form method="post" action="/projects/{{ project.id }}/images/{{ image.media_id }}/annotate" data-background-form>
+        {% if to_download %}
+          <button class="icon-button" type="button" disabled aria-label="Auto-annotate"
+                  title="Auto-annotate: download {{ to_download | join(', ') }} first (Models page)">{{ icon("sparkles") }}</button>
+        {% else %}
+          <button class="icon-button" type="submit" aria-label="Auto-annotate"
+                  title="Auto-annotate this image with {{ annotators[project.annotator] }}">{{ icon("sparkles") }}</button>
+        {% endif %}
+      </form>
+    {% endif %}
   </div>
 {% endblock %}
 
@@ -50,6 +63,7 @@
   <figure class="stage">
     <img src="{{ image.url }}" alt="{{ image.filename }}"
          data-annotations='{{ image.annotations | tojson }}' data-classes='{{ project.classes | tojson }}'
+         data-source="/api/projects/{{ project.id }}/images/{{ image.media_id }}" data-project-id="{{ project.id }}"
          {% if editable %}data-save="/api/projects/{{ project.id }}/images/{{ image.media_id }}/annotations"{% endif %}>
   </figure>
 {% endblock %}

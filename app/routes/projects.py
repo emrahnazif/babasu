@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, field_validator
 
-from app import annotators, db, imports, jobs, media, projects
+from app import annotators, db, imports, jobs, media, projects, runs
 from app.filters import Filter, FilterError, ObjectCondition, Range
 from app.templating import query, templates
 
@@ -119,6 +119,19 @@ class AutoAnnotate(BaseModel):
     min_score: float = Field(0.0, ge=0, le=1)
     again: bool = False
     media_ids: list[int] | None = None
+
+
+class AutoAnnotateForm(BaseModel):
+    """The auto-annotate dialog: each class's prompt (class_id and prompt in the same order), the
+    classes to run (`use`), and whether to save the prompts only or run too."""
+
+    where: str = Field("", max_length=2000)
+    class_id: list[int] = []
+    prompt: list[Prompt] = []
+    use: list[int] = []
+    min_score: float = Field(0.0, ge=0, le=1)
+    again: bool = False
+    step: Literal["run", "save"] = "run"  # not "action": a field by that name hides the form's action
 
 
 class TryAnnotator(BaseModel):
@@ -246,7 +259,8 @@ def project_page(request: Request, project_id: int, conn: DB, where: Where = "",
     except FilterError as e:
         filter, error = Filter(), str(e)
         project = _detail(conn, project_id, 1, filter)
-    context = {"project": project, "filter": filter, "error": error, "where": where}
+    context = {"project": project, "filter": filter, "error": error, "where": where,
+               "auto": annotators.overview(conn, project_id, filter)}
     return templates.TemplateResponse(request, "projects/project.html", context)
 
 
@@ -268,13 +282,37 @@ def image_page(request: Request, project_id: int, media_id: int, conn: DB, where
         image = _image(conn, project_id, media_id, Filter.parse(where))
     except FilterError:  # the project page says why; here, step through all images instead
         image = _image(conn, project_id, media_id, Filter())
-    return templates.TemplateResponse(request, "projects/image.html", {"image": image})
+    annotator = image["project"]["annotator"]
+    context = {"image": image, "to_download": runs.to_download(annotator) if annotator else []}
+    return templates.TemplateResponse(request, "projects/image.html", context)
+
+
+@router.post("/projects/{project_id}/images/{media_id}/annotate")
+def auto_annotate_image(project_id: int, media_id: int, conn: DB):
+    """Auto-annotate the image open in the editor, for all classes, even those it's done for (new
+    objects that are already there are left out)."""
+    _started(lambda: annotators.start(conn, project_id, again=True, media_ids=[media_id]))
+    return RedirectResponse(f"/projects/{project_id}/images/{media_id}", status_code=303)
 
 
 @router.post("/projects/{project_id}/edit")
 def edit_project(project_id: int, changed: Annotated[ProjectChanges, Form()], conn: DB):
     _update(conn, project_id, changed)
     return RedirectResponse(f"/projects/{project_id}", status_code=303)
+
+
+@router.post("/projects/{project_id}/annotate")
+def auto_annotate(project_id: int, form: Annotated[AutoAnnotateForm, Form()], conn: DB):
+    """Save the dialog's prompts, then (Run) start auto-annotating the classes ticked."""
+    try:
+        with _writing(conn, project_id):
+            projects.set_prompts(conn, project_id, dict(zip(form.class_id, form.prompt, strict=True)))
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+    if form.step == "run":
+        _started(lambda: annotators.start(conn, project_id, Filter.parse(form.where), class_ids=form.use,
+                                          min_score=form.min_score, again=form.again))
+    return RedirectResponse(f"/projects/{project_id}{query({'where': form.where})}", status_code=303)
 
 
 @router.post("/projects/{project_id}/delete")

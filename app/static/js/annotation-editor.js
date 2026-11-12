@@ -1,8 +1,11 @@
 // The annotation editor on an image page: MarkinJS (static/vendor) draws an image's annotations
 // over it, in its classes' colours, and lets people change them. The page renders the data:
-//   <img src="…" data-annotations="[…]" data-classes="[{id, name, color}, …]" data-save="/api/…">
+//   <img src="…" data-annotations="[…]" data-classes="[{id, name, color}, …]" data-save="/api/…"
+//        data-source="/api/…" data-project-id="3">
 // Annotations are in the original image's pixels, the format babasu stores. Without data-save
-// (a frozen project, or one without classes) the editor only shows them.
+// (a frozen project, or one without classes) the editor only shows them. When a job of the
+// project ends (js/jobs.js's "job-ended", e.g. auto-annotating), the annotations are read again
+// from data-source: what the job added shows up.
 //
 // Each completed edit saves the whole list. One request at a time: edits made while one is on
 // its way are sent together after it, so the last edit always wins.
@@ -18,6 +21,15 @@ if (image) {
   const editor = MarkinJS.create(image, {
     annotations: JSON.parse(image.dataset.annotations),
     colors: Object.fromEntries(classes.map((c) => [c.id, c.color])),
+  });
+  document.addEventListener("job-ended", async (event) => {
+    if (event.detail.projectId !== image.dataset.projectId) return;
+    try {
+      const response = await fetch(image.dataset.source);
+      if (response.ok) editor.load((await response.json()).annotations);
+    } catch {
+      // The app didn't answer; the page shows what it had.
+    }
   });
   const url = image.dataset.save;
   if (url) {

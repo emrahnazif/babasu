@@ -101,6 +101,9 @@
 {# The main bar: the project's own actions. #}
 {% block actions %}
   <button class="icon-button" type="button" popovertarget="add-images" aria-label="Add images" title="Add images">{{ icon("plus") }}</button>
+  {% if project.classes and project.image_count %}
+    <button class="icon-button" type="button" popovertarget="auto-annotate" aria-label="Auto-annotate" title="Auto-annotate">{{ icon("sparkles") }}</button>
+  {% endif %}
   <button class="icon-button" type="button" popovertarget="project-menu" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button>
   <div id="project-menu" class="menu" popover>
     <button class="menu__item" type="button" popovertarget="edit-project">Edit…</button>
@@ -204,6 +207,57 @@
 
   {% for part, title, _ in parts %}{{ panel(part, title) }}{% endfor %}
   {% for c in filter.conditions %}{{ panel(c.part(), (parts | selectattr(0, "equalto", c.part()) | first)[1], loop.index0, c) }}{% endfor %}
+
+  {# Auto-annotate the images the page shows (its filter): each class found from its prompt by the
+     project's annotator, objects added next to the ones there. Refreshed when a job ends, for the
+     counts of images still to do. #}
+  {% if project.classes and project.image_count %}
+  <div id="auto-annotate" class="dialog" popover aria-labelledby="auto-annotate-title">
+    <form id="auto-annotate-form" method="post" action="/projects/{{ project.id }}/annotate" data-background-form="keep"
+          data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
+      <h2 id="auto-annotate-title">Auto-annotate</h2>
+      <input type="hidden" name="where" value="{{ where }}">
+      {% if auto.annotator %}
+        <p class="muted">
+          {{ annotators[auto.annotator] }} finds each ticked class from its prompt in the
+          {{ auto.images | plural("image") }} {% if filter.text() %}matching the filter{% else %}of the project{% endif %}.
+          New objects go next to the ones there; an image is done once per class.
+        </p>
+      {% else %}
+        <p class="muted">The project has no annotator: choose one with More → Edit.</p>
+      {% endif %}
+      <table>
+        <thead><tr><th>Class</th><th>Prompt</th><th>Images to do</th></tr></thead>
+        <tbody>
+          {% for class in project.classes %}
+            <tr>
+              <td><label><input type="checkbox" name="use" value="{{ class.id }}" {% if auto.pending[class.id] %}checked{% endif %}>
+                <span class="badge" style="--badge-color: {{ class.color }}">{{ class.name }}</span></label></td>
+              <td><input type="hidden" name="class_id" value="{{ class.id }}">
+                <input name="prompt" value="{{ class.prompt }}" placeholder="{{ class.name }}" maxlength="500" aria-label="Prompt for {{ class.name }}"></td>
+              <td>{{ auto.pending[class.id] }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="fields">
+        <label class="field">
+          Minimum score <span class="muted">0 keeps everything the annotator finds</span>
+          <input type="number" name="min_score" min="0" max="1" step="0.05" value="0">
+        </label>
+        <label><input type="checkbox" name="again" value="true"> Also images already done for a class</label>
+      </div>
+      {% if auto.to_download %}
+        <p>Download first: {{ auto.to_download | join(", ") }}. <a href="/models">Models page</a></p>
+      {% endif %}
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="auto-annotate" popovertargetaction="hide">Cancel</button>
+        <button class="button secondary" type="submit" name="step" value="save">Save prompts</button>
+        {% if auto.annotator and not auto.to_download %}<button class="button" type="submit" name="step" value="run">Run</button>{% endif %}
+      </div>
+    </form>
+  </div>
+  {% endif %}
 
   <div id="edit-project" class="dialog" popover aria-labelledby="edit-project-title">
     <form method="post" action="/projects/{{ project.id }}/edit">
