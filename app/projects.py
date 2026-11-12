@@ -432,6 +432,61 @@ def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, an
     return True
 
 
+DUPLICATE_IOU = 0.9  # an added object whose box overlaps one of its class this much is already there
+
+
+def _box(a: dict) -> tuple[float, float, float, float] | None:
+    """An annotation's box as corners: its bbox, or its polygon's bounds; None without either."""
+    if a.get("bbox"):
+        x, y, w, h = a["bbox"]
+        return x, y, x + w, y + h
+    if a.get("segments"):
+        xs, ys = [p[0] for p in a["segments"]], [p[1] for p in a["segments"]]
+        return min(xs), min(ys), max(xs), max(ys)
+    return None
+
+
+def _iou(a, b) -> float:
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    if w <= 0 or h <= 0:
+        return 0.0
+    inter = w * h
+    return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter)
+
+
+def add_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[Annotation]) -> int | None:
+    """Add objects to an image, next to the ones it has, leaving out each one already there: its
+    box overlaps an object of its class by DUPLICATE_IOU or more. Returns how many were added;
+    None if the image isn't in the project. Caller commits.
+
+    Raises FrozenError, or ValueError for a class the project doesn't have (or has deleted)."""
+    _check_active(_editable(conn, project_id), {a.class_id for a in annotations})
+    row = conn.execute(
+        "SELECT annotations FROM project_media WHERE project_id = ? AND media_id = ?", (project_id, media_id)
+    ).fetchone()
+    if row is None:
+        return None
+    objects = json.loads(row["annotations"])
+    boxes = [(a["class_id"], _box(a)) for a in objects]
+    added = 0
+    for a in annotations:
+        new = a.model_dump(exclude_none=True)
+        box = _box(new)
+        if box and any(c == a.class_id and b and _iou(box, b) >= DUPLICATE_IOU for c, b in boxes):
+            continue
+        objects.append(new)
+        boxes.append((a.class_id, box))
+        added += 1
+    if added:
+        conn.execute(
+            f"UPDATE project_media SET annotations = ?, updated_at = {db.NOW} WHERE project_id = ? AND media_id = ?",
+            (json.dumps(objects), project_id, media_id),
+        )
+        _touch(conn, project_id)
+    return added
+
+
 def with_prompts(classes: list[dict], prompts: dict[int, str]) -> list[dict]:
     """The classes with some prompts changed (class id -> prompt); an empty one is the class's name."""
     return [c | {"prompt": prompts[c["id"]].strip() or c["name"]} if c["id"] in prompts else c for c in classes]

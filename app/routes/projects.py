@@ -1,12 +1,13 @@
 """Projects: HTML pages (forms post, then redirect), and the same data and actions as JSON under /api."""
 
 import sqlite3
+from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel, BeforeValidator, StringConstraints, field_validator
+from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, field_validator
 
 from app import annotators, db, imports, jobs, media, projects
 from app.filters import Filter, FilterError, ObjectCondition, Range
@@ -108,6 +109,27 @@ class ProjectChanges(NewProject):
     annotator: annotators.Finder | None = None
 
 
+class AutoAnnotate(BaseModel):
+    """Which of the project's images to auto-annotate, and how (see annotators.start)."""
+
+    where: str = Field("", max_length=2000)
+    count: int | None = Field(None, ge=1)
+    annotator: annotators.Finder | None = None
+    class_ids: list[int] | None = None
+    min_score: float = Field(0.0, ge=0, le=1)
+    again: bool = False
+    media_ids: list[int] | None = None
+
+
+class TryAnnotator(BaseModel):
+    """Which images to try the annotator on, and with what (see annotators.try_)."""
+
+    where: str = Field("", max_length=2000)
+    annotator: annotators.Finder | None = None
+    class_ids: list[int] | None = None
+    prompts: dict[int, Prompt] | None = None
+
+
 class ImageImport(BaseModel):
     """Files and folders on this computer or a NAS. Blank entries (an empty path field) are ignored."""
 
@@ -150,6 +172,20 @@ def _writing(conn: sqlite3.Connection, project_id: int):
             yield
     except projects.FrozenError:
         raise HTTPException(409, "The project is frozen; duplicate it to change it") from None
+
+
+def _started(start: Callable[[], dict | None]) -> dict:
+    """What an annotator's start (annotators.start, try_) returned: 404 if there's no such
+    project, 409 if it's frozen, 422 with the reason it can't start."""
+    try:
+        started = start()
+    except projects.FrozenError:
+        raise HTTPException(409, "The project is frozen; duplicate it to change it") from None
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+    if started is None:
+        raise HTTPException(404, "Project not found")
+    return started
 
 
 def _update(conn: sqlite3.Connection, project_id: int, changed: ProjectChanges) -> None:
@@ -313,6 +349,31 @@ def api_set_prompts(project_id: int, prompts: dict[int, Prompt], conn: DB) -> No
             projects.set_prompts(conn, project_id, prompts)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+
+
+@router.get("/api/projects/{project_id}/annotate")
+def api_auto_annotate_overview(project_id: int, conn: DB, where: Where = "") -> dict:
+    """Before auto-annotating the images matching ?where=: how many match, per class how many
+    still need it, and the annotator's models still to download."""
+    found = annotators.overview(conn, project_id, Filter.parse(where))
+    if found is None:
+        raise HTTPException(404, "Project not found")
+    return found
+
+
+@router.post("/api/projects/{project_id}/annotate", status_code=202)
+def api_auto_annotate(project_id: int, request: AutoAnnotate, conn: DB) -> dict:
+    """Starts auto-annotating; follow the job at /api/jobs/{job_id}, the run at /api/runs/{run_id}."""
+    return _started(lambda: annotators.start(conn, project_id, Filter.parse(request.where), request.count, request.annotator,
+                                             request.class_ids, request.min_score, request.again, request.media_ids))
+
+
+@router.post("/api/projects/{project_id}/try", status_code=202)
+def api_try_annotator(project_id: int, request: TryAnnotator, conn: DB) -> dict:
+    """Starts a Try: the annotator on a few images, nothing written to the project. Follow the job
+    at /api/jobs/{job_id}, then read the run at /api/runs/{run_id}."""
+    return _started(lambda: annotators.try_(conn, project_id, Filter.parse(request.where), request.annotator,
+                                            request.class_ids, request.prompts))
 
 
 @router.post("/api/projects/{project_id}/import", status_code=202)
