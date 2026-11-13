@@ -7,8 +7,10 @@ A tool registered with opens_page=True returns {"open": "/a/page", …}: that pa
 person once the reply is done (app/agent.py, run_turn).
 """
 
+import difflib
 import json
 import sqlite3
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -16,7 +18,7 @@ from urllib.parse import urlencode
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app import annotators, jobs, projects, runs, vision
+from app import annotators, jobs, projects, runs, settings, views, vision
 from app.filters import Filter
 
 
@@ -72,6 +74,48 @@ class AutoAnnotateArgs(FilterArgs):
     class_ids: list[int] | None = Field(None, description="Which classes (ids from get_project); empty for all of them.")
     min_score: float = Field(0.0, ge=0, le=1, description="Leave out objects scoring below this (0..1), beyond the annotator's own threshold.")
     again: bool = Field(False, description="Also run images already auto-annotated for a class (new objects that are already there are still left out).")
+
+
+class WaitArgs(JobArgs):
+    seconds: int = Field(60, ge=1, le=300, description="How long to wait at most, in seconds.")
+
+
+class ApiArgs(BaseModel):
+    path: str = Field(description="A GET endpoint from get_components, with its ids and query, e.g. /api/runs/3/summary.")
+
+
+class ViewIdArgs(BaseModel):
+    view_id: str = Field(description="The view's id: lowercase letters, digits and dashes (e.g. model-comparison).")
+
+
+class GetViewArgs(ViewIdArgs):
+    version: int | None = Field(None, description="An older version (from view_history); empty for the newest.")
+
+
+class WriteViewArgs(ViewIdArgs):
+    template: str = Field(description="The whole page: a Jinja template (see get_components).")
+    title: str | None = Field(None, description="The page's title; needed for a new view.")
+    kind: Literal["report", "studio"] | None = Field(
+        None, description="report (the default; kept as it was when written) or studio (a live page for one workflow).")
+    workflow: str | None = Field(None, description="For a studio page: the workflow's id, from list_workflows.")
+
+
+class EditViewArgs(ViewIdArgs):
+    old: str = Field(description="A piece of the view's newest template, exactly as it is, found once in it.")
+    new: str = Field(description="What replaces it (empty to remove it).")
+
+
+class RestoreViewArgs(ViewIdArgs):
+    version: int = Field(description="The version to make the newest again, from view_history.")
+
+
+class NavArgs(BaseModel):
+    label: str = Field(description="The link's text, short (e.g. Model comparison).")
+    href: str = Field(description="Where it goes in the app, e.g. /views/model-comparison.")
+
+
+class HrefArgs(BaseModel):
+    href: str = Field(description="The link to remove, as list_nav shows it.")
 
 
 class RunIdArgs(BaseModel):
@@ -309,3 +353,131 @@ def get_run(conn: sqlite3.Connection, args: RunIdArgs) -> dict:
     if run is None:
         raise ToolError(f"There is no run {args.run_id}.")
     return run
+
+
+@tool("Wait for a background job to end (or for `seconds` to pass), then show it as get_job does.", WaitArgs)
+def wait_for_job(conn: sqlite3.Connection, args: WaitArgs) -> dict:
+    deadline = time.monotonic() + args.seconds
+    while (job := get_job(conn, args)) and job["status"] in jobs.ACTIVE and time.monotonic() < deadline:
+        time.sleep(1)
+    return job
+
+
+# --- Views ---
+
+
+@tool("How to build a view (a page in the app you write) and the API a view can read. Read it before writing one.")
+def get_components(conn: sqlite3.Connection, args: NoArgs) -> str:
+    return views.reference()
+
+
+API_PREVIEW = 8_000  # characters of an answer read_api shows
+
+
+@tool(
+    "Read what a view's api() gets for a path: the app's own JSON, exactly. Check the field names here before "
+    "using them in a view.",
+    ApiArgs,
+)
+def read_api(conn: sqlite3.Connection, args: ApiArgs) -> object:
+    answer = views.api(args.path)
+    text = json.dumps(answer, ensure_ascii=False)
+    if len(text) <= API_PREVIEW:
+        return answer
+    return {"cut": f"The answer is {len(text):,} characters; its start:", "start": text[:API_PREVIEW]}
+
+
+@tool("List the views (pages written by an agent): id, title, kind, workflow, newest version, page.")
+def list_views(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
+    return views.list_all()
+
+
+def _view(view_id: str, version: int | None = None) -> dict:
+    view = views.get(view_id, version)
+    if view is None:
+        raise ToolError(f"There is no view {view_id!r}" + (f" version {version}." if version else "."))
+    return view
+
+
+@tool("Show a view with its template (the newest version unless given).", GetViewArgs)
+def get_view(conn: sqlite3.Connection, args: GetViewArgs) -> dict:
+    view = _view(args.view_id, args.version)
+    answers = view.pop("answers")  # a report's recorded data: the paths, not the answers themselves
+    return view | ({"recorded": sorted(answers)} if answers is not None else {})
+
+
+def _opened(view: dict) -> dict:
+    return {"open": view["url"], "id": view["id"], "version": view["version"]}
+
+
+@tool(
+    "Write a view: a new one, or a new version of one (its whole template). The page is checked first; if it "
+    "doesn't render you get the line and why, and nothing is saved. It opens for the person once you've answered.",
+    WriteViewArgs,
+    opens_page=True,
+)
+def write_view(conn: sqlite3.Connection, args: WriteViewArgs) -> dict:
+    return _opened(views.save(args.view_id, args.template, args.title, args.kind, args.workflow))
+
+
+@tool(
+    "Change part of a view: replace one exact piece of its newest template, saved as a new version (checked first, "
+    "as write_view). Use it for small changes instead of writing the whole page again.",
+    EditViewArgs,
+    opens_page=True,
+)
+def edit_view(conn: sqlite3.Connection, args: EditViewArgs) -> dict:
+    template = _view(args.view_id)["template"]
+    old, new = args.old, args.new
+    if template.count(old) == 0 and old.strip() and template.count(old.strip()) == 1:
+        old, new = old.strip(), new.strip()  # the piece, give or take the spaces around it
+    found = template.count(old)
+    if found > 1:
+        raise ToolError(f"That piece is in the template {found} times; give more of it, so it's found once.")
+    if not found:
+        lines = template.splitlines()
+        near = difflib.get_close_matches(old.strip().splitlines()[0] if old.strip() else "", lines, n=3, cutoff=0.5)
+        hint = "".join(f"\n  line {lines.index(n) + 1}: {n!r}" for n in near)
+        raise ToolError("That piece isn't in the template; copy it exactly from get_view."
+                        + (f" The closest lines:{hint}" if hint else ""))
+    return _opened(views.save(args.view_id, template.replace(old, new)))
+
+
+@tool("List a view's versions, newest first: number, when it was written, size.", ViewIdArgs)
+def view_history(conn: sqlite3.Connection, args: ViewIdArgs) -> list[dict]:
+    found = views.history(args.view_id)
+    if found is None:
+        raise ToolError(f"There is no view {args.view_id!r}.")
+    return found
+
+
+@tool("Make an older version of a view the newest again (saved as a new version).", RestoreViewArgs, opens_page=True)
+def restore_view(conn: sqlite3.Connection, args: RestoreViewArgs) -> dict:
+    restored = views.restore(args.view_id, args.version)
+    if restored is None:
+        raise ToolError(f"There is no view {args.view_id!r} version {args.version}.")
+    return _opened(restored)
+
+
+@tool("Delete a view and all its versions (and its link in the navigation).", ViewIdArgs)
+def delete_view(conn: sqlite3.Connection, args: ViewIdArgs) -> dict:
+    if not views.delete(args.view_id):
+        raise ToolError(f"There is no view {args.view_id!r}.")
+    settings.remove_nav(f"/views/{args.view_id}")
+    return {"deleted": args.view_id}
+
+
+@tool("List the links added to the navigation (after the app's own sections).")
+def list_nav(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
+    return settings.nav()
+
+
+@tool("Add a link to the navigation (e.g. to a view), or rename the one already going there.", NavArgs)
+def add_to_nav(conn: sqlite3.Connection, args: NavArgs) -> list[dict]:
+    items = [i for i in settings.nav() if i["href"] != args.href.strip()]
+    return settings.set_nav(items + [{"label": args.label, "href": args.href}])
+
+
+@tool("Remove a link from the navigation.", HrefArgs)
+def remove_from_nav(conn: sqlite3.Connection, args: HrefArgs) -> list[dict]:
+    return settings.remove_nav(args.href)

@@ -17,13 +17,13 @@ import openai
 
 from app import agent_tools, config, db, settings
 
-MAX_ROUNDS = 8  # model calls per turn; each round may run tools
+MAX_ROUNDS = 20  # model calls per turn; each round may run tools (building a page takes several)
 TITLE_LENGTH = 60
 
 # What every agent is told about the app; the agent's own instructions follow.
 APP_PROMPT = f"""You are an agent inside {config.APP_NAME}, a local computer vision app where people \
 import images into projects, annotate them, train models and run workflows. You can look at the app's data \
-through your tools."""
+through your tools, and build pages in the app (views): read get_components before writing one."""
 
 _running: set[threading.Event] = set()  # the stop flag of each turn in progress
 
