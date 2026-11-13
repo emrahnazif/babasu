@@ -207,10 +207,13 @@ def _update(conn: sqlite3.Connection, project_id: int, changed: ProjectChanges) 
 
 
 def _delete(conn: sqlite3.Connection, project_id: int) -> None:
-    """Delete the project, then those of its media files no other project uses."""
+    """Delete the project and its runs, then the media files nothing else uses. 409 while its jobs run."""
     _exists(conn, project_id)
-    with conn:
-        unused = media.remove_unused(conn, projects.delete(conn, project_id))
+    try:
+        with conn:
+            unused = media.remove_unused(conn, projects.delete(conn, project_id))
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from None
     for path in unused:
         path.unlink(missing_ok=True)
 
@@ -367,6 +370,13 @@ def api_stats(project_id: int, conn: DB, field: str, where: Where = "") -> dict:
 @router.patch("/api/projects/{project_id}", status_code=204)
 def api_update_project(project_id: int, changed: ProjectChanges, conn: DB) -> None:
     _update(conn, project_id, changed)
+
+
+@router.get("/api/projects/{project_id}/deletion")
+def api_deletion(project_id: int, conn: DB) -> dict:
+    """What deleting the project would remove, and how many of its jobs still run (see projects.deletion)."""
+    _exists(conn, project_id)
+    return projects.deletion(conn, project_id)
 
 
 @router.delete("/api/projects/{project_id}", status_code=204)

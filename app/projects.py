@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from app import db, media
+from app import db, jobs, media
 from app.filters import Filter, FilterError, ObjectCondition, class_ids
 
 # What a project is for. It suggests (an annotator: annotators.SUGGESTED; later what to train), it
@@ -381,11 +381,36 @@ def update(
     _touch(conn, project_id)
 
 
+def _active_jobs(conn: sqlite3.Connection, project_id: int) -> int:
+    return conn.execute(f"SELECT count(*) FROM job WHERE project_id = ? AND status IN {jobs.ACTIVE}", (project_id,)).fetchone()[0]
+
+
+def deletion(conn: sqlite3.Connection, project_id: int) -> dict:
+    """What deleting the project would remove: its `images`, their `annotations` (hidden ones
+    too) and its `runs`. `jobs`: how many of its jobs are queued or running; while there are, it
+    can't be deleted."""
+    count = lambda sql: conn.execute(sql, (project_id,)).fetchone()[0]
+    return {
+        "images": count("SELECT count(*) FROM project_media WHERE project_id = ?"),
+        "annotations": count("SELECT count(*) FROM annotation WHERE project_id = ?"),
+        "runs": count("SELECT count(*) FROM run WHERE project_id = ?"),
+        "jobs": _active_jobs(conn, project_id),
+    }
+
+
 def delete(conn: sqlite3.Connection, project_id: int) -> list[int]:
-    """Delete a project and its rows of images, and return the ids of the media it used (the
-    files are another matter: media.remove_unused). Its versions stay: if it's an original,
-    its oldest version becomes the original. Caller commits."""
-    media_ids = [r[0] for r in conn.execute("SELECT media_id FROM project_media WHERE project_id = ?", (project_id,))]
+    """Delete a project, its rows of images and its runs (with their results), and return the ids
+    of the media they used (the files are another matter: media.remove_unused). The run rows go
+    here, not through runs.delete (its own transaction and file cleanup). Its versions stay: if
+    it's an original, its oldest version becomes the original. Caller commits.
+
+    Raises ValueError while one of its jobs is queued or running."""
+    if _active_jobs(conn, project_id):
+        raise ValueError("The project has jobs queued or running; cancel them first")
+    media_ids = [r[0] for r in conn.execute(
+        """SELECT media_id FROM project_media WHERE project_id = :project
+           UNION SELECT r.media_id FROM run_result r JOIN run ON run.id = r.run_id WHERE run.project_id = :project""",
+        {"project": project_id})]
     if conn.execute("SELECT root_id FROM project WHERE id = ?", (project_id,)).fetchone()["root_id"] is None:
         oldest = conn.execute(
             "SELECT id FROM project WHERE root_id = ? ORDER BY created_at, id LIMIT 1", (project_id,)
@@ -393,6 +418,7 @@ def delete(conn: sqlite3.Connection, project_id: int) -> list[int]:
         if oldest:
             conn.execute("UPDATE project SET root_id = NULL WHERE id = ?", (oldest["id"],))
             conn.execute("UPDATE project SET root_id = ? WHERE root_id = ?", (oldest["id"], project_id))
+    conn.execute("DELETE FROM run WHERE project_id = ?", (project_id,))
     conn.execute("DELETE FROM project WHERE id = ?", (project_id,))
     return media_ids
 
