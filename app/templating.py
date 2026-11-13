@@ -62,7 +62,8 @@ def page_name(title: str) -> str:
 def agent_chat(request: Request, page_title: str) -> dict:
     """Shell data for the chat in the sidebar: the current conversation and its agent, and the
     agents to pick from, rendered with every page. The open chat follows you: this page (its path
-    and title) becomes where it was last open, so it reopens here from the history."""
+    and title) becomes where it was last open, so it reopens here from the history. While the agent
+    is answering (`running`), the reply so far is left out: chat.js follows it from its first event."""
     with closing(db.connect()) as conn:
         conversation_id = agent.current_conversation(conn)
         if conversation_id is not None:
@@ -70,9 +71,12 @@ def agent_chat(request: Request, page_title: str) -> dict:
             agent.set_page(conn, conversation_id, page, page_name(page_title))
         turns = agent.turns(conn, conversation_id)
         agent_id = agent.conversation_agent(conn, conversation_id)
+    running = agent.running(conversation_id)
+    if running and turns and turns[-1]["role"] == "agent":
+        turns = turns[:-1]
     s = settings.get()
     found = settings.find_agent(agent_id, s)
-    return {"turns": turns, "agents": s.agents, "agent_id": found[0].id if found else None}
+    return {"turns": turns, "running": running, "agents": s.agents, "agent_id": found[0].id if found else None}
 
 
 def ago(timestamp: str) -> str:

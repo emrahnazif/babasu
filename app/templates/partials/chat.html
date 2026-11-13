@@ -28,7 +28,7 @@
 {%- endmacro %}
 
 {% set chat = agent_chat(request, page_title) %}
-<div class="chat">
+<div class="chat{% if chat.running %} chat--busy{% endif %}">
   <div class="chat__messages" role="log" aria-label="Messages">
     <div class="chat__empty" {% if chat.turns %}hidden{% endif %}>
       {{ logo() }}
@@ -54,6 +54,10 @@
         </div>
       {% endif %}
     {% endfor %}
+    {# The agent is answering: chat.js follows the reply (GET /api/agent/turn) and fills this in. #}
+    {% if chat.running %}
+      <div class="chat__message chat__message--agent" data-status="streaming" data-following>{{ note("status", "Thinking…") }}</div>
+    {% endif %}
   </div>
 
   <form class="chat__form">

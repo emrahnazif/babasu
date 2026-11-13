@@ -1,7 +1,11 @@
 // Agent chat in the sidebar. Sends a message and shows the reply as it streams: text as it's
 // written, each tool call with its state (running, done, error), and how the turn ended. The
 // server saves everything, so the next page renders the same conversation (partials/chat.html).
+// The reply doesn't depend on this page: a page opened while the agent is answering follows the
+// reply from its first event ([data-following]), and stop is a request of its own.
 // Markup comes from the <template>s in that partial; this file only fills them in.
+import { reason } from "./background-form.js";
+
 const chat = document.querySelector(".chat");
 
 if (chat) {
@@ -9,7 +13,8 @@ if (chat) {
   const input = form.elements.message;
   const messages = chat.querySelector(".chat__messages");
   const empty = chat.querySelector(".chat__empty");
-  let controller = null; // set while a reply streams; aborting it is "stop"
+  let leaving = false; // the page is going away: its stream is cut, the reply goes on
+  addEventListener("pagehide", () => { leaving = true; });
 
   const clone = (id) => chat.querySelector(`#${id}`).content.firstElementChild.cloneNode(true);
   const atBottom = () => messages.scrollHeight - messages.scrollTop - messages.clientHeight < 24;
@@ -22,10 +27,10 @@ if (chat) {
     return element;
   }
 
-  // One agent turn, built from the stream's events.
-  function agentTurn() {
-    const turn = append(messages, clone("chat-agent"));
-    let status = append(turn, clone("chat-status")); // "Thinking…" while the agent works
+  // One agent turn, built from the stream's events: a new one, or the one the page rendered.
+  function agentTurn(turn = append(messages, clone("chat-agent"))) {
+    // "Thinking…" while the agent works
+    let status = turn.querySelector(".chat__note--status") ?? append(turn, clone("chat-status"));
     let text = null; // the text part being written; a tool call ends it
     let byLine = null; // who answers; added under everything else when the turn ends
     const tools = new Map();
@@ -75,29 +80,26 @@ if (chat) {
     };
   }
 
-  async function send(text) {
-    empty.hidden = true;
-    const user = clone("chat-user");
-    user.textContent = text;
-    append(messages, user);
-    messages.scrollTop = messages.scrollHeight; // your own message always comes into view
+  // While a reply streams (also as the server renders a page mid-reply): the button is "stop".
+  const busy = () => chat.classList.contains("chat--busy");
 
-    const turn = agentTurn();
-    controller = new AbortController();
-    chat.classList.add("chat--busy");
-    messages.setAttribute("aria-busy", "true");
+  function setBusy(yes) {
+    chat.classList.toggle("chat--busy", yes);
+    if (yes) messages.setAttribute("aria-busy", "true");
+    else messages.removeAttribute("aria-busy");
+  }
+
+  // Show a reply as it streams into `turn`: newline-delimited JSON events (app/agent.py,
+  // run_turn), from the request that sent the message or one that follows the reply.
+  async function follow(request, turn) {
+    setBusy(true);
     let ended = false;
     let open = null; // a page the agent wants to show; opened when the reply is done
     try {
-      const response = await fetch("/api/agent/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Where it was written: a chat that starts with this message reopens here.
-        body: JSON.stringify({ text, page: location.pathname + location.search, page_title: document.title }),
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`The server answered ${response.status}.`);
-      // Newline-delimited JSON: one event per line (app/agent.py, run_turn).
+      const response = await request;
+      // Nothing to follow: the app restarted since this page was made, which stopped the reply.
+      if (response.status === 204) return turn.end("stopped");
+      if (!response.ok) throw new Error(await reason(response));
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = "";
       for (;;) {
@@ -113,19 +115,32 @@ if (chat) {
           else if (event.type === "tool") turn.tool(event);
           else if (event.type === "open") open = event.url;
           else if (event.type === "done") (turn.end("done"), (ended = true));
+          else if (event.type === "stopped") (turn.end("stopped"), (ended = true));
           else if (event.type === "error") (turn.end("error", event.message), (ended = true));
         }
       }
       if (!ended) turn.end("error", "The reply ended unexpectedly.");
       if (open) location.assign(open); // the chat is saved, so it's there on the new page
     } catch (error) {
-      if (error.name === "AbortError") turn.end("stopped");
-      else turn.end("error", error.message || "The app didn't answer.");
+      if (!leaving) turn.end("error", error.message || "The app didn't answer.");
     } finally {
-      controller = null;
-      chat.classList.remove("chat--busy");
-      messages.removeAttribute("aria-busy");
+      setBusy(false);
     }
+  }
+
+  function send(text) {
+    empty.hidden = true;
+    const user = clone("chat-user");
+    user.textContent = text;
+    append(messages, user);
+    messages.scrollTop = messages.scrollHeight; // your own message always comes into view
+    const request = fetch("/api/agent/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Where it was written: a chat that starts with this message reopens here.
+      body: JSON.stringify({ text, page: location.pathname + location.search, page_title: document.title }),
+    });
+    follow(request, agentTurn());
   }
 
   // Enter sends, Shift+Enter adds a new line (isComposing: don't send mid-IME input).
@@ -138,8 +153,9 @@ if (chat) {
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (controller) {
-      controller.abort(); // the button is "stop" while a reply streams
+    if (busy()) {
+      // The button is "stop" while a reply streams; the reply ends with a "stopped" event.
+      fetch("/api/agent/stop", { method: "POST" });
       return;
     }
     const text = input.value.trim();
@@ -158,4 +174,8 @@ if (chat) {
   });
 
   messages.scrollTop = messages.scrollHeight; // open at the latest message
+
+  // The agent is still answering (the page was opened mid-reply): follow the reply.
+  const following = messages.querySelector("[data-following]");
+  if (following) follow(fetch("/api/agent/turn"), agentTurn(following));
 }
