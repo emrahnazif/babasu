@@ -1,7 +1,8 @@
 // The annotation editor on an image page: MarkinJS (static/vendor) draws an image's annotations
-// over it, in its classes' colours, and lets people change them. The page renders the data:
-//   <img src="…" data-annotations="[…]" data-classes="[{id, name, color}, …]" data-save="/api/…"
-//        data-source="/api/…" data-project-id="3">
+// over it, in its classes' colours, and lets people change them. The page renders MarkinJS's
+// structure (an <img> and an <svg> over it in a data-markin-stage) and the data, on the <svg>:
+//   <svg viewBox="0 0 W H" data-annotations="[…]" data-classes="[{id, name, color}, …]"
+//        data-save="/api/…" data-source="/api/…" data-project-id="3">
 // Annotations are in the original image's pixels, the format babasu stores. Without data-save
 // (a frozen project, or one without classes) the editor only shows them. When a job of the
 // project ends (js/jobs.js's "job-ended", e.g. auto-annotating), the annotations are read again
@@ -14,24 +15,24 @@
 // class new objects get; picking one in #class-menu changes both.
 import { toast } from "./toast.js";
 
-const image = document.querySelector("img[data-annotations]");
+const canvas = document.querySelector("svg[data-annotations]");
 
-if (image) {
-  const classes = JSON.parse(image.dataset.classes);
-  const editor = MarkinJS.create(image, {
-    annotations: JSON.parse(image.dataset.annotations),
+if (canvas) {
+  const classes = JSON.parse(canvas.dataset.classes);
+  const editor = MarkinJS.create(canvas, {
+    annotations: JSON.parse(canvas.dataset.annotations),
     colors: Object.fromEntries(classes.map((c) => [c.id, c.color])),
   });
   document.addEventListener("job-ended", async (event) => {
-    if (event.detail.projectId !== image.dataset.projectId) return;
+    if (event.detail.projectId !== canvas.dataset.projectId) return;
     try {
-      const response = await fetch(image.dataset.source);
+      const response = await fetch(canvas.dataset.source);
       if (response.ok) editor.load((await response.json()).annotations);
     } catch {
       // The app didn't answer; the page shows what it had.
     }
   });
-  const url = image.dataset.save;
+  const url = canvas.dataset.save;
   if (url) {
     editor.on("change", saver(url));
     classTool(editor, classes);

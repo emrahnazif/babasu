@@ -61,10 +61,14 @@
 {% endblock %}
 
 {% block content %}
+  {# MarkinJS's structure, rendered here so the layout is right before any JS runs. #}
   <figure class="stage">
-    <img src="{{ image.url }}" alt="{{ image.filename }}"
-         data-annotations='{{ image.annotations | tojson }}' data-classes='{{ project.classes | tojson }}'
-         data-source="/api/projects/{{ project.id }}/images/{{ image.media_id }}" data-project-id="{{ project.id }}"
-         {% if editable %}data-save="/api/projects/{{ project.id }}/images/{{ image.media_id }}/annotations"{% endif %}>
+    <div data-markin-stage>
+      <img src="{{ image.url }}" alt="{{ image.filename }}">
+      <svg viewBox="0 0 {{ image.width }} {{ image.height }}"
+           data-annotations='{{ image.annotations | tojson }}' data-classes='{{ project.classes | tojson }}'
+           data-source="/api/projects/{{ project.id }}/images/{{ image.media_id }}" data-project-id="{{ project.id }}"
+           {% if editable %}data-save="/api/projects/{{ project.id }}/images/{{ image.media_id }}/annotations"{% endif %}></svg>
+    </div>
   </figure>
 {% endblock %}

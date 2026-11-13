@@ -318,6 +318,20 @@ a.card:hover { background: var(--color-accent-bg); }
   object-fit: contain;
 }
 
+/* An annotation editor's stage: the <svg> it draws in lies over the image (its viewBox is the
+   image's size, so it lines up with the contained image). */
+.stage [data-markin-stage] {
+  position: relative;
+  height: 100%;
+}
+
+.stage [data-markin-stage] > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 /* Small label. A coloured dot comes from style="--badge-color: #e11d48"; "badge plain" has none.
    A link inside it (e.g. an × to remove a filter) sits at its end. */
 .badge {
