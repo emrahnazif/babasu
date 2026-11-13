@@ -2,6 +2,8 @@
 {# A page whose sidebar is its own menu (e.g. settings) sets sidebar_collapsible = false. #}
 {% set collapsible = sidebar_collapsible | default(true) %}
 {% set collapsed = collapsible and s.sidebar_collapsed %}
+{# A page that fills the main area edge to edge (e.g. one image) sets main_bleed = true: no padding. #}
+{% set bleed = main_bleed | default(false) %}
 {# The navigation item this page is in (templating.nav), and the page's breadcrumb below it. #}
 {% set groups = nav() %}
 {% set here = section_of(request.url.path, groups) %}
@@ -104,7 +106,7 @@
     {% set toolbar %}{% block toolbar %}{% endblock %}{% endset %}
     {% if toolbar | trim %}<div class="app__main-toolbar"><div class="topbar">{{ toolbar }}</div></div>{% endif %}
 
-    <main class="app__main">
+    <main class="app__main{% if bleed %} app__main--bleed{% endif %}">
       {% block content %}{% endblock %}
     </main>
   </div>

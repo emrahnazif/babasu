@@ -46,6 +46,10 @@
   padding: var(--space-6);
 }
 
+.app__main--bleed {
+  padding: 0;
+}
+
 /* Drag handle on the sidebar's right border (behaviour in js/sidebar.js): a 6px strip to grab,
    centred on the border. Hovering it shows a thin line after a moment, so passing the pointer
    over the border doesn't flash it; dragging or keyboard focus show it at once. */
