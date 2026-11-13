@@ -4,6 +4,7 @@
 {% extends "base.html" %}
 {% set name = document.name or workflow_id or "" %}
 {% set crumbs = [(name or "New workflow", None)] %}
+{% set main_bleed = true %}
 
 {% block scripts %}<script type="module" src="{{ url_for('static', path='js/workflow-editor.js') }}"></script>{% endblock %}
 
