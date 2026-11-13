@@ -2,8 +2,12 @@
 
 The model can call babasu's own functions as tools (app/agent_tools.py). One turn: save the
 person's message, ask the model, stream its text, run the tools it asks for, ask again, until it
-answers without tools. Every step is saved as it happens, so the chat survives page changes and
-shows what happened even after an error or a stop.
+answers without tools. Every step is saved as it happens, so the chat shows what happened even after
+an error or a stop.
+
+A turn belongs to the app, not to the page that sent the message: it runs in its own thread and
+keeps the events it has sent, so any page can follow it (from its first event, then live). Leaving
+a page stops nothing; stop is asked for (stop_turn), or the app closing stops every turn.
 """
 
 import asyncio
@@ -25,7 +29,38 @@ APP_PROMPT = f"""You are an agent inside {config.APP_NAME}, a local computer vis
 import images into projects, annotate them, train models and run workflows. You can look at the app's data \
 through your tools, and build pages in the app (views): read get_components before writing one."""
 
-_running: set[threading.Event] = set()  # the stop flag of each turn in progress
+
+class Busy(Exception):
+    """A message sent while the conversation's agent is still answering the last one."""
+
+
+class Turn:
+    """One turn in progress (or just ended): the events it has sent, who follows it, its stop flag."""
+
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+        self.ended = False
+        self.stop = threading.Event()
+        self.followers: list[tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = []
+
+    def send(self, event: dict | None) -> None:
+        """Keep an event and pass it on to every follower; None: the turn has ended."""
+        with _lock:
+            if event is None:
+                self.ended = True
+            elif event["type"] == "text" and self.events and self.events[-1]["type"] == "text":
+                # Kept as one text event, so a page that follows later replays it at once.
+                self.events[-1] = {"type": "text", "delta": self.events[-1]["delta"] + event["delta"]}
+            else:
+                self.events.append(event)
+            for loop, queue in self.followers:
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+
+
+# Each conversation's latest turn since the app started: running, or ended (kept so a page that
+# rendered it running can still follow it to its end). Ended ones go when the next turn starts.
+_turns: dict[int, Turn] = {}
+_lock = threading.Lock()
 
 
 def client(model: settings.Model) -> openai.OpenAI:
@@ -94,8 +129,9 @@ def recover() -> None:
 
 def stop_all() -> None:
     """At shutdown: ask every turn in progress to stop; each saves what it has as stopped."""
-    for stop in list(_running):
-        stop.set()
+    with _lock:
+        for turn in _turns.values():
+            turn.stop.set()
 
 
 # --- Conversations ---
@@ -245,49 +281,82 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
 # --- One turn ---
 
 
-async def stream_turn(text: str, page: str | None = None, page_title: str | None = None) -> AsyncIterator[dict]:
-    """Run one turn in its own thread and yield its events as they come (see run_turn).
-
-    If the consumer goes away (the person pressed stop, or the app is closing: stop_all), the
-    thread is told to stop at its next step, so the turn saves itself as stopped instead of
-    waiting forever for someone to read it.
-    """
-    loop = asyncio.get_running_loop()
-    events: asyncio.Queue = asyncio.Queue()
-    stop = threading.Event()
+def start_turn(text: str, page: str | None = None, page_title: str | None = None) -> Turn:
+    """Send the person's message to the current conversation (started if there is none) and run
+    the turn in its own thread (see run_turn). Busy if that conversation's last turn is still running."""
+    with closing(db.connect()) as conn:
+        conversation_id = current_conversation(conn) or new_conversation(conn)
+    turn = Turn()
+    with _lock:
+        running = _turns.get(conversation_id)
+        if running and not running.ended:
+            raise Busy("The agent is still answering. Wait for it, or stop it first.")
+        for done in [id for id, t in _turns.items() if t.ended]:
+            del _turns[done]
+        _turns[conversation_id] = turn
 
     def run() -> None:
-        with closing(db.connect()) as conn:
-            conversation_id = current_conversation(conn) or new_conversation(conn)
-        turn = run_turn(conversation_id, text, page, page_title)
         try:
-            for event in turn:
-                loop.call_soon_threadsafe(events.put_nowait, event)
-                if stop.is_set():
-                    turn.close()  # GeneratorExit inside the turn: it saves what it has as stopped
-                    break
+            for event in run_turn(conversation_id, text, turn.stop, page, page_title):
+                turn.send(event)
         finally:
-            _running.discard(stop)
-            loop.call_soon_threadsafe(events.put_nowait, None)
+            turn.send(None)
 
-    _running.add(stop)
     threading.Thread(target=run, name="agent-turn", daemon=True).start()
+    return turn
+
+
+def latest_turn(conversation_id: int | None) -> Turn | None:
+    """The conversation's latest turn since the app started, running or just ended."""
+    with _lock:
+        return _turns.get(conversation_id)
+
+
+def running(conversation_id: int | None) -> bool:
+    """Whether the conversation's agent is answering now."""
+    turn = latest_turn(conversation_id)
+    return turn is not None and not turn.ended
+
+
+def stop_turn(conversation_id: int | None) -> None:
+    """Ask the conversation's running turn to stop; it saves what it has as stopped at its next step."""
+    if turn := latest_turn(conversation_id):
+        turn.stop.set()
+
+
+async def follow(turn: Turn) -> AsyncIterator[dict]:
+    """The turn's events from the first, then each as it comes, until it ends. A follower going
+    away (a page change) leaves the turn running."""
+    queue: asyncio.Queue = asyncio.Queue()
+    with _lock:
+        past, ended = list(turn.events), turn.ended
+        follower = (asyncio.get_running_loop(), queue)
+        if not ended:
+            turn.followers.append(follower)
     try:
-        while (event := await events.get()) is not None:
+        for event in past:
             yield event
+        if not ended:
+            while (event := await queue.get()) is not None:
+                yield event
     finally:
-        stop.set()
+        with _lock:
+            if follower in turn.followers:
+                turn.followers.remove(follower)
 
 
-def run_turn(conversation_id: int, text: str, page: str | None = None, page_title: str | None = None) -> Iterator[dict]:
+def run_turn(
+    conversation_id: int, text: str, stop: threading.Event, page: str | None = None, page_title: str | None = None,
+) -> Iterator[dict]:
     """Send the person's message (written on `page`, which the conversation keeps as where it
     was left) to the conversation's agent and yield what happens, for the chat to show as it streams:
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
       {"type": "open", "url": "/projects/3?where=car"}      a page to show once the reply is done
-      {"type": "done"} or {"type": "error", "message": "..."}
-    If the generator is closed early (a stop), the reply so far is saved as stopped.
+      {"type": "done"}, {"type": "stopped"} or {"type": "error", "message": "..."}
+    Once `stop` is set, the turn ends at its next step (a streamed chunk or a tool) and saves the
+    reply so far as stopped.
     """
     with closing(db.connect()) as conn:
         with conn:
@@ -334,6 +403,11 @@ def run_turn(conversation_id: int, text: str, page: str | None = None, page_titl
                             ("".join(text_parts), json.dumps(tool_calls) if tool_calls else None, status, error, reply_id),
                         )
 
+                def stopped(ran: list | None = None) -> dict:
+                    """Stopped: keep the text that arrived and the tool calls that ran."""
+                    finish("stopped", tool_calls=ran)
+                    return {"type": "stopped"}
+
                 try:
                     stream = model_client.chat.completions.create(
                         model=model.model, messages=_history(conn, conversation_id, agent), tools=agent_tools.schemas(),
@@ -341,6 +415,8 @@ def run_turn(conversation_id: int, text: str, page: str | None = None, page_titl
                     )
                     with stream:
                         for chunk in stream:
+                            if stop.is_set():
+                                break
                             delta = chunk.choices[0].delta if chunk.choices else None
                             if delta is None:
                                 continue
@@ -353,12 +429,12 @@ def run_turn(conversation_id: int, text: str, page: str | None = None, page_titl
                                 if part.function:
                                     call["name"] += part.function.name or ""
                                     call["arguments"] += part.function.arguments or ""
-                except GeneratorExit:  # stopped: keep what arrived
-                    finish("stopped")
-                    raise
                 except Exception as exc:  # unreachable server, bad key, unknown model…
                     finish("error", describe(exc, model))
                     yield {"type": "error", "message": describe(exc, model)}
+                    return
+                if stop.is_set():
+                    yield stopped()
                     return
 
                 tool_calls = list(calls.values())
@@ -367,7 +443,10 @@ def run_turn(conversation_id: int, text: str, page: str | None = None, page_titl
                     yield {"type": "done"}
                     return
 
-                for call in tool_calls:
+                for ran, call in enumerate(tool_calls):
+                    if stop.is_set():
+                        yield stopped(tool_calls[:ran])
+                        return
                     yield {"type": "tool", "id": call["id"], "name": call["name"], "status": "running"}
                     try:
                         result, status, error = agent_tools.call(conn, call["name"], call["arguments"]), "done", None

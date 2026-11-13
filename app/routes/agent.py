@@ -1,12 +1,17 @@
-"""The agent chat: send a message (the reply streams back), read the conversation, start a new chat
-or open a past one."""
+"""The agent chat: send a message (the reply streams back), follow or stop the reply in progress,
+read the conversation, start a new chat or open a past one."""
 
 import json
 import sqlite3
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from pydantic import BaseModel, StringConstraints
 
 from app import agent, db
@@ -25,13 +30,36 @@ class NewMessage(BaseModel):
     page_title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
 
 
-@router.post("/api/agent/messages")
-async def send_message(message: NewMessage) -> StreamingResponse:
-    """Streams the turn as newline-delimited JSON events (see agent.run_turn). Dropping the
-    request (the stop button) stops the turn."""
-    turn = agent.stream_turn(message.text, safe_next(message.page), page_name(message.page_title))
-    events = (json.dumps(event) + "\n" async for event in turn)
+def _stream(turn: agent.Turn) -> StreamingResponse:
+    """The turn's events as newline-delimited JSON (see agent.run_turn), from its first."""
+    events = (json.dumps(event) + "\n" async for event in agent.follow(turn))
     return StreamingResponse(events, media_type="application/x-ndjson")
+
+
+@router.post("/api/agent/messages")
+def send_message(message: NewMessage) -> StreamingResponse:
+    """Send a message to the current conversation and stream the reply. The reply doesn't depend
+    on this request: dropping it (a page change) leaves the agent answering; follow it again with
+    GET /api/agent/turn. Refused (409) while the agent is still answering."""
+    try:
+        turn = agent.start_turn(message.text, safe_next(message.page), page_name(message.page_title))
+    except agent.Busy as exc:
+        raise HTTPException(409, str(exc)) from None
+    return _stream(turn)
+
+
+@router.get("/api/agent/turn", response_model=None)
+def follow_turn(conn: DB) -> StreamingResponse | Response:
+    """Follow the current conversation's latest turn: its events from the first, then live until it
+    ends (one that already ended: all of them). 204 if it has had none since the app started."""
+    turn = agent.latest_turn(agent.current_conversation(conn))
+    return _stream(turn) if turn else Response(status_code=204)
+
+
+@router.post("/api/agent/stop", status_code=204)
+def stop_turn(conn: DB) -> None:
+    """Stop the current conversation's reply in progress; it ends as stopped at its next step."""
+    agent.stop_turn(agent.current_conversation(conn))
 
 
 @router.get("/api/agent/messages")
