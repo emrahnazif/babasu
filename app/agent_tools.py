@@ -396,8 +396,8 @@ API_PREVIEW = 8_000  # characters of an answer read_api shows
 
 
 @tool(
-    "Read what a view's api() gets for a path: the app's own JSON, exactly. Check the field names here before "
-    "using them in a view.",
+    "Read the app's own JSON API at a path (GET), exactly as a view's api() gets it: the data of the page the person "
+    "is on (its path under /api), or the field names to check before using them in a view.",
     ApiArgs,
 )
 def read_api(conn: sqlite3.Connection, args: ApiArgs) -> object:

@@ -27,7 +27,10 @@ TITLE_LENGTH = 60
 # What every agent is told about the app; the agent's own instructions follow.
 APP_PROMPT = f"""You are an agent inside {config.APP_NAME}, a local computer vision app where people \
 import images into projects, annotate them, train models and run workflows. You can look at the app's data \
-through your tools, and build pages in the app (views): read get_components before writing one."""
+through your tools, and build pages in the app (views): read get_components before writing one.
+
+Each of the person's messages starts with the page they wrote it on. A page's data is at the same path under \
+/api: read it with read_api when the question is about that page (/projects/3/images/42 → /api/projects/3/images/42)."""
 
 
 class Busy(Exception):
@@ -224,7 +227,7 @@ def _messages(conn: sqlite3.Connection, conversation_id: int | None, tool_result
     the (possibly large) results, which only the model needs."""
     content = "content" if tool_results else "CASE role WHEN 'tool' THEN '' ELSE content END AS content"
     rows = conn.execute(
-        f"SELECT role, {content}, tool_calls, tool_call_id, status, error, agent, model FROM message "
+        f"SELECT role, {content}, tool_calls, tool_call_id, status, error, agent, model, page, page_title FROM message "
         "WHERE conversation_id = ? ORDER BY id",
         (conversation_id,),
     ).fetchall()
@@ -253,6 +256,13 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
     return result
 
 
+def _on_page(message: dict) -> str:
+    """The line the model gets before a message of the person's: the page it was written on."""
+    if not message["page"]:
+        return ""
+    return f'(On the page "{message["page_title"]}": {message["page"]})\n\n'
+
+
 def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Agent) -> list[dict]:
     """The conversation as the model gets it. A tool call without a saved result (the app stopped
     in between) is left out, since the API requires every call to have its result."""
@@ -261,7 +271,7 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
     history = [{"role": "system", "content": system_prompt(agent)}]
     for m in messages:
         if m["role"] == "user":
-            history.append({"role": "user", "content": m["content"]})
+            history.append({"role": "user", "content": _on_page(m) + m["content"]})
         elif m["role"] == "assistant":
             calls = [c for c in m["tool_calls"] if c["id"] in answered]
             if not m["content"] and not calls:
@@ -360,7 +370,10 @@ def run_turn(
     """
     with closing(db.connect()) as conn:
         with conn:
-            conn.execute("INSERT INTO message (conversation_id, role, content) VALUES (?, 'user', ?)", (conversation_id, text))
+            conn.execute(
+                "INSERT INTO message (conversation_id, role, content, page, page_title) VALUES (?, 'user', ?, ?, ?)",
+                (conversation_id, text, page, page_title),
+            )
             conn.execute(
                 f"UPDATE conversation SET updated_at = {db.NOW}, title = CASE title WHEN '' THEN ? ELSE title END, "
                 "page = coalesce(?, page), page_title = coalesce(?, page_title) WHERE id = ?",
