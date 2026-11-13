@@ -381,7 +381,6 @@ a.card:hover { background: var(--color-accent-bg); }
 .actions.start { justify-content: flex-start; }
 
 .actions.divided {
-  margin-top: var(--space-8);
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
 }
