@@ -3,8 +3,10 @@
 Each tool's arguments are a pydantic model, so the JSON schema the model sees is generated, never
 written by hand. Tools that change things (downloading, loading models) don't ask for
 confirmation yet; some may later (product.md "The agent").
-A tool registered with opens_page=True returns {"open": "/a/page", …}: that page is shown to the
-person once the reply is done (app/agent.py, run_turn).
+A tool registered with opens=True returns {"open": "/a/page", …}: that page is shown to the person
+once the reply is done (app/agent.py, run_turn); after a tool that `writes`, the page they're on
+reloads then instead (unless one opens). What tools return carries each thing's page, so the agent
+can open it.
 """
 
 import difflib
@@ -13,21 +15,36 @@ import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 from urllib.parse import urlencode
 
 from mozo.workflow import catalogue
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app import annotators, jobs, projects, runs, settings, views, vision
+from app import annotators, config, jobs, projects, runs, settings, views, vision
 from app.filters import Filter
 
 
-class NoArgs(BaseModel):
+class Args(BaseModel):
+    """A tool's arguments. An argument it doesn't take is refused, not dropped: the model learns
+    its mistake (a misspelt field) instead of being told a change it asked for was made."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class NoArgs(Args):
     pass
 
 
-class ProjectArgs(BaseModel):
+class PageArgs(Args):
+    path: str = Field(description="The page's path, with its ids and query, e.g. /projects/3/images/42.")
+
+
+class SearchArgs(Args):
+    text: str = Field(min_length=1, description="Part of the name, e.g. img_0042 or street.")
+
+
+class ProjectArgs(Args):
     project_id: int = Field(description="The project's id, from list_projects.")
 
 
@@ -52,7 +69,7 @@ class StatsArgs(FilterArgs):
     )
 
 
-class JobArgs(BaseModel):
+class JobArgs(Args):
     job_id: int = Field(description="The job's id, from list_jobs.")
 
 
@@ -63,14 +80,38 @@ class RunArgs(FilterArgs):
     name: str | None = Field(None, description="A name for the run; empty for one made from the workflow and the image count.")
 
 
-class PromptArgs(ProjectArgs):
-    prompts: dict[int, str] = Field(
-        description="Class id (from get_project) -> its new prompt, the text annotators look for; an empty prompt goes "
-        "back to the class's name. Classes left out keep theirs."
-    )
+class NewProjectArgs(Args):
+    name: projects.Name
+    description: projects.Description = ""
+    task: projects.Task = Field("detection", description="What its annotations are: boxes (detection), outlines "
+                                "(segmentation) or points (keypoints).")
+    classes: list[projects.NewClass] = Field([], description="The kinds of objects to annotate, in order.")
+
+
+class UpdateProjectArgs(ProjectArgs):
+    name: projects.Name | None = None
+    description: projects.Description | None = None
+    task: projects.Task | None = None
+    annotator: annotators.Finder | None = Field(
+        None, description="The workflow that auto-annotates it, from list_workflows; null for no annotator.")
+    add_classes: list[projects.NewClass] = Field([], description="New classes, added after the others.")
+    change_classes: list[projects.ClassEdit] = Field([], description="Classes to rename, or to give another prompt or colour.")
+    remove_classes: list[projects.ClassRef] = Field([], description="Classes to remove (names or ids): their annotations are "
+                                            "hidden, not deleted, and come back if a class by that name is added again.")
+
+
+class DuplicateArgs(ProjectArgs):
+    name: projects.Name | None = Field(None, description='The copy\'s name; empty: "<its name> copy".')
+
+
+class DeleteArgs(ProjectArgs):
+    confirmed: bool = Field(False, description="True only once the person has said yes to deleting it; without it, "
+                            "you get what deleting it would remove, to tell them and ask.")
 
 
 class AutoAnnotateArgs(FilterArgs):
+    image_ids: list[int] | None = Field(None, description="Only these images (ids from find_images, or the image "
+                                        "page's path: /projects/3/images/42 is image 42); empty for all that match.")
     count: int | None = Field(None, ge=1, description="How many of the images to do, picked at random among those with work left; empty for all.")
     class_ids: list[int] | None = Field(None, description="Which classes (ids from get_project); empty for all of them.")
     min_score: float = Field(0.0, ge=0, le=1, description="Leave out objects scoring below this (0..1), beyond the annotator's own threshold.")
@@ -81,16 +122,16 @@ class WaitArgs(JobArgs):
     seconds: int = Field(60, ge=1, le=300, description="How long to wait at most, in seconds.")
 
 
-class NodesArgs(BaseModel):
+class NodesArgs(Args):
     names: list[str] | None = Field(None, description="Nodes to show in full (inputs, outputs, parameters); empty for "
                                     "the list of all nodes, each with its category and what it does.")
 
 
-class WorkflowIdArgs(BaseModel):
+class WorkflowIdArgs(Args):
     workflow_id: str = Field(description="The workflow's id, from list_workflows (lowercase letters, digits and dashes).")
 
 
-class WorkflowDocArgs(BaseModel):
+class WorkflowDocArgs(Args):
     document: dict[str, Any] = Field(
         description='A mozo workflow: {"name", "description", "nodes": [{"id", "type", "data": {"parameters": {…}}}], '
         '"edges": [{"source", "sourceHandle", "target", "targetHandle"}]}. Node types and their ports and parameters '
@@ -101,11 +142,15 @@ class SaveWorkflowArgs(WorkflowIdArgs, WorkflowDocArgs):
     pass
 
 
-class ApiArgs(BaseModel):
+class DocsArgs(Args):
+    topic: str = Field(description="A topic, from the list in read_docs' description.")
+
+
+class ApiArgs(Args):
     path: str = Field(description="A GET endpoint from get_components, with its ids and query, e.g. /api/runs/3/summary.")
 
 
-class ViewIdArgs(BaseModel):
+class ViewIdArgs(Args):
     view_id: str = Field(description="The view's id: lowercase letters, digits and dashes (e.g. model-comparison).")
 
 
@@ -130,20 +175,20 @@ class RestoreViewArgs(ViewIdArgs):
     version: int = Field(description="The version to make the newest again, from view_history.")
 
 
-class NavArgs(BaseModel):
+class NavArgs(Args):
     label: str = Field(description="The link's text, short (e.g. Model comparison).")
     href: str = Field(description="Where it goes in the app, e.g. /views/model-comparison.")
 
 
-class HrefArgs(BaseModel):
+class HrefArgs(Args):
     href: str = Field(description="The link to remove, as list_nav shows it.")
 
 
-class RunIdArgs(BaseModel):
+class RunIdArgs(Args):
     run_id: int = Field(description="The run's id, from start_run or list_runs.")
 
 
-class ModelArgs(BaseModel):
+class ModelArgs(Args):
     family: str = Field(description="The model family, from list_models, e.g. sam3.")
     variant: str = Field(description="The variant within it, from list_models, e.g. sam3.")
 
@@ -153,7 +198,8 @@ class Tool:
     description: str
     args: type[BaseModel]
     func: Callable[[sqlite3.Connection, BaseModel], object]
-    opens_page: bool = False
+    opens: bool = False  # it returns {"open": "/a/page", …}: that page is shown to the person after the reply
+    writes: bool = False  # it changes what pages show: the page the person is on reloads after the reply
 
 
 TOOLS: dict[str, Tool] = {}
@@ -163,11 +209,11 @@ class ToolError(Exception):
     """The model asked for a tool that doesn't exist, or gave arguments that don't fit."""
 
 
-def tool(description: str, args: type[BaseModel] = NoArgs, opens_page: bool = False):
+def tool(description: str, args: type[BaseModel] = NoArgs, opens: bool = False, writes: bool = False):
     """Register a function as a tool, under its own name."""
 
     def register(func):
-        TOOLS[func.__name__] = Tool(description, args, func, opens_page)
+        TOOLS[func.__name__] = Tool(description, args, func, opens, writes)
         return func
 
     return register
@@ -189,23 +235,84 @@ def call(conn: sqlite3.Connection, name: str, arguments: str) -> str:
     try:
         args = found.args.model_validate_json(arguments or "{}")
     except ValidationError as exc:
-        raise ToolError(f"Invalid arguments for {name}: {exc.errors(include_url=False)}") from None
+        problems = "; ".join(_problem(found.args, e) for e in exc.errors(include_url=False))
+        raise ToolError(f"Invalid arguments for {name}: {problems}") from None
     return json.dumps(found.func(conn, args), ensure_ascii=False)
+
+
+def _problem(args: type[BaseModel], error: dict) -> str:
+    """One argument error in words, where it is; an argument that isn't one says which there are."""
+    where = ".".join(str(part) for part in error["loc"]) or "arguments"
+    if error["type"] != "extra_forbidden":
+        return f"{where}: {error['msg']}"
+    model = args
+    for part in error["loc"][:-1]:  # down to the object holding the unknown name, through lists and Nones
+        if isinstance(part, str):
+            model = next(t for t in _types(model.model_fields[part].annotation)
+                         if isinstance(t, type) and issubclass(t, BaseModel))
+    return f"{where}: not an argument here; it takes {', '.join(model.model_fields)}"
+
+
+def _types(annotation) -> list:
+    """The types an annotation is made of: list[ClassEdit] | None -> [list, ClassEdit, None]."""
+    return [annotation, *(t for arg in get_args(annotation) for t in _types(arg))]
 
 
 # --- The tools ---
 
 
+@tool(
+    "Open a page of the app for the person, once you've answered. When they ask to see, show, open or find "
+    "something, open its page: it shows it better than a list in your reply. Something named: find it first "
+    "(search, find_images), its page is in what they return. The pages: /projects (all projects), "
+    "/projects/new (create one), /projects/ID (its images; ?where=FILTER for some of them), "
+    "/projects/ID/images/IMAGE_ID (one image with its objects), /projects/ID/edit (its settings: name, type, "
+    "annotator, classes, delete), /workflows, /workflows/new, /workflows/ID/edit (the builder), /studio/ID (try a "
+    "workflow on images), /models (vision models), /jobs/ID (a job and its log), /views/ID (a view), "
+    "/settings/general, /settings/models and /settings/agents (the models and agents you run on).",
+    PageArgs,
+    opens=True,
+)
+def open_page(conn: sqlite3.Connection, args: PageArgs) -> dict:
+    try:
+        return {"open": args.path, "title": views.page_title(args.path)}
+    except views.ApiError as e:
+        raise ToolError(f"{e}. Look up what you're opening first (search, find_images): its page is in what they "
+                        "return.") from None
+
+
+@tool(
+    "Find projects, images, workflows and views by name (part of it, ignoring case) anywhere in the app, each "
+    "with its page. Use it when the person names something without saying where it is; if more than one "
+    "thing could be what they mean, ask which.",
+    SearchArgs,
+)
+def search(conn: sqlite3.Connection, args: SearchArgs) -> dict:
+    found = projects.named(conn, args.text.strip())
+    text = args.text.strip().lower()
+    return {
+        "projects": [p | {"page": f"/projects/{p['id']}"} for p in found["projects"]],
+        "images": [{"id": i["media_id"], "filename": i["filename"], "project": i["project"],
+                    "page": f"/projects/{i['project_id']}/images/{i['media_id']}"} for i in found["images"]],
+        "image_count": found["image_count"],
+        "workflows": [{"id": w["id"], "name": w["name"], "page": f"/workflows/{w['id']}/edit"}
+                      for w in runs.workflows() if text in w["id"] or text in (w["name"] or "").lower()],
+        "views": [{"id": v["id"], "title": v["title"], "page": v["url"]}
+                  for v in views.list_all() if text in v["id"] or text in v["title"].lower()],
+    }
+
+
 @tool("List all projects, with their type, image counts, how many images are labelled, and class names.")
 def list_projects(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return [
-        {"id": p["id"], "name": p["name"], "description": p["description"], "task": p["task"],
+        {"id": p["id"], "name": p["name"], "page": f"/projects/{p['id']}", "description": p["description"], "task": p["task"],
          "image_count": p["image_count"], "labelled_count": p["labelled_count"], "classes": [c["name"] for c in p["classes"]]}
         for p in projects.list_all(conn)
     ]
 
 
-@tool("Show one project: its type and annotator, its classes (with the prompt sent to annotators and how many annotations each has), and its first image file names.", ProjectArgs)
+@tool("Show one project: its page and its settings page, its type and annotator, its classes (with the prompt sent "
+      "to annotators and how many annotations each has), and its first images with their pages.", ProjectArgs)
 def get_project(conn: sqlite3.Connection, args: ProjectArgs) -> dict:
     project = projects.detail(conn, args.project_id)
     if project is None:
@@ -213,6 +320,8 @@ def get_project(conn: sqlite3.Connection, args: ProjectArgs) -> dict:
     return {
         "id": project["id"],
         "name": project["name"],
+        "page": f"/projects/{project['id']}",
+        "settings_page": f"/projects/{project['id']}/edit",
         "description": project["description"],
         "task": project["task"],
         "annotator": project["annotator"],
@@ -220,8 +329,15 @@ def get_project(conn: sqlite3.Connection, args: ProjectArgs) -> dict:
         "labelled_count": project["labelled_count"],
         "classes": [{"id": c["id"], "name": c["name"], "prompt": c["prompt"], "annotation_count": c["annotation_count"]}
                     for c in project["classes"]],
-        "first_images": [image["filename"] for image in project["images"][:20]],
+        "first_images": [_image(project, image) for image in project["images"][:20]],
     }
+
+
+def _image(project: dict, image: dict) -> dict:
+    """An image as tools list it: its id, file name and page (stepping through the project's filter, if any)."""
+    query = f"?{urlencode({'where': project['filter']})}" if project["filter"] else ""
+    return {"id": image["media_id"], "filename": image["filename"],
+            "page": f"/projects/{project['id']}/images/{image['media_id']}{query}"}
 
 
 def _filtered(conn: sqlite3.Connection, args: FilterArgs) -> dict:
@@ -232,14 +348,14 @@ def _filtered(conn: sqlite3.Connection, args: FilterArgs) -> dict:
 
 
 @tool(
-    "Find a project's images matching a filter: how many match, and the first ones with how many of the objects "
-    "asked for each has. Use it to check a filter (and see it written back the way it was understood) before showing it.",
+    "Find a project's images matching a filter: how many match, and the first ones (id, file name, page) with how "
+    "many of the objects asked for each has. Use it to check a filter (and see it written back the way it was understood) before showing it.",
     FilterArgs,
 )
 def find_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     project = _filtered(conn, args)
     first = [
-        {"filename": i["filename"], "objects": len(i["annotations"]), **({"found": len(i["matches"])} if "matches" in i else {})}
+        _image(project, i) | {"objects": len(i["annotations"]), **({"found": len(i["matches"])} if "matches" in i else {})}
         for i in project["images"][:20]
     ]
     return {"filter": project["filter"], "match_count": project["match_count"], "image_count": project["image_count"],
@@ -258,7 +374,7 @@ def describe(conn: sqlite3.Connection, args: StatsArgs) -> dict:
     "Show the person a project's images matching a filter: their project page opens with it once you've answered, "
     "where they see it as chips they can change. Say in a few words what you're showing.",
     FilterArgs,
-    opens_page=True,
+    opens=True,
 )
 def show_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     project = _filtered(conn, args)  # checks the filter, so the page never opens with an error
@@ -269,7 +385,7 @@ def show_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
 @tool("List recent background jobs (image imports and more), newest first, with status and progress.")
 def list_jobs(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return [
-        {"id": j["id"], "title": j["title"], "project": j["project_name"], "status": j["status"],
+        {"id": j["id"], "page": f"/jobs/{j['id']}", "title": j["title"], "project": j["project_name"], "status": j["status"],
          "done": j["done"], "total": j["total"], "summary": j["summary"]}
         for j in jobs.list_recent(conn, limit=20)
     ]
@@ -293,17 +409,17 @@ def list_models(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return vision.catalogue(conn)
 
 
-@tool("Download a vision model's files, as a background job (follow it with get_job). Large models take a while.", ModelArgs)
+@tool("Download a vision model's files, as a background job (follow it with get_job). Large models take a while.", ModelArgs, writes=True)
 def download_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
     return {"job_id": vision.start_download(conn, args.family, args.variant)}
 
 
-@tool("Load a downloaded vision model into memory, as a background job (follow it with get_job).", ModelArgs)
+@tool("Load a downloaded vision model into memory, as a background job (follow it with get_job).", ModelArgs, writes=True)
 def load_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
     return {"job_id": vision.start_load(conn, args.family, args.variant)}
 
 
-@tool("Unload a vision model from memory, freeing it (e.g. before training).", ModelArgs)
+@tool("Unload a vision model from memory, freeing it (e.g. before training).", ModelArgs, writes=True)
 def unload_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
     return {"unloaded": vision.unload(args.family, args.variant)}
 
@@ -314,7 +430,9 @@ def unload_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
 )
 def list_workflows(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     keep = ("family", "variant", "license", "size")
-    return [w | {"models": [{k: m[k] for k in keep} for m in w["models"]]} if "models" in w else w for w in runs.workflows()]
+    return [w | {"page": f"/workflows/{w['id']}/edit", "studio": f"/studio/{w['id']}"}
+            | ({"models": [{k: m[k] for k in keep} for m in w["models"]]} if "models" in w else {})
+            for w in runs.workflows()]
 
 
 @tool(
@@ -322,6 +440,7 @@ def list_workflows(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     "It finds the prompts (the project's class prompts unless given) and keeps what it found per image. Follow the job "
     "with get_job, then read the results with get_run.",
     RunArgs,
+    writes=True,
 )
 def start_run(conn: sqlite3.Connection, args: RunArgs) -> dict:
     media_ids = runs.on_project(conn, args.project_id, Filter.parse(args.where), args.count)
@@ -332,27 +451,85 @@ def start_run(conn: sqlite3.Connection, args: RunArgs) -> dict:
     return {"run_id": run_id, "job_id": job_id, "images": len(media_ids), "prompts": prompts}
 
 
-@tool("Change the prompts of some of a project's classes: the text its annotator looks for (e.g. 'red car' for a class "
-      "named car). Returns the classes with their prompts.", PromptArgs)
-def set_prompts(conn: sqlite3.Connection, args: PromptArgs) -> list[dict]:
-    if projects.get(conn, args.project_id) is None:
-        raise ToolError(f"There is no project {args.project_id}.")
+def _project(conn: sqlite3.Connection, project_id: int) -> dict:
+    project = projects.get(conn, project_id)
+    if project is None:
+        raise ToolError(f"There is no project {project_id}.")
+    return project
+
+
+@tool("Create a project, with its classes; only the name is needed (classes can be added later). It opens for "
+      "the person once you've answered; images are imported from its page.", NewProjectArgs, opens=True)
+def create_project(conn: sqlite3.Connection, args: NewProjectArgs) -> dict:
+    classes = [projects.ClassChange(**c.model_dump()) for c in args.classes]
+    try:
+        with conn:
+            project_id = projects.create(conn, args.name, args.description, args.task,
+                                         annotators.SUGGESTED[args.task], classes)
+    except ValueError as e:
+        raise ToolError(str(e)) from None
+    return {"id": project_id, "open": f"/projects/{project_id}"}
+
+
+@tool("Change a project: any of its name, description, type, annotator and classes (add, rename, change the "
+      "prompt or colour of, remove); what you leave out stays. Returns its classes. Renaming a class and "
+      'its colour: {"change_classes": [{"name": "orange", "new_name": "citrus", "color": "yellow"}]}; its prompt: '
+      '{"change_classes": [{"name": "apple", "prompt": "red or green apple"}]}.', UpdateProjectArgs, writes=True)
+def update_project(conn: sqlite3.Connection, args: UpdateProjectArgs) -> dict:
+    project = _project(conn, args.project_id)
+    # Left out, it stays; null: none.
+    annotator = args.annotator if "annotator" in args.model_fields_set else project["annotator"]
+    try:
+        with conn:
+            projects.update(conn, args.project_id, args.name or project["name"],
+                            project["description"] if args.description is None else args.description,
+                            args.task or project["task"], annotator)
+            projects.edit_classes(conn, args.project_id, args.add_classes, args.change_classes, args.remove_classes)
+    except projects.FrozenError:
+        raise ToolError("The project is frozen; duplicate it to change it.") from None
+    except ValueError as e:
+        raise ToolError(str(e)) from None
+    return {"classes": [{"id": c["id"], "name": c["name"], "prompt": c["prompt"], "color": c["color"]}
+                        for c in projects.get(conn, args.project_id)["classes"]]}
+
+
+@tool("Duplicate a project: a new one with its classes, images and annotations (not its runs). The image files are "
+      "shared, so it takes no space. It opens for the person once you've answered.", DuplicateArgs, opens=True)
+def duplicate_project(conn: sqlite3.Connection, args: DuplicateArgs) -> dict:
     with conn:
-        projects.set_prompts(conn, args.project_id, args.prompts)
-    return [{"id": c["id"], "name": c["name"], "prompt": c["prompt"]} for c in projects.get(conn, args.project_id)["classes"]]
+        new_id = projects.duplicate(conn, args.project_id, args.name)
+    if new_id is None:
+        raise ToolError(f"There is no project {args.project_id}.")
+    return {"id": new_id, "open": f"/projects/{new_id}"}
+
+
+@tool("Delete a project with its images, their annotations and its runs; it can't be undone. Call it first without "
+      "confirmed: you get what it would remove. Tell the person, and call it again with confirmed only after they "
+      "say yes.", DeleteArgs, opens=True)
+def delete_project(conn: sqlite3.Connection, args: DeleteArgs) -> dict:
+    project = _project(conn, args.project_id)
+    if not args.confirmed:
+        return {"would_remove": projects.deletion(conn, args.project_id), "next": "ask the person to confirm"}
+    try:
+        projects.remove(conn, args.project_id)
+    except ValueError as e:
+        raise ToolError(str(e)) from None
+    return {"deleted": project["name"], "open": "/projects"}
 
 
 @tool(
     "Auto-annotate a project's images matching a filter with its annotator, as a background job: each class is found "
     "from its prompt and the objects are added to the images, next to the ones there (never replacing them; an object "
     "already there is left out). An image is done once per class, so running again only does what's new (a class "
-    "added since, images added since). Follow the job with get_job; the run's results are in get_run. The annotator's "
+    "added since, images added since; `again` does them again). 'This image' is the image page the person is on, by "
+    "its id in image_ids. Follow the job with get_job; the run's results are in get_run. The annotator's "
     "models must be downloaded first (list_workflows).",
     AutoAnnotateArgs,
+    writes=True,
 )
 def auto_annotate(conn: sqlite3.Connection, args: AutoAnnotateArgs) -> dict:
     started = annotators.start(conn, args.project_id, Filter.parse(args.where), args.count, None, args.class_ids,
-                               args.min_score, args.again)
+                               args.min_score, args.again, args.image_ids)
     if started is None:
         raise ToolError(f"There is no project {args.project_id}.")
     return started
@@ -408,6 +585,27 @@ def read_api(conn: sqlite3.Connection, args: ApiArgs) -> object:
     return {"cut": f"The answer is {len(text):,} characters; its start:", "start": text[:API_PREVIEW]}
 
 
+def _docs() -> dict[str, list[str]]:
+    """The docs, by topic (the file's name): its lines. A doc starts with its title and a line saying what's in it."""
+    return {path.stem: path.read_text().splitlines() for path in sorted(config.DOCS_DIR.glob("*.md"))}
+
+
+DOCS = _docs()
+
+
+@tool(
+    "Read how the app works, on a topic: what things are, how they relate, what's there and what comes later. Read "
+    "it when you're unsure what something is or does, or before explaining it. The topics: "
+    + "; ".join(f"{topic} ({lines[1].rstrip('.')})" for topic, lines in DOCS.items()) + ".",
+    DocsArgs,
+)
+def read_docs(conn: sqlite3.Connection, args: DocsArgs) -> str:
+    topic = args.topic.strip().lower().removesuffix(".md")
+    if topic not in DOCS:
+        raise ToolError(f"There is no topic {args.topic!r}; the topics: {', '.join(DOCS)}.")
+    return "\n".join(DOCS[topic])
+
+
 @tool("List the views (pages written by an agent): id, title, kind, workflow, newest version, page.")
 def list_views(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return views.list_all()
@@ -435,7 +633,7 @@ def _opened(view: dict) -> dict:
     "Write a view: a new one, or a new version of one (its whole template). The page is checked first; if it "
     "doesn't render you get the line and why, and nothing is saved. It opens for the person once you've answered.",
     WriteViewArgs,
-    opens_page=True,
+    opens=True,
 )
 def write_view(conn: sqlite3.Connection, args: WriteViewArgs) -> dict:
     return _opened(views.save(args.view_id, args.template, args.title, args.kind, args.workflow))
@@ -445,7 +643,7 @@ def write_view(conn: sqlite3.Connection, args: WriteViewArgs) -> dict:
     "Change part of a view: replace one exact piece of its newest template, saved as a new version (checked first, "
     "as write_view). Use it for small changes instead of writing the whole page again.",
     EditViewArgs,
-    opens_page=True,
+    opens=True,
 )
 def edit_view(conn: sqlite3.Connection, args: EditViewArgs) -> dict:
     template = _view(args.view_id)["template"]
@@ -472,7 +670,7 @@ def view_history(conn: sqlite3.Connection, args: ViewIdArgs) -> list[dict]:
     return found
 
 
-@tool("Make an older version of a view the newest again (saved as a new version).", RestoreViewArgs, opens_page=True)
+@tool("Make an older version of a view the newest again (saved as a new version).", RestoreViewArgs, opens=True)
 def restore_view(conn: sqlite3.Connection, args: RestoreViewArgs) -> dict:
     restored = views.restore(args.view_id, args.version)
     if restored is None:
@@ -480,7 +678,7 @@ def restore_view(conn: sqlite3.Connection, args: RestoreViewArgs) -> dict:
     return _opened(restored)
 
 
-@tool("Delete a view and all its versions (and its link in the navigation).", ViewIdArgs)
+@tool("Delete a view and all its versions (and its link in the navigation).", ViewIdArgs, writes=True)
 def delete_view(conn: sqlite3.Connection, args: ViewIdArgs) -> dict:
     if not views.delete(args.view_id):
         raise ToolError(f"There is no view {args.view_id!r}.")
@@ -493,13 +691,13 @@ def list_nav(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return settings.nav()
 
 
-@tool("Add a link to the navigation (e.g. to a view), or rename the one already going there.", NavArgs)
+@tool("Add a link to the navigation (e.g. to a view), or rename the one already going there.", NavArgs, writes=True)
 def add_to_nav(conn: sqlite3.Connection, args: NavArgs) -> list[dict]:
     items = [i for i in settings.nav() if i["href"] != args.href.strip()]
     return settings.set_nav(items + [{"label": args.label, "href": args.href}])
 
 
-@tool("Remove a link from the navigation.", HrefArgs)
+@tool("Remove a link from the navigation.", HrefArgs, writes=True)
 def remove_from_nav(conn: sqlite3.Connection, args: HrefArgs) -> list[dict]:
     return settings.remove_nav(args.href)
 
@@ -554,14 +752,14 @@ def validate_workflow(conn: sqlite3.Connection, args: WorkflowDocArgs) -> dict:
     "description in the document. A run keeps only what reaches a save_to_babasu node, so end each result there. "
     "It opens in the builder for the person once you've answered.",
     SaveWorkflowArgs,
-    opens_page=True,
+    opens=True,
 )
 def save_workflow(conn: sqlite3.Connection, args: SaveWorkflowArgs) -> dict:
     saved = runs.save_workflow(args.workflow_id, args.document)
     return {"open": f"/workflows/{saved['id']}/edit"} | saved
 
 
-@tool("Delete a saved workflow (built-ins can't be deleted). Runs made with it keep their copy.", WorkflowIdArgs)
+@tool("Delete a saved workflow (built-ins can't be deleted). Runs made with it keep their copy.", WorkflowIdArgs, writes=True)
 def delete_workflow(conn: sqlite3.Connection, args: WorkflowIdArgs) -> dict:
     if not runs.delete_workflow(args.workflow_id):
         raise ToolError(f"There is no saved workflow {args.workflow_id!r} (built-ins can't be deleted).")

@@ -109,6 +109,7 @@ if (chat) {
     setBusy(true);
     let ended = false;
     let open = null; // a page the agent wants to show; opened when the reply is done
+    let changed = false; // the agent changed what pages show: this one reloads when the reply is done
     try {
       const response = await request;
       // Nothing to follow: the app restarted since this page was made, which stopped the reply.
@@ -128,13 +129,17 @@ if (chat) {
           else if (event.type === "text") turn.text(event.delta);
           else if (event.type === "tool") turn.tool(event);
           else if (event.type === "open") open = event.url;
+          else if (event.type === "changed") changed = true;
           else if (event.type === "done") (turn.end("done"), (ended = true));
           else if (event.type === "stopped") (turn.end("stopped"), (ended = true));
           else if (event.type === "error") (turn.end("error", event.message), (ended = true));
         }
       }
       if (!ended) turn.end("error", "The reply ended unexpectedly.");
-      if (open) location.assign(open); // the chat is saved, so it's there on the new page
+      // The chat is saved, so it's there on the new page. A page showing that it has unsaved work
+      // ([data-unsaved], e.g. the workflow builder's note) isn't reloaded under the person.
+      if (open) location.assign(open);
+      else if (changed && !document.querySelector("[data-unsaved]:not([hidden])")) location.reload();
     } catch (error) {
       if (!leaving) turn.end("error", error.message || "The app didn't answer.");
     } finally {

@@ -26,11 +26,23 @@ TITLE_LENGTH = 60
 
 # What every agent is told about the app; the agent's own instructions follow.
 APP_PROMPT = f"""You are an agent inside {config.APP_NAME}, a local computer vision app where people \
-import images into projects, annotate them, train models and run workflows. You can look at the app's data \
-through your tools, and build pages in the app (views): read get_components before writing one.
+import images into projects, annotate them (by hand, or auto-annotate with vision models) and run workflows; \
+training models comes later. You can look at and change the app's data through your tools, and build pages in the \
+app (views): read get_components before writing one.
 
 Each of the person's messages starts with the page they wrote it on. A page's data is at the same path under \
-/api: read it with read_api when the question is about that page (/projects/3/images/42 → /api/projects/3/images/42)."""
+/api: read it with read_api when the question is about that page (/projects/3/images/42 → /api/projects/3/images/42).
+
+What people expect of you:
+- "Show", "open", "find", "list": open the page (open_page), and say in a sentence what's there. Don't list in \
+the chat what the page shows, or write its path.
+- "This image", "this project", "these": the page they're on.
+- "Change", "add", "rename", "remove": do it with your tools; the page they're on follows. Say what changed, briefly.
+- A question: answer it briefly from the data, and offer to open the page when there is one.
+- A name: look it up (search, find_images) before anything else. Ask only when it still means more than one \
+thing, saying what you found. Don't ask what has a sensible default.
+- Deleting can't be undone: say what goes, and do it only after they say yes.
+- What you can't do: say so, and where in the app it's done."""
 
 
 class Busy(Exception):
@@ -364,6 +376,8 @@ def run_turn(
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
       {"type": "open", "url": "/projects/3?where=car"}      a page to show once the reply is done
+      {"type": "changed"}                                   a tool changed what pages show: once the
+                                                            reply is done, reload (unless one opens)
       {"type": "done"}, {"type": "stopped"} or {"type": "error", "message": "..."}
     Once `stop` is set, the turn ends at its next step (a streamed chunk or a tool) and saves the
     reply so far as stopped.
@@ -473,8 +487,12 @@ def run_turn(
                             (conversation_id, result, call["id"], status, error),
                         )
                     yield {"type": "tool", "id": call["id"], "name": call["name"], "status": status}
-                    found = agent_tools.TOOLS.get(call["name"])
-                    if status == "done" and found and found.opens_page:
-                        yield {"type": "open", "url": json.loads(result)["open"]}
+                    if status != "done":
+                        continue
+                    found = agent_tools.TOOLS[call["name"]]
+                    if found.opens and "open" in (opened := json.loads(result)):
+                        yield {"type": "open", "url": opened["open"]}
+                    elif found.writes:
+                        yield {"type": "changed"}
 
         yield fail(f"Stopped after {MAX_ROUNDS} rounds of tool calls without an answer.")
