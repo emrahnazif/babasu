@@ -134,8 +134,8 @@ def call(conn: sqlite3.Connection, name: str, arguments: str) -> str:
 @tool("List all projects, with their type, image counts, how many images are labelled, and class names.")
 def list_projects(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return [
-        {"id": p["id"], "name": p["name"], "description": p["description"], "type": p["task"], "images": p["image_count"],
-         "labelled": p["labelled_count"], "classes": [c["name"] for c in p["classes"]]}
+        {"id": p["id"], "name": p["name"], "description": p["description"], "task": p["task"],
+         "image_count": p["image_count"], "labelled_count": p["labelled_count"], "classes": [c["name"] for c in p["classes"]]}
         for p in projects.list_all(conn)
     ]
 
@@ -149,11 +149,11 @@ def get_project(conn: sqlite3.Connection, args: ProjectArgs) -> dict:
         "id": project["id"],
         "name": project["name"],
         "description": project["description"],
-        "type": project["task"],
+        "task": project["task"],
         "annotator": project["annotator"],
-        "images": project["image_count"],
-        "labelled": project["labelled_count"],
-        "classes": [{"id": c["id"], "name": c["name"], "prompt": c["prompt"], "annotations": c["annotation_count"]}
+        "image_count": project["image_count"],
+        "labelled_count": project["labelled_count"],
+        "classes": [{"id": c["id"], "name": c["name"], "prompt": c["prompt"], "annotation_count": c["annotation_count"]}
                     for c in project["classes"]],
         "first_images": [image["filename"] for image in project["images"][:20]],
     }
@@ -174,10 +174,11 @@ def _filtered(conn: sqlite3.Connection, args: FilterArgs) -> dict:
 def find_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     project = _filtered(conn, args)
     first = [
-        {"file": i["filename"], "objects": len(i["annotations"]), **({"found": len(i["matches"])} if "matches" in i else {})}
+        {"filename": i["filename"], "objects": len(i["annotations"]), **({"found": len(i["matches"])} if "matches" in i else {})}
         for i in project["images"][:20]
     ]
-    return {"where": project["filter"], "matching_images": project["match_count"], "of": project["image_count"], "first": first}
+    return {"filter": project["filter"], "match_count": project["match_count"], "image_count": project["image_count"],
+            "first": first}
 
 
 @tool("Measure a project's images matching a filter: objects per class, the spread of object sizes or aspect, or of objects per image.", StatsArgs)
@@ -197,7 +198,7 @@ def describe(conn: sqlite3.Connection, args: StatsArgs) -> dict:
 def show_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     project = _filtered(conn, args)  # checks the filter, so the page never opens with an error
     query = f"?{urlencode({'where': project['filter']})}" if project["filter"] else ""
-    return {"open": f"/projects/{args.project_id}{query}", "matching_images": project["match_count"]}
+    return {"open": f"/projects/{args.project_id}{query}", "match_count": project["match_count"]}
 
 
 @tool("List recent background jobs (image imports and more), newest first, with status and progress.")
