@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from mozo.workflow.api import workflow_router
 
 from app import agent, config, db, jobs, views, vision
 from app.filters import FilterError
@@ -45,6 +46,9 @@ app.include_router(agents_routes.router)
 app.include_router(vision_routes.router)
 app.include_router(runs_routes.router)
 app.include_router(views_routes.router)
+# mozo's workflow editor and the routes it calls (the builder's canvas, /mozo/workflow): its Test
+# loads models through ours, and whole runs are our jobs, so it offers no Run of its own.
+app.include_router(workflow_router(models=vision.load, process=False), prefix="/mozo")
 app.add_exception_handler(FilterError, projects.filter_error)
 app.add_exception_handler(views.ViewError, views_routes.view_error)
 views.setup(app)
