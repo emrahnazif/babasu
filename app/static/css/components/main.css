@@ -377,6 +377,8 @@ a.card:hover { background: var(--color-accent-bg); }
   cursor: pointer;
 }
 
+.button:disabled { opacity: 0.5; cursor: default; }
+
 .button.secondary {
   background: var(--color-accent-bg);
   color: var(--color-text);

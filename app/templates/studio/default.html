@@ -1,0 +1,20 @@
+{# A workflow's Studio page when nobody built one: a view template (app/views.py renders it in the
+   sandbox, like an agent's): drop images in, see the latest run's results side by side. #}
+{% set w = api("/api/workflows/" ~ view.workflow) %}
+<h1>{{ w.name }}</h1>
+{% if w.description %}<p class="muted">{{ w.description }}</p>{% endif %}
+{% set missing = w.models | selectattr("size") | list %}
+{% if missing %}
+  <p>Download first: {% for m in missing %}{{ m.family }} {{ m.variant }}{% if not loop.last %}, {% endif %}{% endfor %}. <a href="/models">Models page</a></p>
+{% else %}
+  {{ ui.dropzone(view.workflow, ask_prompts=w.prompt_parameters | length > 0) }}
+{% endif %}
+{% set last = api("/api/runs?workflow_id=" ~ view.workflow ~ "&limit=1") %}
+{% if last %}
+  {% set run = api("/api/runs/" ~ last[0].id ~ "/annotations?images=12") %}
+  <section>
+    <h2>{{ run.name }}</h2>
+    <p class="muted">{{ run.status | capitalize }}{% for c in run.legend %} · <span class="badge" style="--badge-color: {{ c.color }}">{{ c.name }}</span>{% endfor %}</p>
+    {% if run.results %}{{ ui.compare(run.results, run.legend) }}{% endif %}
+  </section>
+{% endif %}

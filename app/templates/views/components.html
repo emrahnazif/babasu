@@ -2,6 +2,7 @@
    its example, rendered as a view renders it. The agent reads the same as text (get_components). #}
 {% extends "base.html" %}
 {% set crumbs = [("Views", "/views"), ("Components", None)] %}
+{% block scripts %}<script type="module" src="{{ url_for('static', path='js/studio.js') }}"></script>{% endblock %}
 {% block content %}
   <h1>Components</h1>
   <p class="muted">What a view (a page an agent writes) is built from. Data components are called on <code>ui</code> in its template.</p>

@@ -1,0 +1,26 @@
+{# Every workflow, built in or saved: what it uses, and its two ways in: Use (its Studio page)
+   and Edit (the builder, later). #}
+{% extends "base.html" %}
+{% block content %}
+  <table>
+    <thead><tr><th>Workflow</th><th>Models</th><th></th></tr></thead>
+    <tbody>
+      {% for w in workflows %}
+        <tr>
+          <td>
+            {{ w.name }}{% if w.builtin %} <span class="badge plain">Built in</span>{% endif %}
+            {% if w.description %}<br><span class="muted">{{ w.description }}</span>{% endif %}
+            {% if w.error %}<br><span class="error">Doesn't load: {{ w.error }}</span>{% endif %}
+          </td>
+          <td class="muted">
+            {% for m in w.models or [] %}{{ m.family }} {{ m.variant }}{% if m.size %} ({{ m.size | filesize }} to download){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+          </td>
+          <td>
+            <button class="button secondary" type="button" disabled title="The workflow builder comes later">Edit</button>
+            {% if not w.error %}<a class="button" href="/studio/{{ w.id }}">Use</a>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

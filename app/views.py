@@ -72,6 +72,23 @@ def _entry(view_id: str, folder: Path, versions: list[int]) -> dict:
         "version": versions[-1], "updated_at": _when(folder / f"{versions[-1]}.html"), "url": f"/views/{view_id}"}
 
 
+def studio_for(workflow_id: str) -> dict | None:
+    """The newest Studio page built for a workflow, as get() gives it; None if there's none."""
+    found = [v for v in list_all() if v["kind"] == "studio" and v["workflow"] == workflow_id]
+    return found and get(found[0]["id"])
+
+
+DEFAULT_STUDIO = config.TEMPLATES_DIR / "studio" / "default.html"  # a workflow's page when nobody built one
+
+
+def studio(workflow_id: str, name: str) -> dict:
+    """A workflow's Studio page, as get() gives a view: the newest one built for it (kind studio),
+    else the plain one (drop images in, see what it keeps)."""
+    return studio_for(workflow_id) or {
+        "id": None, "title": name, "kind": "studio", "workflow": workflow_id, "shown": 0, "version": 0,
+        "answers": None, "template": DEFAULT_STUDIO.read_text()}
+
+
 def list_all() -> list[dict]:
     """Every view: id, title, kind, workflow, its newest version and its page; newest change first."""
     if not config.VIEWS_DIR.is_dir():

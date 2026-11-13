@@ -7,7 +7,7 @@
 import { toast } from "./toast.js";
 
 // The server's reason for refusing, if it gave one in words (FastAPI's {"detail": "…"}).
-async function reason(response) {
+export async function reason(response) {
   try {
     const { detail } = await response.json();
     if (typeof detail === "string") return detail;

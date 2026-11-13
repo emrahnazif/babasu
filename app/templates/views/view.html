@@ -2,6 +2,7 @@
    styles should stay inside .view. An older version shows which one it is. #}
 {% extends "base.html" %}
 {% set crumbs = crumbs | default([("Views", "/views"), (view.title, None)]) %}
+{% block scripts %}<script type="module" src="{{ url_for('static', path='js/studio.js') }}"></script>{% endblock %}
 {% block content %}
   {% if view.id and view.shown != view.version %}
     <p class="muted">Version {{ view.shown }} of {{ view.version }}. <a href="/views/{{ view.id }}">Show the newest</a></p>

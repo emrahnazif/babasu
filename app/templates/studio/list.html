@@ -1,0 +1,16 @@
+{# Studio: where a workflow gets used. The pages agents built for workflows, then every
+   workflow's own page (its Use on the Workflows page opens the same). #}
+{% extends "base.html" %}
+{% block content %}
+  <p class="muted">Drop images on a workflow's page to see what it finds. Ask the agent to build a page for one.</p>
+  {% if built %}
+    <section>
+      <h2>Built for you</h2>
+      <ul>{% for v in built %}<li><a href="/studio/{{ v.workflow }}">{{ v.title }}</a> <span class="muted">· {{ v.workflow }}</span></li>{% endfor %}</ul>
+    </section>
+  {% endif %}
+  <section>
+    <h2>Workflows</h2>
+    <ul>{% for w in workflows if not w.error %}<li><a href="/studio/{{ w.id }}">{{ w.name }}</a>{% if w.description %} <span class="muted">· {{ w.description }}</span>{% endif %}</li>{% endfor %}</ul>
+  </section>
+{% endblock %}
