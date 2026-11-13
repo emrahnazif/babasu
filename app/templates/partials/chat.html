@@ -68,7 +68,7 @@
     <div class="chat__bar">
       {% if chat.agents %}
         {# The agent this chat talks to; changing it applies from the next message. #}
-        {{ select("chat-agent", "agent", chat.agents | options("id", "name"), chat.agent_id, label="Agent", compact=true, class="chat__agent") }}
+        {{ select("chat-agent-select", "agent", chat.agents | options("id", "name"), chat.agent_id, label="Agent", compact=true, class="chat__agent") }}
       {% endif %}
       <button class="icon-button icon-button--primary chat__send" type="submit" aria-label="Send" title="Send">
         {{ icon("arrow-up") }}{{ icon("stop") }}
