@@ -551,11 +551,14 @@ def validate_workflow(conn: sqlite3.Connection, args: WorkflowDocArgs) -> dict:
 
 @tool(
     "Save a workflow in the app (new, or replacing a saved one; built-ins can't be replaced). Give it a name and a "
-    "description in the document. A run keeps only what reaches a save_to_babasu node, so end each result there.",
+    "description in the document. A run keeps only what reaches a save_to_babasu node, so end each result there. "
+    "It opens in the builder for the person once you've answered.",
     SaveWorkflowArgs,
+    opens_page=True,
 )
 def save_workflow(conn: sqlite3.Connection, args: SaveWorkflowArgs) -> dict:
-    return runs.save_workflow(args.workflow_id, args.document)
+    saved = runs.save_workflow(args.workflow_id, args.document)
+    return {"open": f"/workflows/{saved['id']}/edit"} | saved
 
 
 @tool("Delete a saved workflow (built-ins can't be deleted). Runs made with it keep their copy.", WorkflowIdArgs)
