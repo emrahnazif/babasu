@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{# The new project page (project is none) and a project's edit page: one form. `values` is what
+   the fields show: the project's, or what was typed when a save was refused (`error` says why).
+   The class rows: js/class-list.js adds and removes them. #}
+{% if project %}
+  {% set crumbs = [(project.name, "/projects/" ~ project.id), ("Edit", None)] %}
+{% else %}
+  {% set crumbs = [("New project", None)] %}
+{% endif %}
+
+{% macro class_row(c, saved) %}
+  <tr{% if saved %} data-saved{% endif %}>
+    <td>
+      <input type="hidden" name="class_id" value="{{ c.id if c.id is not none }}">
+      <input type="color" name="class_color" value="{{ c.color }}" aria-label="Colour">
+    </td>
+    <td><input name="class_name" value="{{ c.name }}" required maxlength="100" aria-label="Name"></td>
+    <td><input name="class_prompt" value="{{ c.prompt if c.prompt != c.name }}" maxlength="500" placeholder="Same as the name" aria-label="Prompt"></td>
+    {% if project %}
+      <td class="muted">
+        {% if saved %}
+          {% set count = counts.get(c.id, 0) %}
+          <span>{{ count }}</span><span hidden>Removed{% if count %}: {{ count | plural("annotation") }} hidden{% endif %}</span>
+        {% else %}New{% endif %}
+      </td>
+    {% endif %}
+    <td><button class="button secondary" type="button" data-remove-class>Remove</button></td>
+  </tr>
+{% endmacro %}
+
+{% block scripts %}<script type="module" src="/static/js/class-list.js"></script>{% endblock %}
+
+{% block content %}
+  <form method="post" action="{{ '/projects/%d/edit' % project.id if project else '/projects' }}">
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <div class="fields">
+      <label class="field">
+        Name
+        <input name="name" required maxlength="200" value="{{ values.name }}"{% if not project %} autofocus{% endif %}>
+      </label>
+      <label class="field">
+        Description
+        <textarea name="description" rows="3" maxlength="2000">{{ values.description }}</textarea>
+      </label>
+      <label class="field">
+        Type
+        <select name="task">
+          {% for value, label in tasks.items() %}<option value="{{ value }}"{% if value == values.task %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          <option disabled>Classification (later)</option>
+        </select>
+      </label>
+      {% if project %}
+        <label class="field">
+          Annotator
+          <select name="annotator">
+            {% for value, label in annotators.items() %}<option value="{{ value }}"{% if value == values.annotator %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            <option value=""{% if not values.annotator %} selected{% endif %}>None</option>
+          </select>
+        </label>
+      {% endif %}
+    </div>
+
+    <section>
+      <h2>Classes</h2>
+      <p class="muted">
+        The prompt is what the annotator looks for, e.g. "hole in the road surface" for a class named pothole.
+        {% if project %}Removing a class hides its annotations without deleting them; adding a class by that name again brings them back.{% endif %}
+      </p>
+      <table>
+        <thead>
+          <tr><th>Colour</th><th>Name</th><th>Prompt</th>{% if project %}<th>Annotations</th>{% endif %}<th></th></tr>
+        </thead>
+        <tbody id="classes" data-palette='{{ palette | tojson }}'>
+          {% for c in values.classes %}{{ class_row(c, c.id is not none) }}{% endfor %}
+        </tbody>
+      </table>
+      <template id="class-row">{{ class_row({"id": none, "name": "", "color": palette[0], "prompt": ""}, false) }}</template>
+      <div class="actions start"><button class="button secondary" type="button" data-add-class>Add class</button></div>
+    </section>
+    <div class="actions divided">
+      <a class="button secondary" href="{{ '/projects/%d' % project.id if project else '/projects' }}">Cancel</a>
+      <button class="button" type="submit">{{ "Save" if project else "Create" }}</button>
+    </div>
+  </form>
+
+  {% if project %}
+    <section>
+      <h2>Delete project</h2>
+      <p class="muted">Removes its images, their annotations and its runs. This can't be undone.</p>
+      {% if deletion.jobs %}<p class="error">{{ deletion.jobs | plural("job") }} of this project {{ "is" if deletion.jobs == 1 else "are" }} queued or running: cancel {{ "it" if deletion.jobs == 1 else "them" }} in Jobs first.</p>{% endif %}
+      <div class="actions">
+        <button class="button destructive" type="button" popovertarget="delete-project"{% if deletion.jobs %} disabled{% endif %}>Delete project…</button>
+      </div>
+    </section>
+
+    <div id="delete-project" class="dialog" popover role="alertdialog" aria-labelledby="delete-project-title" aria-describedby="delete-project-text">
+      <form method="post" action="/projects/{{ project.id }}/delete">
+        <h2 id="delete-project-title">Delete {{ project.name }}?</h2>
+        <div id="delete-project-text">
+          <p>This removes:</p>
+          <ul>
+            <li>{{ deletion.images | plural("image") }} and {{ deletion.annotations | plural("annotation") }}</li>
+            <li>{{ deletion.runs | plural("run") }} (auto-annotate, Try and workflow runs on its images) and their results</li>
+            <li>the image files no other project, run or report uses, from the workspace</li>
+          </ul>
+          <p class="muted">This can't be undone.</p>
+        </div>
+        <div class="actions">
+          <button class="button secondary" type="button" popovertarget="delete-project" popovertargetaction="hide" autofocus>Cancel</button>
+          <button class="button destructive" type="submit">Delete</button>
+        </div>
+      </form>
+    </div>
+  {% endif %}
+{% endblock %}

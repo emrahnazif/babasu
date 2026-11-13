@@ -69,6 +69,15 @@ textarea {
   font-weight: var(--weight-normal);
 }
 
+/* A colour input is a swatch as tall as a text field (its line, padding and border), with little
+   padding so the colour fills it. */
+input[type="color"] {
+  width: 3rem;
+  height: calc(1lh + 2 * var(--space-2) + 2px);
+  padding: var(--space-1);
+  cursor: pointer;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

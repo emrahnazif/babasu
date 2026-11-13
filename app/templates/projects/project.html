@@ -104,12 +104,7 @@
   {% if project.classes and project.image_count %}
     <button class="icon-button" type="button" popovertarget="auto-annotate" aria-label="Auto-annotate" title="Auto-annotate">{{ icon("sparkles") }}</button>
   {% endif %}
-  <button class="icon-button" type="button" popovertarget="project-menu" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button>
-  <div id="project-menu" class="menu" popover>
-    <button class="menu__item" type="button" popovertarget="edit-project">Edit…</button>
-    <div class="menu__separator"></div>
-    <button class="menu__item menu__item--destructive" type="button" popovertarget="delete-project">Delete project…</button>
-  </div>
+  <a class="icon-button" href="/projects/{{ project.id }}/edit" aria-label="Edit project" title="Edit project">{{ icon("pencil-square") }}</a>
 {% endblock %}
 
 {# The filter bar, always there: which images (all, labelled, unlabelled), the Filter button and
@@ -279,51 +274,4 @@
     </form>
   </div>
   {% endif %}
-
-  <div id="edit-project" class="dialog" popover aria-labelledby="edit-project-title">
-    <form method="post" action="/projects/{{ project.id }}/edit">
-      <h2 id="edit-project-title">Edit project</h2>
-      <div class="fields">
-        <label class="field">
-          Name
-          <input name="name" required maxlength="200" value="{{ project.name }}">
-        </label>
-        <label class="field">
-          Description
-          <textarea name="description" rows="3" maxlength="2000">{{ project.description }}</textarea>
-        </label>
-        <label class="field">
-          Type
-          <select name="task">
-            {% for value, label in tasks.items() %}<option value="{{ value }}" {% if value == project.task %}selected{% endif %}>{{ label }}</option>{% endfor %}
-          </select>
-        </label>
-        <label class="field">
-          Annotator
-          <select name="annotator">
-            {% for value, label in annotators.items() %}<option value="{{ value }}" {% if value == project.annotator %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            <option value="" {% if not project.annotator %}selected{% endif %}>None</option>
-          </select>
-        </label>
-      </div>
-      <div class="actions">
-        <button class="button secondary" type="button" popovertarget="edit-project" popovertargetaction="hide">Cancel</button>
-        <button class="button" type="submit">Save</button>
-      </div>
-    </form>
-  </div>
-
-  <div id="delete-project" class="dialog" popover role="alertdialog" aria-labelledby="delete-project-title" aria-describedby="delete-project-text">
-    <form method="post" action="/projects/{{ project.id }}/delete">
-      <h2 id="delete-project-title">Delete {{ project.name }}?</h2>
-      <p id="delete-project-text" class="muted">
-        Its {{ project.image_count | plural("image") }} and their annotations are removed from it, and image files no other
-        project uses are deleted from the workspace. This can't be undone.
-      </p>
-      <div class="actions">
-        <button class="button secondary" type="button" popovertarget="delete-project" popovertargetaction="hide" autofocus>Cancel</button>
-        <button class="button destructive" type="submit">Delete</button>
-      </div>
-    </form>
-  </div>
 {% endblock %}

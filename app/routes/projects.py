@@ -91,22 +91,45 @@ def filter_error(request: Request, error: FilterError) -> JSONResponse:
     return JSONResponse({"detail": str(error)}, status_code=422)
 
 
-class NewProject(BaseModel):
-    """A new project: its name, description and type (it gets the annotator suggested for the type)."""
+class ProjectFields(BaseModel):
+    """A project's name, description and type."""
 
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] = ""
     task: projects.Task
 
 
+class NewProject(ProjectFields):
+    """A new project, with its classes; it gets the annotator suggested for its type."""
+
+    classes: list[projects.ClassChange] = []
+
+
 Prompt = Annotated[str, StringConstraints(max_length=500)]
 
 
-class ProjectChanges(NewProject):
+class ProjectChanges(ProjectFields):
     """A project's name, description, type and annotator, all of them, when it's changed.
     Left out (a form's empty choice), the annotator is none."""
 
     annotator: annotators.Finder | None = None
+
+
+class ProjectForm(ProjectChanges):
+    """The project form (projects/form.html; the new project page has no annotator): the class
+    rows, one value of each per row; an empty class_id is a new class."""
+
+    class_id: list[Annotated[int | None, BeforeValidator(lambda v: v or None)]] = []
+    class_name: list[str] = []
+    class_color: list[str] = []
+    class_prompt: list[str] = []
+
+    def rows(self) -> list[dict]:
+        return [{"id": i, "name": n, "color": c, "prompt": p}
+                for i, n, c, p in zip(self.class_id, self.class_name, self.class_color, self.class_prompt, strict=True)]
+
+    def classes(self) -> list[projects.ClassChange]:
+        return [projects.ClassChange(**row) for row in self.rows()]
 
 
 class AutoAnnotate(BaseModel):
@@ -201,9 +224,13 @@ def _started(start: Callable[[], dict | None]) -> dict:
     return started
 
 
-def _update(conn: sqlite3.Connection, project_id: int, changed: ProjectChanges) -> None:
+def _update(conn: sqlite3.Connection, project_id: int, changed: ProjectChanges,
+            classes: list[projects.ClassChange] | None = None) -> None:
+    """Change the project, and set its classes if given. Raises ValueError (see projects.set_classes)."""
     with _writing(conn, project_id):
         projects.update(conn, project_id, changed.name, changed.description, changed.task, changed.annotator)
+        if classes is not None:
+            projects.set_classes(conn, project_id, classes)
 
 
 def _delete(conn: sqlite3.Connection, project_id: int) -> None:
@@ -218,9 +245,31 @@ def _delete(conn: sqlite3.Connection, project_id: int) -> None:
         path.unlink(missing_ok=True)
 
 
-def _create(conn: sqlite3.Connection, new: NewProject) -> int:
+def _create(conn: sqlite3.Connection, new: ProjectFields, classes: list[projects.ClassChange]) -> int:
+    """Create the project with its classes. Raises ValueError (see projects.set_classes)."""
     with conn:
-        return projects.create(conn, new.name, new.description, new.task, annotators.SUGGESTED[new.task])
+        project_id = projects.create(conn, new.name, new.description, new.task, annotators.SUGGESTED[new.task])
+        projects.set_classes(conn, project_id, classes)
+    return project_id
+
+
+def _form_page(request: Request, conn: sqlite3.Connection, project_id: int | None = None,
+               form: ProjectForm | None = None, error: str | None = None) -> HTMLResponse:
+    """The new project page, or a project's edit page; after a refused save, with what was typed and why."""
+    project, values, counts, deletion = None, {"task": "detection", "classes": []}, {}, None
+    if project_id is not None:
+        project = values = projects.get(conn, project_id)
+        if project is None:
+            raise HTTPException(404, "Project not found")
+        counts, deletion = projects.annotation_counts(conn, project_id), projects.deletion(conn, project_id)
+    if form is not None:
+        values = values | form.model_dump() | {"classes": form.rows()}
+    return templates.TemplateResponse(
+        request, "projects/form.html",
+        {"project": project, "values": values, "counts": counts, "deletion": deletion, "palette": projects.PALETTE,
+         "error": error},
+        status_code=422 if error else 200,
+    )
 
 
 def _set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[projects.Annotation]) -> None:
@@ -248,9 +297,18 @@ def project_list(request: Request, conn: DB):
     return templates.TemplateResponse(request, "projects/list.html", {"projects": projects.list_all(conn)})
 
 
+@router.get("/projects/new", response_class=HTMLResponse)
+def new_project_page(request: Request, conn: DB):
+    return _form_page(request, conn)
+
+
 @router.post("/projects")
-def create_project(new: Annotated[NewProject, Form()], conn: DB):
-    return RedirectResponse(f"/projects/{_create(conn, new)}", status_code=303)
+def create_project(request: Request, form: Annotated[ProjectForm, Form()], conn: DB):
+    try:
+        project_id = _create(conn, form, form.classes())
+    except ValueError as e:
+        return _form_page(request, conn, form=form, error=str(e))
+    return RedirectResponse(f"/projects/{project_id}", status_code=303)
 
 
 @router.get("/projects/{project_id}", response_class=HTMLResponse)
@@ -298,9 +356,17 @@ def auto_annotate_image(project_id: int, media_id: int, conn: DB):
     return RedirectResponse(f"/projects/{project_id}/images/{media_id}", status_code=303)
 
 
+@router.get("/projects/{project_id}/edit", response_class=HTMLResponse)
+def edit_project_page(request: Request, project_id: int, conn: DB):
+    return _form_page(request, conn, project_id)
+
+
 @router.post("/projects/{project_id}/edit")
-def edit_project(project_id: int, changed: Annotated[ProjectChanges, Form()], conn: DB):
-    _update(conn, project_id, changed)
+def edit_project(request: Request, project_id: int, form: Annotated[ProjectForm, Form()], conn: DB):
+    try:
+        _update(conn, project_id, form, form.classes())
+    except ValueError as e:
+        return _form_page(request, conn, project_id, form, str(e))
     return RedirectResponse(f"/projects/{project_id}", status_code=303)
 
 
@@ -349,7 +415,11 @@ def api_project_list(conn: DB) -> list[dict]:
 
 @router.post("/api/projects", status_code=201)
 def api_create_project(new: NewProject, conn: DB) -> dict:
-    return {"id": _create(conn, new)}
+    """Creates a project with its classes (see projects.set_classes)."""
+    try:
+        return {"id": _create(conn, new, new.classes)}
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
 
 
 @router.get("/api/projects/{project_id}")

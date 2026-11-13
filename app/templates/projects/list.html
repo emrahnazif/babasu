@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block actions %}
-  <button class="icon-button" type="button" popovertarget="new-project" aria-label="New project" title="New project">{{ icon("plus") }}</button>
+  <a class="icon-button" href="/projects/new" aria-label="New project" title="New project">{{ icon("plus") }}</a>
 {% endblock %}
 
 {% block content %}
@@ -27,31 +27,4 @@
   {% else %}
     <p class="muted">No projects yet.</p>
   {% endif %}
-
-  <div id="new-project" class="dialog" popover aria-labelledby="new-project-title">
-    <form method="post" action="/projects">
-      <h2 id="new-project-title">New project</h2>
-      <div class="fields">
-        <label class="field">
-          Name
-          <input name="name" required maxlength="200" autofocus>
-        </label>
-        <label class="field">
-          Description
-          <textarea name="description" rows="3" maxlength="2000"></textarea>
-        </label>
-        <label class="field">
-          Type
-          <select name="task">
-            {% for value, label in tasks.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-            <option disabled>Classification (later)</option>
-          </select>
-        </label>
-      </div>
-      <div class="actions">
-        <button class="button secondary" type="button" popovertarget="new-project" popovertargetaction="hide">Cancel</button>
-        <button class="button" type="submit">Create</button>
-      </div>
-    </form>
-  </div>
 {% endblock %}

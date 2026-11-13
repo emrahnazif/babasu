@@ -368,7 +368,8 @@ a.card:hover { background: var(--color-accent-bg); }
   height: 0.875rem;
 }
 
-/* Row of buttons, aligned right. Variant: "actions divided" adds a line above (form footers). */
+/* Row of buttons, aligned right. Variants: "actions divided" adds a line above (form footers);
+   "actions start" aligns them left (e.g. an Add button under a list). */
 .actions {
   display: flex;
   justify-content: flex-end;
@@ -376,6 +377,8 @@ a.card:hover { background: var(--color-accent-bg); }
   gap: var(--space-2);
   margin-top: var(--space-6);
 }
+
+.actions.start { justify-content: flex-start; }
 
 .actions.divided {
   margin-top: var(--space-8);
