@@ -396,6 +396,16 @@ def api_set_prompts(project_id: int, prompts: dict[int, Prompt], conn: DB) -> No
         raise HTTPException(422, str(e)) from None
 
 
+@router.put("/api/projects/{project_id}/classes", status_code=204)
+def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: DB) -> None:
+    """Sets the project's class list, in order; see projects.set_classes."""
+    try:
+        with _writing(conn, project_id):
+            projects.set_classes(conn, project_id, classes)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+
+
 @router.get("/api/projects/{project_id}/annotate")
 def api_auto_annotate_overview(project_id: int, conn: DB, where: Where = "") -> dict:
     """Before auto-annotating the images matching ?where=: how many match, per class how many

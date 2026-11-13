@@ -169,10 +169,6 @@ def try_(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), a
     return _launch(conn, project_id, annotator, "Try", media_ids, tried, runs.KIND)
 
 
-# Colours for the classes of a run that isn't a project's (its prompts' order), as drawn.
-PALETTE = ["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]
-
-
 def results(conn: sqlite3.Connection, run_id: int, images: int | None = None) -> dict | None:
     """A run with its results as annotations: per image and result label, the image (media id,
     file name, width, height, thumbnail) and its objects with their scores; and `legend`, the
@@ -193,7 +189,7 @@ def results(conn: sqlite3.Connection, run_id: int, images: int | None = None) ->
     else:
         names = {int(d.class_id): d.class_name for found in detections for d in found if d.class_id is not None}
         classes = list(range(max(names, default=-1) + 1))
-        legend = [{"id": i, "name": names.get(i) or f"class {i}", "color": PALETTE[i % len(PALETTE)]} for i in classes]
+        legend = [{"id": i, "name": names.get(i) or f"class {i}", "color": projects.PALETTE[i % len(projects.PALETTE)]} for i in classes]
     found = [{"media_id": r["media_id"], "filename": r["filename"], "label": r["label"],
               "width": r["result"]["width"], "height": r["result"]["height"], "thumb_url": media.thumb_url(r["sha256"]),
               "annotations": [a.model_dump(exclude_none=True) for a in to_annotations(d, classes)]}

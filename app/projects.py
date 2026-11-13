@@ -9,7 +9,7 @@ import math
 import sqlite3
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app import db, media
 from app.filters import Filter, FilterError, ObjectCondition, class_ids
@@ -46,6 +46,20 @@ class Annotation(BaseModel):
             raise ValueError("an annotation needs a bbox, segments or keypoints")
         return self
 
+
+class ClassChange(BaseModel):
+    """One class of a project's class list, as it's set (set_classes): an existing one by its id,
+    or a new one (no id). No colour: it keeps its own, or a new one gets one; a blank prompt is the name."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = None
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    color: Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")] | None = None
+    prompt: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] = ""
+
+
+# Class colours, in the order new classes get them.
+PALETTE = ["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]
 
 PAGE_SIZE = 100  # images per page
 
@@ -501,6 +515,42 @@ def set_prompts(conn: sqlite3.Connection, project_id: int, prompts: dict[int, st
     _check_active(row, set(prompts))
     classes = with_prompts(json.loads(row["classes"]), prompts)
     conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(classes), project_id))
+    _touch(conn, project_id)
+
+
+def set_classes(conn: sqlite3.Connection, project_id: int, classes: list[ClassChange]) -> None:
+    """Set the project's class list to these, in this order (product.md "Classes"): a class left
+    out becomes inactive (its annotations stay, hidden); a new one named like an inactive class
+    brings that one back; any other new one gets the next id, never one used before. A class
+    without a colour keeps its own, or gets the first palette colour no class has. Caller commits.
+
+    Raises FrozenError, or ValueError for a repeated name or an id the project doesn't have."""
+    current = {c["id"]: c for c in json.loads(_editable(conn, project_id)["classes"])}
+    active = {i for i, c in current.items() if c["active"]}
+    inactive = {c["name"].casefold(): i for i, c in current.items() if not c["active"]}
+    taken = {c["color"] for c in current.values()} | {c.color.lower() for c in classes if c.color}
+    free = [p for p in PALETTE if p not in taken]
+    next_id = max(current, default=-1) + 1
+    listed, seen = [], set()
+    for c in classes:
+        name = c.name.casefold()
+        if name in seen:
+            raise ValueError(f"Two classes are named {c.name}")
+        seen.add(name)
+        if c.id is None:
+            id = inactive.pop(name, None)
+            if id is None:
+                id, next_id = next_id, next_id + 1
+        elif c.id in active:
+            id = c.id
+            active.discard(id)
+        else:
+            raise ValueError(f"unknown class id: {c.id}")
+        color = c.color or current.get(id, {}).get("color") or (free.pop(0) if free else PALETTE[id % len(PALETTE)])
+        listed.append({"id": id, "name": c.name, "prompt": c.prompt or c.name, "color": color.lower(), "active": True})
+    kept = {c["id"] for c in listed}
+    listed += [c | {"active": False} for i, c in current.items() if i not in kept]
+    conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(listed), project_id))
     _touch(conn, project_id)
 
 
