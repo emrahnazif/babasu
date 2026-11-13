@@ -9,6 +9,7 @@ import math
 import sqlite3
 from typing import Annotated, Literal
 
+from PIL import ImageColor
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app import db, jobs, media
@@ -47,15 +48,56 @@ class Annotation(BaseModel):
         return self
 
 
-class ClassChange(BaseModel):
-    """One class of a project's class list, as it's set (set_classes): an existing one by its id,
-    or a new one (no id). No colour: it keeps its own, or a new one gets one; a blank prompt is the name."""
+# What people type for a project and its classes, checked the same way wherever it comes in.
+Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+ClassName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+Prompt = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+PROMPT = ("What annotators look for (not its name), e.g. 'hole in the road surface' for a class named pothole; "
+          "empty: its name.")
+
+
+def _color(value: str) -> str:
+    """A colour as #rrggbb, from #rrggbb or as people name it (yellow, #ff0, rgb(…))."""
+    try:
+        return "#{:02x}{:02x}{:02x}".format(*ImageColor.getrgb(value.strip())[:3])
+    except ValueError:
+        raise ValueError(f"{value!r} isn't a colour: give a name (yellow) or #rrggbb") from None
+
+
+Color = Annotated[str, AfterValidator(_color)]
+
+
+class NewClass(BaseModel):
+    """A class to add. No colour: it gets the first palette colour not in use; a blank prompt is the name."""
 
     model_config = ConfigDict(extra="forbid")
+    name: ClassName
+    color: Color | None = Field(None, description="A colour name or #rrggbb; empty: one not in use.")
+    prompt: Prompt = Field("", description=PROMPT)
+
+
+class ClassChange(NewClass):
+    """One class of a project's class list, as it's set (set_classes): an existing one by its id
+    (no colour: it keeps its own), or a new one (no id)."""
+
     id: int | None = None
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-    color: Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")] | None = None
-    prompt: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] = ""
+
+
+# One of a project's classes, by its id or its name.
+ClassRef = int | ClassName
+
+
+class ClassEdit(BaseModel):
+    """A change to one class (edit_classes): which one, by its id or else its name, and what changes.
+    With an id, `name` is a new name; `new_name` is one either way."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = Field(None, description="The class's id; without one, `name` says which class.")
+    name: ClassName | None = Field(None, description="With an id: its new name. Without: the class's name.")
+    new_name: ClassName | None = Field(None, description="Its new name, to rename it.")
+    prompt: Prompt | None = Field(None, description=PROMPT)
+    color: Color | None = Field(None, description="A colour name or #rrggbb.")
 
 
 # Class colours, in the order new classes get them.
@@ -164,6 +206,19 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
         "pages": pages,
         "images": [_image(r, active, matches and matches[r["media_id"]]) for r in rows],
     }
+
+
+def named(conn: sqlite3.Connection, text: str, limit: int = 20) -> dict:
+    """Projects and images whose name contains `text` (ignoring case): projects (id, name) and the
+    first `limit` images (media id, file name, project id and name), with how many images match."""
+    found = conn.execute("SELECT id, name FROM project WHERE instr(lower(name), lower(?)) > 0 ORDER BY name", (text,))
+    images = """FROM project_media JOIN project ON project.id = project_media.project_id
+                WHERE instr(lower(project_media.filename), lower(?)) > 0"""
+    rows = conn.execute(
+        f"""SELECT project_media.media_id, project_media.filename, project.id AS project_id, project.name AS project
+            {images} ORDER BY project_media.filename, project.name LIMIT ?""", (text, limit))
+    return {"projects": [dict(r) for r in found], "images": [dict(r) for r in rows],
+            "image_count": conn.execute(f"SELECT count(*) {images}", (text,)).fetchone()[0]}
 
 
 def sample(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), count: int | None = None) -> list[int] | None:
@@ -360,12 +415,36 @@ def annotation_counts(conn: sqlite3.Connection, project_id: int) -> dict[int, in
 
 
 def create(conn: sqlite3.Connection, name: str, description: str, task: Task, annotator: str | None,
-           classes: list[dict] | None = None) -> int:
-    """Create a project with an annotator (an id in annotators.FINDERS; None: none). Caller commits."""
-    return conn.execute(
-        "INSERT INTO project (name, description, task, annotator, classes) VALUES (?, ?, ?, ?, ?)",
-        (name, description, task, annotator, json.dumps(classes or [])),
+           classes: list[ClassChange] = ()) -> int:
+    """Create a project with an annotator (an id in annotators.FINDERS; None: none) and these
+    classes (as set_classes sets them). Caller commits. Raises ValueError as set_classes."""
+    project_id = conn.execute(
+        "INSERT INTO project (name, description, task, annotator) VALUES (?, ?, ?, ?)",
+        (name, description, task, annotator),
     ).lastrowid
+    set_classes(conn, project_id, list(classes))
+    return project_id
+
+
+def duplicate(conn: sqlite3.Connection, project_id: int, name: str | None = None) -> int | None:
+    """A new project named `name` ("<its name> copy" if none) with the project's description, type,
+    annotator, classes (removed ones too, so their annotations come along hidden), images and
+    annotations; not its runs. The image files are shared, not copied. Its id; None if there's no
+    such project. Caller commits."""
+    row = _row(conn, project_id)
+    if row is None:
+        return None
+    new_id = conn.execute(
+        """INSERT INTO project (name, description, classes, task, annotator)
+           SELECT ?, description, classes, task, annotator FROM project WHERE id = ?""",
+        (name or f"{row['name']} copy", project_id),
+    ).lastrowid
+    conn.execute(
+        """INSERT INTO project_media (project_id, media_id, filename, split, annotations)
+           SELECT ?, media_id, filename, split, annotations FROM project_media WHERE project_id = ?""",
+        (new_id, project_id),
+    )
+    return new_id
 
 
 def update(
@@ -421,6 +500,15 @@ def delete(conn: sqlite3.Connection, project_id: int) -> list[int]:
     conn.execute("DELETE FROM run WHERE project_id = ?", (project_id,))
     conn.execute("DELETE FROM project WHERE id = ?", (project_id,))
     return media_ids
+
+
+def remove(conn: sqlite3.Connection, project_id: int) -> None:
+    """Delete the project as delete() does and commit, then the image files nothing uses any more.
+    Raises ValueError as delete()."""
+    with conn:
+        unused = media.remove_unused(conn, delete(conn, project_id))
+    for path in unused:
+        path.unlink(missing_ok=True)
 
 
 def add_image(
@@ -578,6 +666,37 @@ def set_classes(conn: sqlite3.Connection, project_id: int, classes: list[ClassCh
     listed += [c | {"active": False} for i, c in current.items() if i not in kept]
     conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(listed), project_id))
     _touch(conn, project_id)
+
+
+def edit_classes(conn: sqlite3.Connection, project_id: int, add: list[NewClass] = (),
+                 change: list[ClassEdit] = (), remove: list[ClassRef] = ()) -> None:
+    """Add, change and remove some of the project's classes; the others stay as they are. Added
+    ones go last; set_classes's rules hold (a removed class becomes inactive, one added by an
+    inactive class's name brings it back). A prompt that is the class's name stays "the name", so
+    it follows a rename. Caller commits.
+
+    Raises FrozenError, or ValueError for a class it doesn't have (saying which it has) or as set_classes."""
+    classes = _project(_editable(conn, project_id))["classes"]
+    rows = {c["id"]: {"id": c["id"], "name": c["name"], "color": c["color"],
+                      "prompt": "" if c["prompt"] == c["name"] else c["prompt"]} for c in classes}
+
+    def find(ref: ClassRef) -> int:
+        for id, row in rows.items():
+            if ref == id if isinstance(ref, int) else ref.casefold() == row["name"].casefold():
+                return id
+        listed = ", ".join(f"{c['name']} ({c['id']})" for c in classes) or "none"
+        raise ValueError(f"There is no class {ref!r}; the classes: {listed}")
+
+    for e in change:
+        if e.id is None and e.name is None:
+            raise ValueError("Say which class to change: its id or its name")
+        row = rows[find(e.name if e.id is None else e.id)]
+        row |= e.model_dump(include={"prompt", "color"}, exclude_none=True)
+        row["name"] = e.new_name or (e.name if e.id is not None and e.name else row["name"])
+    for ref in remove:
+        del rows[find(ref)]
+    set_classes(conn, project_id, [ClassChange(**r) for r in rows.values()]
+                + [ClassChange(**c.model_dump()) for c in add])
 
 
 def _check_active(project: sqlite3.Row, class_ids: set[int]) -> set[int]:

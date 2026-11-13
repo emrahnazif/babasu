@@ -80,6 +80,14 @@
 
   {% if project %}
     <section>
+      <h2>Duplicate project</h2>
+      <p class="muted">A new project, "{{ project.name }} copy", with the same classes, images and annotations. Runs stay with this one.</p>
+      <form class="actions" method="post" action="/projects/{{ project.id }}/duplicate">
+        <button class="button secondary" type="submit">Duplicate</button>
+      </form>
+    </section>
+
+    <section>
       <h2>Delete project</h2>
       <p class="muted">Removes its images, their annotations and its runs. This can't be undone.</p>
       {% if deletion.jobs %}<p class="error">{{ deletion.jobs | plural("job") }} of this project {{ "is" if deletion.jobs == 1 else "are" }} queued or running: cancel {{ "it" if deletion.jobs == 1 else "them" }} in Jobs first.</p>{% endif %}

@@ -60,7 +60,8 @@ def main() -> None:
             print(f"'{NAME}' already exists; nothing to do.")
             return
         project_id = projects.create(conn, NAME, "Generated squares, circles and triangles.", "detection",
-                                     annotators.SUGGESTED["detection"], CLASSES)
+                                     annotators.SUGGESTED["detection"],
+                                     [projects.ClassChange(name=c["name"], color=c["color"]) for c in CLASSES])
         rng = random.Random(0)
         for i in range(IMAGE_COUNT):
             data, annotations = make_image(rng)

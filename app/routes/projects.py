@@ -7,9 +7,9 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, field_validator
+from pydantic import BaseModel, BeforeValidator, Field, field_validator
 
-from app import annotators, db, imports, jobs, media, projects, runs
+from app import annotators, db, imports, jobs, projects, runs
 from app.filters import Filter, FilterError, ObjectCondition, Range
 from app.templating import query, templates
 
@@ -94,8 +94,8 @@ def filter_error(request: Request, error: FilterError) -> JSONResponse:
 class ProjectFields(BaseModel):
     """A project's name, description and type."""
 
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-    description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] = ""
+    name: projects.Name
+    description: projects.Description = ""
     task: projects.Task
 
 
@@ -105,7 +105,7 @@ class NewProject(ProjectFields):
     classes: list[projects.ClassChange] = []
 
 
-Prompt = Annotated[str, StringConstraints(max_length=500)]
+Prompt = projects.Prompt
 
 
 class ProjectChanges(ProjectFields):
@@ -237,20 +237,24 @@ def _delete(conn: sqlite3.Connection, project_id: int) -> None:
     """Delete the project and its runs, then the media files nothing else uses. 409 while its jobs run."""
     _exists(conn, project_id)
     try:
-        with conn:
-            unused = media.remove_unused(conn, projects.delete(conn, project_id))
+        projects.remove(conn, project_id)
     except ValueError as e:
         raise HTTPException(409, str(e)) from None
-    for path in unused:
-        path.unlink(missing_ok=True)
+
+
+def _duplicate(conn: sqlite3.Connection, project_id: int, name: str | None) -> int:
+    """Duplicate the project (projects.duplicate); 404 if there's none."""
+    with conn:
+        new_id = projects.duplicate(conn, project_id, name)
+    if new_id is None:
+        raise HTTPException(404, "Project not found")
+    return new_id
 
 
 def _create(conn: sqlite3.Connection, new: ProjectFields, classes: list[projects.ClassChange]) -> int:
     """Create the project with its classes. Raises ValueError (see projects.set_classes)."""
     with conn:
-        project_id = projects.create(conn, new.name, new.description, new.task, annotators.SUGGESTED[new.task])
-        projects.set_classes(conn, project_id, classes)
-    return project_id
+        return projects.create(conn, new.name, new.description, new.task, annotators.SUGGESTED[new.task], classes)
 
 
 def _form_page(request: Request, conn: sqlite3.Connection, project_id: int | None = None,
@@ -390,6 +394,11 @@ def auto_annotate(project_id: int, form: Annotated[AutoAnnotateForm, Form()], co
     return RedirectResponse(f"/projects/{project_id}{query({'where': form.where})}", status_code=303)
 
 
+@router.post("/projects/{project_id}/duplicate")
+def duplicate_project(project_id: int, conn: DB):
+    return RedirectResponse(f"/projects/{_duplicate(conn, project_id, None)}", status_code=303)
+
+
 @router.post("/projects/{project_id}/delete")
 def delete_project(project_id: int, conn: DB):
     _delete(conn, project_id)
@@ -442,6 +451,16 @@ def api_update_project(project_id: int, changed: ProjectChanges, conn: DB) -> No
     _update(conn, project_id, changed)
 
 
+class Duplicate(BaseModel):
+    name: projects.Name | None = None
+
+
+@router.post("/api/projects/{project_id}/duplicate", status_code=201)
+def api_duplicate_project(project_id: int, conn: DB, body: Duplicate | None = None) -> dict:
+    """A new project with this one's classes, images and annotations (not its runs), named `name` or "<its name> copy"."""
+    return {"id": _duplicate(conn, project_id, body.name if body else None)}
+
+
 @router.get("/api/projects/{project_id}/deletion")
 def api_deletion(project_id: int, conn: DB) -> dict:
     """What deleting the project would remove, and how many of its jobs still run (see projects.deletion)."""
@@ -482,6 +501,24 @@ def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: 
     try:
         with _writing(conn, project_id):
             projects.set_classes(conn, project_id, classes)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+
+
+class ClassEdits(BaseModel):
+    """Classes to add, change and remove; the others stay (projects.edit_classes)."""
+
+    add: list[projects.NewClass] = []
+    change: list[projects.ClassEdit] = []
+    remove: list[projects.ClassRef] = []
+
+
+@router.patch("/api/projects/{project_id}/classes", status_code=204)
+def api_edit_classes(project_id: int, edits: ClassEdits, conn: DB) -> None:
+    """Adds, changes and removes some of the project's classes; see projects.edit_classes."""
+    try:
+        with _writing(conn, project_id):
+            projects.edit_classes(conn, project_id, edits.add, edits.change, edits.remove)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
 
