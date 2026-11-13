@@ -13,9 +13,10 @@ import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlencode
 
+from mozo.workflow import catalogue
 from pydantic import BaseModel, Field, ValidationError
 
 from app import annotators, jobs, projects, runs, settings, views, vision
@@ -78,6 +79,26 @@ class AutoAnnotateArgs(FilterArgs):
 
 class WaitArgs(JobArgs):
     seconds: int = Field(60, ge=1, le=300, description="How long to wait at most, in seconds.")
+
+
+class NodesArgs(BaseModel):
+    names: list[str] | None = Field(None, description="Nodes to show in full (inputs, outputs, parameters); empty for "
+                                    "the list of all nodes, each with its category and what it does.")
+
+
+class WorkflowIdArgs(BaseModel):
+    workflow_id: str = Field(description="The workflow's id, from list_workflows (lowercase letters, digits and dashes).")
+
+
+class WorkflowDocArgs(BaseModel):
+    document: dict[str, Any] = Field(
+        description='A mozo workflow: {"name", "description", "nodes": [{"id", "type", "data": {"parameters": {…}}}], '
+        '"edges": [{"source", "sourceHandle", "target", "targetHandle"}]}. Node types and their ports and parameters '
+        "come from list_nodes; an edge joins an output (sourceHandle) to an input (targetHandle) of the same type.")
+
+
+class SaveWorkflowArgs(WorkflowIdArgs, WorkflowDocArgs):
+    pass
 
 
 class ApiArgs(BaseModel):
@@ -481,3 +502,64 @@ def add_to_nav(conn: sqlite3.Connection, args: NavArgs) -> list[dict]:
 @tool("Remove a link from the navigation.", HrefArgs)
 def remove_from_nav(conn: sqlite3.Connection, args: HrefArgs) -> list[dict]:
     return settings.remove_nav(args.href)
+
+
+# --- Building workflows ---
+
+
+@tool(
+    "List the nodes a workflow is built from (name, category, what it does); with `names`, those nodes in full: "
+    "inputs and outputs (name: type) and parameters (name, kind, default, options; `prompts`: it takes the prompts). "
+    "A run keeps what reaches a save_to_babasu node, under its label; read_media is where each image comes in.",
+    NodesArgs,
+)
+def list_nodes(conn: sqlite3.Connection, args: NodesArgs) -> list[dict]:
+    def ports(items: list[dict]) -> list[str]:
+        return [f"{p['name']}: {p['type']}" for p in items]
+
+    def parameter(p: dict) -> dict:
+        return {k: v for k, v in p.items() if v not in (None, [], "", False) or k == "default"}
+
+    nodes = catalogue()
+    if args.names is None:
+        return [{"name": n["name"], "category": n["category"], "description": n["description"]} for n in nodes]
+    unknown = set(args.names) - {n["name"] for n in nodes}
+    if unknown:
+        raise ToolError(f"No such nodes: {sorted(unknown)}; list_nodes without names lists them.")
+    return [{"name": n["name"], "category": n["category"], "description": n["description"],
+             "inputs": ports(n["inputs"]), "outputs": ports(n["outputs"]),
+             "parameters": [parameter(p) for p in n["parameters"]]}
+            for n in nodes if n["name"] in args.names]
+
+
+@tool("Show a workflow: its document (nodes and edges) and the models it uses, with bytes left to download.", WorkflowIdArgs)
+def get_workflow(conn: sqlite3.Connection, args: WorkflowIdArgs) -> dict:
+    workflow = runs.load(args.workflow_id)
+    if workflow is None:
+        raise ToolError(f"There is no workflow {args.workflow_id!r}.")
+    return runs.detail(args.workflow_id, workflow)
+
+
+@tool(
+    "Check a workflow document without saving it: whether it loads (and why not), what a run keeps (its "
+    "save_to_babasu labels), which parameters take the prompts, and its models (size: bytes left to download).",
+    WorkflowDocArgs,
+)
+def validate_workflow(conn: sqlite3.Connection, args: WorkflowDocArgs) -> dict:
+    return runs.check_workflow(args.document)
+
+
+@tool(
+    "Save a workflow in the app (new, or replacing a saved one; built-ins can't be replaced). Give it a name and a "
+    "description in the document. A run keeps only what reaches a save_to_babasu node, so end each result there.",
+    SaveWorkflowArgs,
+)
+def save_workflow(conn: sqlite3.Connection, args: SaveWorkflowArgs) -> dict:
+    return runs.save_workflow(args.workflow_id, args.document)
+
+
+@tool("Delete a saved workflow (built-ins can't be deleted). Runs made with it keep their copy.", WorkflowIdArgs)
+def delete_workflow(conn: sqlite3.Connection, args: WorkflowIdArgs) -> dict:
+    if not runs.delete_workflow(args.workflow_id):
+        raise ToolError(f"There is no saved workflow {args.workflow_id!r} (built-ins can't be deleted).")
+    return {"deleted": args.workflow_id}

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from mozo.workflow import Detections, Workflow, WorkflowError, annotation_line, node
 
-from app import config, db, jobs, media, projects, vision
+from app import config, db, jobs, media, projects, settings, vision
 
 BUILTIN_DIR = config.BASE_DIR / "workflows"
 KIND = "workflow_run"  # job kind
@@ -71,15 +71,61 @@ def load(id: str) -> Workflow | None:
 
 
 def detail(id: str, workflow: Workflow) -> dict:
-    """A loaded workflow with its graph (mozo's {nodes, edges}), the models it uses (each with
-    its licence and the bytes still to download for config.DEVICE, 0 once downloaded) and the
-    files it names that are missing."""
+    """A loaded workflow with its graph (mozo's {nodes, edges}), what a run keeps (its
+    save_to_babasu labels), which parameters take the prompts, the models it uses (each with its
+    licence and the bytes still to download for config.DEVICE, 0 once downloaded) and the files
+    it names that are missing."""
     found = workflow.check(device=config.DEVICE)
     return _entry(id, workflow) | {
         "graph": workflow.to_dict(),
+        "kept": list(_kept(workflow).values()),
+        "prompt_parameters": list(workflow.prompt_parameters),
         "models": [use._asdict() for use in found.models],
         "missing_files": [{"node": node, "parameter": name, "path": path} for node, name, path in found.missing],
     }
+
+
+def _loaded(document: dict) -> Workflow:
+    try:
+        return Workflow.from_dict(document)
+    except WorkflowError as e:
+        raise ValueError(f"The workflow doesn't load: {e}") from None
+
+
+def check_workflow(document: dict) -> dict:
+    """What a workflow document is, without saving it: what a run keeps (its save_to_babasu
+    labels), which parameters take the prompts, its models (size: bytes left to download for
+    config.DEVICE) and missing files. ValueError if mozo doesn't load it (why)."""
+    workflow = _loaded(document)
+    found = workflow.check(device=config.DEVICE)
+    return {"kept": list(_kept(workflow).values()), "prompt_parameters": list(workflow.prompt_parameters),
+            "models": [{"family": m.family, "variant": m.variant, "size": m.size} for m in found.models],
+            "missing_files": [path for _, _, path in found.missing]}
+
+
+def save_workflow(workflow_id: str, document: dict) -> dict:
+    """Save a workflow in the workspace as `<id>.json` (new, or replacing a saved one) and return
+    it as workflows() lists it. ValueError: a bad id, a built-in's id, a document mozo refuses, or
+    one that keeps nothing (no save_to_babasu)."""
+    if not settings.SLUG.fullmatch(workflow_id):
+        raise ValueError("A workflow's id is lowercase letters, digits and dashes, e.g. sam3-vs-dino")
+    if workflow_id in BUILTIN:
+        raise ValueError(f"{workflow_id!r} is a built-in workflow; save under another id")
+    workflow = _loaded(document)
+    if not _kept(workflow):
+        raise ValueError("Nothing reaches a save_to_babasu node, so a run would keep nothing")
+    settings.write_file(config.WORKFLOWS_DIR / f"{workflow_id}.json", json.dumps(workflow.to_dict(), indent=2, ensure_ascii=False))
+    return next(w for w in workflows() if w["id"] == workflow_id)
+
+
+def delete_workflow(workflow_id: str) -> bool:
+    """Delete a saved workflow (a built-in can't be); False if there's no such saved one. Its runs
+    keep their own copy of it."""
+    path = _files().get(workflow_id)
+    if workflow_id in BUILTIN or path is None:
+        return False
+    path.unlink()
+    return True
 
 
 # --- Runs ---

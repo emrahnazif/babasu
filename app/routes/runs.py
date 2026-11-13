@@ -32,6 +32,33 @@ def api_workflow(workflow_id: str) -> dict:
     return runs.detail(workflow_id, workflow)
 
 
+@router.post("/workflows/check")
+def api_check_workflow(document: dict[str, Any]) -> dict:
+    """Checks a workflow document without saving it: what a run keeps, which parameters take the
+    prompts, its models and missing files. 422 with why if it doesn't load."""
+    try:
+        return runs.check_workflow(document)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@router.put("/workflows/{workflow_id}")
+def api_save_workflow(workflow_id: str, document: dict[str, Any]) -> dict:
+    """Saves a workflow document (new, or replacing a saved one; a built-in's id is refused). 422
+    with why if it doesn't load or keeps nothing."""
+    try:
+        return runs.save_workflow(workflow_id, document)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@router.delete("/workflows/{workflow_id}", status_code=204)
+def api_delete_workflow(workflow_id: str) -> None:
+    """Deletes a saved workflow (built-ins can't be); its runs keep their copy."""
+    if not runs.delete_workflow(workflow_id):
+        raise HTTPException(404, "No such saved workflow (built-ins can't be deleted)")
+
+
 # --- Images to run on ---
 
 
