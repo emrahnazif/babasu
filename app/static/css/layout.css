@@ -42,10 +42,6 @@
   overflow-y: auto;
 }
 
-.app__sidebar {
-  padding: var(--space-4);
-}
-
 .app__main {
   padding: var(--space-6);
 }

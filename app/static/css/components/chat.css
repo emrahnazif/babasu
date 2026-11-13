@@ -1,19 +1,23 @@
 /*
   Agent chat in the left sidebar (behaviour in js/chat.js).
-  A full-height column: the messages scroll, the form stays at the bottom.
+  A full-height column: the messages scroll, the form stays at the bottom. The sidebar has no
+  padding of its own: the messages scroll across its full width, so the scrollbar sits at its
+  edge, in the messages' own padding, not over them.
 */
 .chat {
   height: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  padding-block: var(--space-4);
 }
 
 .chat__messages {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-gutter: stable;  /* a classic scrollbar doesn't cover the user's bubbles */
+  padding-inline: var(--space-4);
+  scrollbar-gutter: stable;  /* a classic scrollbar doesn't shift the messages when it appears */
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -148,6 +152,7 @@
 
 /* The form looks like one input box; the textarea inside has no border of its own. */
 .chat__form {
+  margin-inline: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);

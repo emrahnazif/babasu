@@ -1,4 +1,9 @@
-/* A page's own sidebar menu (e.g. Settings); the default sidebar is the chat (chat.css). */
+/* A page's own sidebar menu (e.g. Settings); the default sidebar is the chat (chat.css).
+   The sidebar region has no padding: its content pads itself. */
+.sidebar {
+  padding: var(--space-4);
+}
+
 .sidebar__title {
   font-size: var(--text-sm);
   margin-bottom: var(--space-2);
