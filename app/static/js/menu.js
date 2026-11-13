@@ -20,3 +20,22 @@ document.addEventListener("input", (event) => {
   }
   for (const echo of menu.querySelectorAll("[data-search-echo]")) echo.textContent = text;
 });
+
+// ↑/↓ move between a menu's items (from its search field too), Home/End jump to the first or
+// last; Enter or Space picks (they're links and buttons), Esc closes (the popover). Items of a
+// menu nested in it (e.g. a select in a panel) are that menu's own.
+const MOVES = ["ArrowDown", "ArrowUp", "Home", "End"];
+document.addEventListener("keydown", (event) => {
+  if (!MOVES.includes(event.key)) return;
+  const menu = event.target.closest?.(".menu:popover-open");
+  if (!menu) return;
+  const field = event.target.matches("input, textarea, select");
+  if (field && !(event.target.matches(".menu__search") && event.key.startsWith("Arrow"))) return;
+  const items = [...menu.querySelectorAll("a.menu__item, button.menu__item")]
+    .filter((item) => !item.hidden && !item.disabled && item.closest(".menu") === menu);
+  if (!items.length) return;
+  event.preventDefault();
+  const at = items.indexOf(document.activeElement);
+  const next = { ArrowDown: at + 1, ArrowUp: at < 0 ? -1 : at - 1, Home: 0, End: -1 }[event.key];
+  items.at(next % items.length).focus();
+});

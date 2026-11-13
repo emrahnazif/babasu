@@ -1,0 +1,61 @@
+/*
+  Select: a button showing the chosen option; it opens a .menu of the options (role="option",
+  the chosen one aria-selected="true", with its check). The value is in a hidden input.
+  Markup: the select() macro (partials/select.html); behaviour: js/select.js.
+    select           the wrapper; in a form field it takes the field's width
+    select--compact  no box until hovered or focused, small muted text (e.g. the chat's agent)
+    select__trigger  the button
+    select__label    the chosen option's text, cut with … when it doesn't fit
+    select__menu     the list: at least as wide as the trigger
+*/
+.select {
+  display: inline-grid;
+  min-width: 0;
+}
+
+.select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-normal);
+  text-align: start;
+  cursor: pointer;
+}
+
+.select__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select__trigger svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.select__menu { min-width: max(11rem, anchor-size(width)); }
+
+.select--compact .select__trigger {
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.select--compact .select__trigger:hover,
+.select--compact .select__trigger:focus-visible {
+  border-color: var(--color-border);
+  color: var(--color-text);
+}

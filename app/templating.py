@@ -135,7 +135,14 @@ def period(timestamp: str) -> str:
     return "Older"
 
 
+def options(items, value: str, label: str) -> list[tuple]:
+    """(value, label) pairs from dicts or objects, for the select() macro: models | options("id", "name")."""
+    get = lambda item, key: item[key] if isinstance(item, dict) else getattr(item, key)
+    return [(get(item, value), get(item, label)) for item in items]
+
+
 templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
+templates.env.filters["options"] = options
 templates.env.filters["ago"] = ago
 templates.env.filters["period"] = period
 templates.env.filters["filesize"] = filesize

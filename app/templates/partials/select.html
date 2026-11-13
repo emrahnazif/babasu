@@ -1,0 +1,26 @@
+{# A select (css/components/select.css, js/select.js): a button showing the chosen option, opening a
+   menu of the options; the value is posted from a hidden input, as a <select> would post it.
+     id       the menu's id (unique on the page)
+     name     the field's name
+     options  (value, label) pairs; an option whose value is none is shown, disabled
+     value    the chosen value (none, or not among them: the first option)
+     label    the trigger's accessible name, when no <label> gives one
+     compact  no box, small text (e.g. the chat's agent picker)
+     class    more classes for the wrapper (e.g. a component's own)
+   {% from "partials/select.html" import select %}
+   {{ select("task-select", "task", [("detection", "Object detection"), ...], project.task) }} #}
+{% macro select(id, name, options, value, label=none, compact=false, class="") %}
+  {% set chosen = options | selectattr("0", "equalto", value) | first | default(options | first) %}
+  <span class="select{% if compact %} select--compact{% endif %}{% if class %} {{ class }}{% endif %}">
+    <input type="hidden" name="{{ name }}" value="{{ chosen[0] }}">
+    <button class="select__trigger" type="button" popovertarget="{{ id }}" aria-haspopup="listbox"{% if label %} aria-label="{{ label }}"{% endif %}>
+      <span class="select__label">{{ chosen[1] }}</span>{{ icon("chevron-up-down") }}</button>
+    <div id="{{ id }}" class="menu select__menu" popover role="listbox">
+      {% for v, text in options %}
+        <button class="menu__item" type="button" role="option"{% if v is none %} disabled{% else %} data-value="{{ v }}"{% endif %}
+                aria-selected="{{ 'true' if v is not none and v == chosen[0] else 'false' }}">
+          <span class="menu__check">{{ icon("check") }}</span>{{ text }}</button>
+      {% endfor %}
+    </div>
+  </span>
+{% endmacro %}

@@ -10,8 +10,10 @@
     menu__search     a field that narrows the items to what's typed (js/menu.js); an element
                      with data-search-echo shows the text, an item with data-search-typed shows
                      only while there's some
-    menu__item       a link, button or label (e.g. holding a checkbox)
+    menu__item       a link, button or label (e.g. holding a checkbox); a disabled button is muted
+                     (↑/↓, Home/End move between the links and buttons: js/menu.js)
     menu__check      a check icon at an item's start, shown when the item is aria-current="page"
+                     (a link to here) or aria-selected="true" (a select's chosen option)
     menu__item--destructive  an item that deletes or can't be undone
     menu__swatch     a colour dot before an item's text (style="--swatch-color: …")
     menu__note       a short muted note at the item's end, e.g. a count
@@ -78,7 +80,13 @@
 
 .menu__check { display: inline-grid; visibility: hidden; }
 
-.menu__item[aria-current="page"] > .menu__check { visibility: visible; }
+.menu__item:is([aria-current="page"], [aria-selected="true"]) > .menu__check { visibility: visible; }
+
+.menu__item:disabled {
+  color: var(--color-text-muted);
+  background: transparent;
+  cursor: default;
+}
 
 .menu--panel {
   width: 18rem;
