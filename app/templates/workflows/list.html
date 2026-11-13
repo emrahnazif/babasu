@@ -1,6 +1,11 @@
-{# Every workflow, built in or saved: what it uses, and its two ways in: Use (its Studio page)
-   and Edit (the builder, later). #}
+{# Every workflow, built in or saved: what it uses, and its ways in: Use (its Studio page) and
+   Edit (the builder). A saved one can be deleted (asked first); a built-in can't. #}
 {% extends "base.html" %}
+
+{% block actions %}
+  <a class="icon-button" href="/workflows/new" aria-label="New workflow" title="New workflow">{{ icon("plus") }}</a>
+{% endblock %}
+
 {% block content %}
   <table>
     <thead><tr><th>Workflow</th><th>Models</th><th></th></tr></thead>
@@ -16,7 +21,20 @@
             {% for m in w.models or [] %}{{ m.family }} {{ m.variant }}{% if m.size %} ({{ m.size | filesize }} to download){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
           </td>
           <td>
-            <button class="button secondary" type="button" disabled title="The workflow builder comes later">Edit</button>
+            {% if not w.builtin %}
+              <button class="button secondary" type="button" popovertarget="delete-{{ w.id }}">Delete</button>
+              <div id="delete-{{ w.id }}" class="dialog" popover role="alertdialog" aria-labelledby="delete-{{ w.id }}-title">
+                <form method="post" action="/workflows/{{ w.id }}/delete">
+                  <h2 id="delete-{{ w.id }}-title">Delete {{ w.name }}?</h2>
+                  <p class="muted">Runs made with it keep their results and their own copy of it. This can't be undone.</p>
+                  <div class="actions">
+                    <button class="button secondary" type="button" popovertarget="delete-{{ w.id }}" popovertargetaction="hide" autofocus>Cancel</button>
+                    <button class="button destructive" type="submit">Delete</button>
+                  </div>
+                </form>
+              </div>
+            {% endif %}
+            <a class="button secondary" href="/workflows/{{ w.id }}/edit">Edit</a>
             {% if not w.error %}<a class="button" href="/studio/{{ w.id }}">Use</a>{% endif %}
           </td>
         </tr>

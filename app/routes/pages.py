@@ -26,6 +26,14 @@ def workflows(request: Request):
     return templates.TemplateResponse(request, "workflows/list.html", {"workflows": runs.workflows()})
 
 
+@router.post("/workflows/{workflow_id}/delete")
+def delete_workflow(workflow_id: str):
+    """Delete a saved workflow (its runs keep their copy) and go back to the list."""
+    if not runs.delete_workflow(workflow_id):
+        raise HTTPException(404, "No such saved workflow (built-ins can't be deleted)")
+    return RedirectResponse("/workflows", status_code=303)
+
+
 def _builder(request: Request, workflow_id: str | None, document: dict):
     return templates.TemplateResponse(request, "workflows/edit.html", {
         "workflow_id": workflow_id, "document": document, "builtin": workflow_id in runs.BUILTIN})
