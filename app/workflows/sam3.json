@@ -17,8 +17,8 @@
       "id": "find",
       "type": "sam3",
       "position": {
-        "x": 300,
-        "y": 0
+        "x": 0,
+        "y": 150
       },
       "data": {
         "parameters": {
@@ -32,8 +32,8 @@
       "id": "keep",
       "type": "save_to_babasu",
       "position": {
-        "x": 600,
-        "y": 0
+        "x": 0,
+        "y": 300
       },
       "data": {
         "parameters": {
