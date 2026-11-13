@@ -9,13 +9,11 @@
   border: 0;
   background: transparent;
   overflow: visible;
-}
-
-.toasts:popover-open {
-  display: flex;
-  flex-direction: column;
+  flex-direction: column;  /* the layout lives here; only display waits for :popover-open */
   gap: var(--space-2);
 }
+
+.toasts:popover-open { display: flex; }
 
 .toast {
   width: 20rem;

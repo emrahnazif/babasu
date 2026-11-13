@@ -23,6 +23,7 @@
   position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline;
   margin: var(--space-1) 0;
   min-width: 11rem;
+  flex-direction: column;  /* here, not only when open: it keeps its layout while it fades out */
   padding: var(--space-1);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -37,7 +38,6 @@
 
 .menu:popover-open {
   display: flex;
-  flex-direction: column;
   opacity: 1;
   translate: 0 0;
 }
@@ -82,10 +82,9 @@
 
 .menu--panel {
   width: 18rem;
+  gap: var(--space-3);
   padding: var(--space-3);
 }
-
-.menu--panel:popover-open { gap: var(--space-3); }
 
 /* Its form spaces its parts with the gap, so their own margins (e.g. a row of actions) go. */
 .menu--panel form {

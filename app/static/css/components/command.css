@@ -12,6 +12,7 @@
 .command {
   width: min(36rem, calc(100% - 2 * var(--space-4)));
   max-height: min(28rem, calc(100% - 2 * var(--space-8)));
+  flex-direction: column;  /* here, not only when open: it keeps its layout while it fades out */
   margin: 12vh auto auto;
   padding: 0;
   border: 1px solid var(--color-border);
@@ -28,7 +29,6 @@
 
 .command:popover-open {
   display: flex;
-  flex-direction: column;
   opacity: 1;
   scale: 1;
 }
