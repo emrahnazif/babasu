@@ -15,7 +15,9 @@ A report keeps what it showed: when a version is saved, every api() answer is re
 report exists (the view_media table), so the media cleanup keeps them.
 """
 
+import html
 import json
+import re
 import shutil
 import traceback
 from contextlib import closing
@@ -234,6 +236,18 @@ def api(path: str):
             detail = None
         raise ApiError(f"api({path!r}): {response.status_code} {detail or response.reason_phrase}")
     return response.json()
+
+
+def page_title(path: str) -> str:
+    """The title of babasu's own page at `path`, rendered as the browser would get it: checks it
+    shows (the agent opens it). ApiError if there's no such page or it fails."""
+    if not isinstance(path, str) or not path.startswith("/") or path.startswith(("//", "/api/", "/static/")):
+        raise ApiError(f"{path!r} isn't a page of the app: give its path, e.g. /projects/3")
+    response = _client().get(path, follow_redirects=False)
+    if response.status_code != 200 or not response.headers.get("content-type", "").startswith("text/html"):
+        raise ApiError(f"{path}: no page there ({response.status_code} {response.reason_phrase})")
+    found = re.search(r"<title>(.*?)</title>", response.text, re.DOTALL)
+    return html.unescape(found[1]).strip() if found else path
 
 
 _env = SandboxedEnvironment(autoescape=True)

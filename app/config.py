@@ -28,6 +28,7 @@ NAV = [
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
+DOCS_DIR = BASE_DIR / "docs"  # what the app is and how it works, for the agent (read_docs): <topic>.md
 BRAND_DIR = STATIC_DIR / "brand"  # logo.svg; app-icon.svg and the files scripts/app_icons.py renders from it
 APP_ICON = BRAND_DIR / "app-icon.png"
 
