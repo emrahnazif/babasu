@@ -5,6 +5,8 @@
   <div class="chat__message chat__message--user">{{ text }}</div>
 {%- endmacro %}
 
+{# The agent's text: its markdown, as text; chat.js renders it (js/markdown.js). Rendered in the
+   browser on purpose: saved and streaming replies share one renderer, so they can't differ. #}
 {% macro text_part(text) -%}
   <div class="chat__text">{{ text }}</div>
 {%- endmacro %}

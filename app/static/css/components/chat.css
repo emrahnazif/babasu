@@ -78,9 +78,62 @@
   gap: var(--space-2);
 }
 
+/* The agent's markdown, rendered (js/markdown.js): sized for the chat, not the page. Wide code
+   and tables scroll sideways inside the turn; they never widen the sidebar. */
 .chat__text {
-  white-space: pre-wrap;
+  min-width: 0;  /* a grid item in the turn: its wide code and tables can't widen it */
 }
+
+.chat__text > * + * { margin-top: var(--space-2); }
+.chat__text :is(h1, h2, h3, h4, h5, h6):not(:first-child) { margin-top: var(--space-4); }
+
+.chat__text :is(h1, h2) { font-size: var(--text-md); }
+.chat__text :is(h3, h4, h5, h6) { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+
+.chat__text :is(ul, ol) { padding-left: var(--space-6); }
+.chat__text li + li,
+.chat__text li > :is(ul, ol) { margin-top: var(--space-1); }
+
+.chat__text a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat__text :not(pre) > code {
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-bg);
+}
+
+.chat__text pre {
+  white-space: pre;
+  background: var(--color-accent-bg);
+}
+
+.chat__text blockquote {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.chat__text hr { margin-block: var(--space-4); }
+
+.chat__text table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Columns keep a readable width instead of squeezing into the sidebar: a table wider than the
+   chat scrolls sideways (above), only when it has to. Headers stay on one line. */
+.chat__text :is(th, td) {
+  min-width: 8rem;
+  padding: var(--space-1) var(--space-2);
+  vertical-align: top;  /* a row with a wrapped cell reads from its top line */
+}
+
+.chat__text th { white-space: nowrap; }
 
 /* A tool call: the icon shows running (spinner), done (check) or error (cross). */
 .chat__tool {

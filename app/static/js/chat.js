@@ -3,8 +3,11 @@
 // server saves everything, so the next page renders the same conversation (partials/chat.html).
 // The reply doesn't depend on this page: a page opened while the agent is answering follows the
 // reply from its first event ([data-following]), and stop is a request of its own.
+// The agent's text is markdown, shown formatted (js/markdown.js): saved parts once the page
+// loads, a streaming part again as it grows.
 // Markup comes from the <template>s in that partial; this file only fills them in.
 import { reason } from "./background-form.js";
+import { render } from "./markdown.js";
 
 const chat = document.querySelector(".chat");
 
@@ -31,7 +34,8 @@ if (chat) {
   function agentTurn(turn = append(messages, clone("chat-agent"))) {
     // "Thinking…" while the agent works
     let status = turn.querySelector(".chat__note--status") ?? append(turn, clone("chat-status"));
-    let text = null; // the text part being written; a tool call ends it
+    let part = null; // the text part being written: { element, markdown }; a tool call ends it
+    let frame = 0; // a render of that part waiting for the next frame
     let byLine = null; // who answers; added under everything else when the turn ends
     const tools = new Map();
 
@@ -40,16 +44,25 @@ if (chat) {
       status = null;
     }
 
+    // Render the part's markdown so far (at most once a frame, however fast deltas come).
+    function draw() {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      const follow = atBottom();
+      part.element.innerHTML = render(part.markdown);
+      if (follow) messages.scrollTop = messages.scrollHeight;
+    }
+
     return {
       text(delta) {
         clearStatus();
-        text ??= append(turn, clone("chat-text"));
-        const follow = atBottom();
-        text.append(delta); // a new text node, not a rewrite of everything so far
-        if (follow) messages.scrollTop = messages.scrollHeight;
+        part ??= { element: append(turn, clone("chat-text")), markdown: "" };
+        part.markdown += delta;
+        frame ||= requestAnimationFrame(draw);
       },
       tool({ id, name, status: state }) {
-        text = null;
+        if (frame) draw(); // the part ends as written
+        part = null;
         clearStatus();
         let element = tools.get(id);
         if (!element) {
@@ -68,6 +81,7 @@ if (chat) {
         byLine = line;
       },
       end(state, message) {
+        if (frame) draw();
         clearStatus();
         turn.dataset.status = state;
         if (state !== "done") {
@@ -173,6 +187,8 @@ if (chat) {
     });
   });
 
+  // Saved text parts hold their markdown as text (partials/chat.html).
+  for (const part of messages.querySelectorAll(".chat__text")) part.innerHTML = render(part.textContent);
   messages.scrollTop = messages.scrollHeight; // open at the latest message
 
   // The agent is still answering (the page was opened mid-reply): follow the reply.
