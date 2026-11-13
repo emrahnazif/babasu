@@ -39,7 +39,7 @@ def _page(request: Request, template: str, section: dict, next: str | None, **co
 @router.get("/general", response_class=HTMLResponse)
 def general(request: Request, next: str | None = None):
     return _page(request, "settings/general.html", GENERAL, next, current=settings.get(),
-                 themes=get_args(settings.Theme), data_dir=config.DATA_DIR)
+                 themes=[(t, t.capitalize()) for t in get_args(settings.Theme)], data_dir=config.DATA_DIR)
 
 
 @router.post("/general")

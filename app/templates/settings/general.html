@@ -1,13 +1,10 @@
 {% extends "settings/layout.html" %}
+{% from "partials/select.html" import select %}
 
 {% block fields %}
   <label class="field">
     Theme
-    <select name="theme">
-      {% for value in themes %}
-        <option value="{{ value }}"{% if current.theme == value %} selected{% endif %}>{{ value | capitalize }}</option>
-      {% endfor %}
-    </select>
+    {{ select("theme-select", "theme", themes, current.theme) }}
   </label>
 
   <div class="field">

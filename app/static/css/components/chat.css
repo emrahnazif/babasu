@@ -242,22 +242,8 @@
   margin-left: auto;
 }
 
-.chat__agent {
-  min-width: 0;
-  max-width: 60%;
-  padding: var(--space-1) var(--space-2);
-  border-color: transparent;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-
-.chat__agent:hover,
-.chat__agent:focus-visible {
-  border-color: var(--color-border);
-  color: var(--color-text);
-}
+/* The agent picker: a compact select (select.css). */
+.chat__agent { max-width: 60%; }
 
 /* While a reply streams, the send button becomes a stop button. */
 .chat__send svg:last-child { display: none; }

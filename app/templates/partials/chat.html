@@ -1,6 +1,7 @@
 {# Agent chat, the default sidebar content. Behaviour in js/chat.js.
    Saved turns are rendered here with these macros; the <template>s at the bottom use the same
    macros, and chat.js clones them for a turn that is streaming. One source of markup. #}
+{% from "partials/select.html" import select %}
 {% macro user_message(text) -%}
   <div class="chat__message chat__message--user">{{ text }}</div>
 {%- endmacro %}
@@ -67,11 +68,7 @@
     <div class="chat__bar">
       {% if chat.agents %}
         {# The agent this chat talks to; changing it applies from the next message. #}
-        <select class="chat__agent" name="agent" aria-label="Agent">
-          {% for a in chat.agents %}
-            <option value="{{ a.id }}"{% if a.id == chat.agent_id %} selected{% endif %}>{{ a.name }}</option>
-          {% endfor %}
-        </select>
+        {{ select("chat-agent", "agent", chat.agents | options("id", "name"), chat.agent_id, label="Agent", compact=true, class="chat__agent") }}
       {% endif %}
       <button class="icon-button icon-button--primary chat__send" type="submit" aria-label="Send" title="Send">
         {{ icon("arrow-up") }}{{ icon("stop") }}

@@ -1,4 +1,5 @@
 {% extends "settings/layout.html" %}
+{% from "partials/select.html" import select %}
 {# Agents: who answers in the chat. A name, the model it runs on, and its instructions. #}
 
 {% macro agent_dialog(id, title, action, a=none) %}
@@ -12,11 +13,7 @@
         </label>
         <label class="field">
           Model
-          <select name="model_id" required>
-            {% for m in models %}
-              <option value="{{ m.id }}"{% if a and a.model_id == m.id %} selected{% endif %}>{{ m.name }}</option>
-            {% endfor %}
-          </select>
+          {{ select(id ~ "-model", "model_id", models | options("id", "name"), a.model_id if a else none) }}
         </label>
         <label class="field">
           Instructions

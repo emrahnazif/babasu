@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/select.html" import select %}
 {# The new project page (project is none) and a project's edit page: one form. `values` is what
    the fields show: the project's, or what was typed when a save was refused (`error` says why).
    The class rows: js/class-list.js adds and removes them. #}
@@ -44,18 +45,12 @@
       </label>
       <label class="field">
         Type
-        <select name="task">
-          {% for value, label in tasks.items() %}<option value="{{ value }}"{% if value == values.task %} selected{% endif %}>{{ label }}</option>{% endfor %}
-          <option disabled>Classification (later)</option>
-        </select>
+        {{ select("task-select", "task", tasks.items() | list + [(none, "Classification (later)")], values.task) }}
       </label>
       {% if project %}
         <label class="field">
           Annotator
-          <select name="annotator">
-            {% for value, label in annotators.items() %}<option value="{{ value }}"{% if value == values.annotator %} selected{% endif %}>{{ label }}</option>{% endfor %}
-            <option value=""{% if not values.annotator %} selected{% endif %}>None</option>
-          </select>
+          {{ select("annotator-select", "annotator", annotators.items() | list + [("", "None")], values.annotator or "") }}
         </label>
       {% endif %}
     </div>

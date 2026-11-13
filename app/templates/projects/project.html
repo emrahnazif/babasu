@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "projects/macros.html" import annotated %}
+{% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
 {% set params = {"where": project.filter} %}  {# these links keep the filter #}
 
@@ -33,15 +34,10 @@
 {% endmacro %}
 
 {# A choice of one class for a panel's objects; empty means any class. #}
-{% macro of_class(c) %}
+{% macro of_class(id, c) %}
   <label class="field">
     Objects of
-    <select name="of_class">
-      <option value="">any class</option>
-      {% for class in project.classes %}
-        <option value="{{ class.name }}" {% if c and c.classes == [class.name] %}selected{% endif %}>{{ class.name }}</option>
-      {% endfor %}
-    </select>
+    {{ select(id, "of_class", [("", "any class")] + project.classes | options("name", "name"), c.classes[0] if c and c.classes | length == 1 else "") }}
   </label>
 {% endmacro %}
 
@@ -76,7 +72,7 @@
             {% endfor %}
           </div>
         {% else %}
-          {{ of_class(c) }}
+          {{ of_class(id ~ "-class", c) }}
           {% if part == "size" %}
             {{ range_fields("Width", "w", c.w if c else none, "px") }}
             {{ range_fields("Height", "h", c.h if c else none, "px") }}
