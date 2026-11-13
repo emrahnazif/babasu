@@ -259,11 +259,7 @@ def list_workflows(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     RunArgs,
 )
 def start_run(conn: sqlite3.Connection, args: RunArgs) -> dict:
-    media_ids = projects.sample(conn, args.project_id, Filter.parse(args.where), args.count)
-    if media_ids is None:
-        raise ToolError(f"There is no project {args.project_id}.")
-    if not media_ids:
-        raise ToolError("No images match that filter.")
+    media_ids = runs.on_project(conn, args.project_id, Filter.parse(args.where), args.count)
     prompts = args.prompts if args.prompts is not None else [c["prompt"] for c in projects.get(conn, args.project_id)["classes"]]
     if not prompts:
         raise ToolError("Nothing to find: the project has no classes, so give prompts.")

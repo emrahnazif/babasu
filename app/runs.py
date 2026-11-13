@@ -16,7 +16,7 @@ from pathlib import Path
 
 from mozo.workflow import Detections, Workflow, WorkflowError, annotation_line, node
 
-from app import config, db, jobs, media, vision
+from app import config, db, jobs, media, projects, vision
 
 BUILTIN_DIR = config.BASE_DIR / "workflows"
 KIND = "workflow_run"  # job kind
@@ -140,6 +140,17 @@ def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], over
     return run_id, launch(conn, run_id, KIND, params, project_id)
 
 
+def on_project(conn: sqlite3.Connection, project_id: int, filter, count: int | None) -> list[int]:
+    """The images of a project a run takes: those matching `filter` (`count` at random). ValueError
+    if there's no such project or none match."""
+    media_ids = projects.sample(conn, project_id, filter, count)
+    if media_ids is None:
+        raise ValueError(f"There is no project {project_id}")
+    if not media_ids:
+        raise ValueError("No images match that filter")
+    return media_ids
+
+
 def _kept(workflow: Workflow) -> dict[str, str]:
     """The save_to_babasu nodes: node id -> the label its results are kept under."""
     return {step.id: step.parameters.get("label") or step.id
@@ -238,11 +249,13 @@ def _dict(row: sqlite3.Row) -> dict:
     return dict(row) | {"classes": row["classes"] and json.loads(row["classes"]), "annotates": bool(row["annotates"])}
 
 
-def list_all(conn: sqlite3.Connection) -> list[dict]:
-    """Every run, newest first: its name, workflow, project, when, the project classes its prompts
-    stood for (None: other prompts or none) and whether it annotated the project, its job's
-    status, and how many images have results."""
-    return [_dict(r) for r in conn.execute(f"{_RUNS} ORDER BY run.id DESC")]
+def list_all(conn: sqlite3.Connection, workflow_id: str | None = None, limit: int | None = None) -> list[dict]:
+    """Every run (of one workflow if given; the newest `limit`), newest first: its name, workflow,
+    project, when, the project classes its prompts stood for (None: other prompts or none) and
+    whether it annotated the project, its job's status, and how many images have results."""
+    rows = conn.execute(f"{_RUNS} WHERE ? IS NULL OR run.workflow_id = ? ORDER BY run.id DESC LIMIT ?",
+                        (workflow_id, workflow_id, limit or -1))
+    return [_dict(r) for r in rows]
 
 
 def _run(conn: sqlite3.Connection, run_id: int) -> dict | None:

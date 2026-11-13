@@ -169,22 +169,36 @@ def try_(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), a
     return _launch(conn, project_id, annotator, "Try", media_ids, tried, runs.KIND)
 
 
-def results(conn: sqlite3.Connection, run_id: int) -> dict | None:
-    """A run made from a project's class prompts (auto-annotate, Try), with its results as the
-    project's annotations: per image and result label, the image (media id, file name, width,
-    height, thumbnail) and its objects with their scores. None if there's no such run.
-    ValueError if its prompts weren't a project's classes."""
+# Colours for the classes of a run that isn't a project's (its prompts' order), as drawn.
+PALETTE = ["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]
+
+
+def results(conn: sqlite3.Connection, run_id: int, images: int | None = None) -> dict | None:
+    """A run with its results as annotations: per image and result label, the image (media id,
+    file name, width, height, thumbnail) and its objects with their scores; and `legend`, the
+    classes to draw them with (id, name, colour). A run made from a project's classes (auto-
+    annotate, Try) uses them; any other run's classes are its prompts, in order. `images`: only the
+    first that many images' results (the others' masks aren't read). None if there's no such run."""
     run = runs.get(conn, run_id)
     if run is None:
         return None
-    if run["classes"] is None:
-        raise ValueError("The run's prompts weren't a project's classes")
+    if images is not None:
+        first = list(dict.fromkeys(r["media_id"] for r in run["results"]))[:images]
+        run["results"] = [r for r in run["results"] if r["media_id"] in first]
+    detections = [pf.Detections.from_dict(r["result"]["detections"]) for r in run["results"]]
+    project = run["classes"] is not None and run["project_id"] and projects.get(conn, run["project_id"])
+    if run["classes"] is not None:
+        classes = run["classes"]
+        legend = [c for c in project["classes"] if c["id"] in classes] if project else []
+    else:
+        names = {int(d.class_id): d.class_name for found in detections for d in found if d.class_id is not None}
+        classes = list(range(max(names, default=-1) + 1))
+        legend = [{"id": i, "name": names.get(i) or f"class {i}", "color": PALETTE[i % len(PALETTE)]} for i in classes]
     found = [{"media_id": r["media_id"], "filename": r["filename"], "label": r["label"],
               "width": r["result"]["width"], "height": r["result"]["height"], "thumb_url": media.thumb_url(r["sha256"]),
-              "annotations": [a.model_dump(exclude_none=True)
-                              for a in to_annotations(pf.Detections.from_dict(r["result"]["detections"]), run["classes"])]}
-             for r in run["results"]]
-    return run | {"results": found}
+              "annotations": [a.model_dump(exclude_none=True) for a in to_annotations(d, classes)]}
+             for r, d in zip(run["results"], detections, strict=True)]
+    return run | {"results": found, "legend": legend}
 
 
 def latest_try(conn: sqlite3.Connection, project_id: int) -> dict | None:
