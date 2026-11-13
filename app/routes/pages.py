@@ -22,8 +22,29 @@ def _coming(request: Request, title: str):
 
 @router.get("/workflows", response_class=HTMLResponse)
 def workflows(request: Request):
-    """Every workflow: Use opens its Studio page; Edit (the builder) comes later."""
+    """Every workflow: Use opens its Studio page; Edit, the builder."""
     return templates.TemplateResponse(request, "workflows/list.html", {"workflows": runs.workflows()})
+
+
+def _builder(request: Request, workflow_id: str | None, document: dict):
+    return templates.TemplateResponse(request, "workflows/edit.html", {
+        "workflow_id": workflow_id, "document": document, "builtin": workflow_id in runs.BUILTIN})
+
+
+@router.get("/workflows/new", response_class=HTMLResponse)
+def new_workflow(request: Request):
+    """The builder on an empty canvas; saving names the new workflow."""
+    return _builder(request, None, {"name": "", "description": "", "nodes": [], "edges": []})
+
+
+@router.get("/workflows/{workflow_id}/edit", response_class=HTMLResponse)
+def edit_workflow(request: Request, workflow_id: str):
+    """The builder: mozo's editor on the workflow, with our bar (name, Test, Save). A built-in is
+    saved as a copy."""
+    document = runs.document(workflow_id)
+    if document is None:
+        raise HTTPException(404, "No such workflow")
+    return _builder(request, workflow_id, document)
 
 
 @router.get("/studio", response_class=HTMLResponse)

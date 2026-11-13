@@ -74,6 +74,13 @@ def load(id: str) -> Workflow | None:
     return Workflow.load(path) if path else None
 
 
+def document(id: str) -> dict | None:
+    """A workflow's document as its file has it (loaded or not: the builder opens a broken one to
+    fix it); None if there's no such workflow."""
+    path = _files().get(id)
+    return json.loads(path.read_text()) if path else None
+
+
 def detail(id: str, workflow: Workflow) -> dict:
     """A loaded workflow with its graph (mozo's {nodes, edges}), what a run keeps (its
     save_to_babasu labels), which parameters take the prompts, the models it uses (each with its

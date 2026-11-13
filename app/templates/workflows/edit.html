@@ -1,0 +1,27 @@
+{# The workflow builder: mozo's editor (mounted by js/workflow-editor.js) fills the main area;
+   our bar above it names the workflow, tests it on an image and saves it. A built-in is saved as
+   a copy (named "… copy" until renamed); a new workflow or a copy gets its id from its name. #}
+{% extends "base.html" %}
+{% set name = document.name or workflow_id or "" %}
+{% set crumbs = [(name or "New workflow", None)] %}
+
+{% block scripts %}<script type="module" src="{{ url_for('static', path='js/workflow-editor.js') }}"></script>{% endblock %}
+
+{% block toolbar %}
+  <div class="topbar__left">
+    <input name="name" value="{{ name ~ ' copy' if builtin else name }}" placeholder="Workflow name" aria-label="Workflow name" data-about>
+    <input name="description" value="{{ document.description or '' }}" placeholder="What it does" aria-label="Description" data-about>
+  </div>
+  <div class="topbar__right">
+    <span class="muted" data-unsaved hidden>Unsaved changes</span>
+    <input type="file" accept="image/*" hidden data-test-file>
+    <button class="topbar__button" type="button" data-test-choose title="The image Test runs on">{{ icon("photo") }}<span>Choose image</span></button>
+    <button class="topbar__button" type="button" data-test title="Run the workflow on the image: every node's output shows on the canvas">{{ icon("play") }}Test</button>
+    <button class="button" type="button" data-save>{{ "Save as copy" if builtin else "Save" }}</button>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div class="stage editor" data-workflow-editor data-document='{{ document | tojson }}'
+       data-save-to="{{ '/api/workflows/' ~ workflow_id if workflow_id and not builtin else '' }}"></div>
+{% endblock %}

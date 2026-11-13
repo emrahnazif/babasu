@@ -285,7 +285,28 @@ a.card:hover { background: var(--color-accent-bg); }
   background: var(--color-bg);
 }
 
-/* One image as large as the main area allows, whole. */
+/* mozo's workflow editor (the builder), on our tokens. It draws in a shadow root, so ours don't
+   reach inside: its --mz-* tokens, set here on the element it mounts into, do. color-scheme comes
+   from <html> (the theme chosen in Settings), not the OS. */
+.editor {
+  color-scheme: inherit;
+  --mz-color-bg: var(--color-bg);
+  --mz-color-text: var(--color-text);
+  --mz-color-text-muted: var(--color-text-muted);
+  --mz-color-border: var(--color-border);
+  --mz-color-accent-bg: var(--color-accent-bg);
+  --mz-color-destructive: var(--color-destructive);
+  --mz-color-destructive-text: var(--color-destructive-text);
+  --mz-color-highlight: var(--color-highlight);
+  --mz-font-sans: var(--font-sans);
+  --mz-font-mono: var(--font-mono);
+  --mz-radius-md: var(--radius-md);
+  --mz-radius-lg: var(--radius-lg);
+  --mz-shadow-raised: var(--shadow-raised);
+  --mz-shadow-overlay: var(--shadow-overlay);
+}
+
+/* Fills the main area: one image as large as it allows, whole; the workflow builder's editor. */
 .stage {
   height: 100%;
 }
