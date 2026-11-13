@@ -23,6 +23,11 @@
     display var(--duration-slow) allow-discrete, overlay var(--duration-slow) allow-discrete;
 }
 
+/* While it's open, the page behind the dim takes no clicks: a click there only closes it
+   (the dim of a popover lets clicks through, so a link under it would open too). */
+:root:has(.drawer:popover-open) body { pointer-events: none; }
+.drawer { pointer-events: auto; }
+
 .drawer:popover-open {
   display: flex;
   translate: 0 0;
