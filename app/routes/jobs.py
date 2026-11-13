@@ -44,11 +44,13 @@ def job_page(request: Request, job_id: int, conn: DB):
 
 @router.get("/api/jobs")
 def job_list(conn: DB) -> list[dict]:
+    """Recent background jobs, newest first: title, project, status, progress, summary."""
     return jobs.list_recent(conn)
 
 
 @router.get("/api/jobs/{job_id}")
 def job_detail(job_id: int, conn: DB) -> dict:
+    """One job: status, progress, result, error, when it started and finished."""
     return _get(conn, job_id)
 
 

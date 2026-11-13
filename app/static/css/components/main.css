@@ -447,3 +447,38 @@ a.card:hover { background: var(--color-accent-bg); }
   margin-top: var(--space-2);
   font-size: var(--text-sm);
 }
+
+/* A number to notice (<strong>) with what it counts under it; "stats" is a row of them. Drawn
+   by a view's ui.stat / ui.stats. */
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: var(--space-6);
+}
+
+.stat { display: grid; gap: var(--space-1); }
+.stat > strong { font-size: var(--text-lg); font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
+.stat > span { font-size: var(--text-sm); }
+
+/* A chart drawn as SVG by a view's ui.bar / ui.line / ui.histogram, in the app's colours. */
+.chart {
+  display: block;
+  width: 100%;
+  max-width: 40rem;
+  height: auto;
+  margin-top: var(--space-4);
+  font-size: 11px;
+  fill: var(--color-text-muted);
+}
+
+.chart .chart-bar, .chart .chart-dot { fill: var(--color-highlight); }
+.chart .chart-line { fill: none; stroke: var(--color-highlight); stroke-width: 2; }
+
+/* The same images side by side, a column per result (style="--columns: 2"): ui.compare. */
+.compare {
+  display: grid;
+  grid-template-columns: repeat(var(--columns), minmax(0, 18rem));
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}

@@ -20,6 +20,18 @@ h1 { font-size: var(--text-lg); }
 
 h1 + p { margin-top: var(--space-1); }
 
+/* Parts of a page: each <section> (its <h2> on top) spaced from what's above; <hr> between parts. */
+section { margin-top: var(--space-8); }
+section > h2 { margin-bottom: var(--space-2); }
+
+hr {
+  margin-top: var(--space-8);
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+hr + section { margin-top: var(--space-6); }
+
 code,
 pre {
   font-family: var(--font-mono);

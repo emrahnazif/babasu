@@ -1,0 +1,27 @@
+{# /components: the components a view is built from (app/view_components.py): each with how to call it and
+   its example, rendered as a view renders it. The agent reads the same as text (get_components). #}
+{% extends "base.html" %}
+{% set crumbs = [("Views", "/views"), ("Components", None)] %}
+{% block content %}
+  <h1>Components</h1>
+  <p class="muted">What a view (a page an agent writes) is built from. Data components are called on <code>ui</code> in its template.</p>
+  <section>
+    <h2>Layout and text</h2>
+    <pre>{{ layout }}</pre>
+  </section>
+  {% for name, call, about, example, rendered in examples %}
+    <hr>
+    <section>
+      <h2>{{ name }}</h2>
+      <p><code>{{ call }}</code></p>
+      <p class="muted">{{ about }}</p>
+      <div class="view">{{ rendered }}</div>
+      <details><summary class="muted">Template</summary><pre>{{ example }}</pre></details>
+    </section>
+  {% endfor %}
+  <hr>
+  <section>
+    <h2>Filters</h2>
+    <ul>{% for call, about in filters %}<li><code>{{ call }}</code>: {{ about }}</li>{% endfor %}</ul>
+  </section>
+{% endblock %}

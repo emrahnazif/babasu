@@ -340,6 +340,7 @@ def import_images(project_id: int, request: Annotated[ImageImport, Form()], conn
 
 @router.get("/api/projects")
 def api_project_list(conn: DB) -> list[dict]:
+    """Every project: id, name, type, image counts, how many are labelled, classes, covers."""
     return projects.list_all(conn)
 
 

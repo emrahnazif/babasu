@@ -8,13 +8,14 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app import agent, config, db, jobs, vision
+from app import agent, config, db, jobs, views, vision
 from app.filters import FilterError
 from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
 from app.routes import jobs as jobs_routes
 from app.routes import pages, projects, settings
 from app.routes import runs as runs_routes
+from app.routes import views as views_routes
 from app.routes import vision as vision_routes
 
 
@@ -43,7 +44,10 @@ app.include_router(agent_routes.router)
 app.include_router(agents_routes.router)
 app.include_router(vision_routes.router)
 app.include_router(runs_routes.router)
+app.include_router(views_routes.router)
 app.add_exception_handler(FilterError, projects.filter_error)
+app.add_exception_handler(views.ViewError, views_routes.view_error)
+views.setup(app)
 
 
 def start_server() -> tuple[uvicorn.Server, threading.Thread, str]:

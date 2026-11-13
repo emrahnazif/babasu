@@ -1,0 +1,17 @@
+{# A view the agent wrote, rendered in the sandbox (app/views.py), in the main area. Its own
+   styles should stay inside .view. An older version shows which one it is. #}
+{% extends "base.html" %}
+{% set crumbs = crumbs | default([("Views", "/views"), (view.title, None)]) %}
+{% block content %}
+  {% if view.id and view.shown != view.version %}
+    <p class="muted">Version {{ view.shown }} of {{ view.version }}. <a href="/views/{{ view.id }}">Show the newest</a></p>
+  {% endif %}
+  {% if view.answers is not none %}
+    <p class="muted">A report: the data as it was when this version was written.</p>
+  {% endif %}
+  {% if error %}
+    <p class="error">This view can't be shown: {{ error }}</p>
+  {% else %}
+    <div class="view">{{ body }}</div>
+  {% endif %}
+{% endblock %}
