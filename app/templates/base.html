@@ -2,8 +2,9 @@
 {# A page whose sidebar is its own menu (e.g. settings) sets sidebar_collapsible = false. #}
 {% set collapsible = sidebar_collapsible | default(true) %}
 {% set collapsed = collapsible and s.sidebar_collapsed %}
-{# The app section this page is in (config.NAV), and the page's breadcrumb below it. #}
-{% set here = section_of(request.url.path) %}
+{# The navigation item this page is in (templating.nav), and the page's breadcrumb below it. #}
+{% set groups = nav() %}
+{% set here = section_of(request.url.path, groups) %}
 {% set trail = crumbs | default([]) %}
 <!doctype html>
 <html lang="en" data-theme="{{ s.theme }}">
@@ -73,7 +74,7 @@
           {% endfor %}
         </nav>
         <div id="sections" class="menu" popover>
-          {% for group in nav %}
+          {% for group in groups %}
             {% if not loop.first %}<div class="menu__separator"></div>{% endif %}
             {% for item in group %}
               <a class="menu__item" href="{{ item.href }}"{% if item == here %} aria-current="page"{% endif %}><span class="menu__check">{{ icon("check") }}</span>{{ item.label }}</a>

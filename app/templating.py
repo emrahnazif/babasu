@@ -42,9 +42,16 @@ def under(path: str, href: str) -> bool:
     return path == href or path.startswith(href + "/")
 
 
-def section_of(path: str) -> dict | None:
-    """The app section (config.NAV) a path is in, if any."""
-    return next((item for group in config.NAV for item in group if under(path, item["href"])), None)
+def nav() -> list[list[dict]]:
+    """The navigation: the app's sections (config.NAV), then Views and the links added to it."""
+    return config.NAV + [[{"label": "Views", "href": "/views"}] + settings.nav()]
+
+
+def section_of(path: str, groups: list[list[dict]]) -> dict | None:
+    """The navigation item (of nav()'s groups) a path is in, if any: the one whose link is the
+    longest match."""
+    found = [item for group in groups for item in group if under(path, item["href"])]
+    return max(found, key=lambda item: len(item["href"]), default=None)
 
 
 def page_name(title: str) -> str:
@@ -130,7 +137,7 @@ templates.env.filters["period"] = period
 templates.env.filters["filesize"] = filesize
 templates.env.filters["plural"] = plural
 templates.env.globals["app_name"] = config.APP_NAME
-templates.env.globals["nav"] = config.NAV
+templates.env.globals["nav"] = nav
 templates.env.globals["section_of"] = section_of
 templates.env.globals["under"] = under
 templates.env.globals["query"] = query

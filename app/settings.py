@@ -7,9 +7,10 @@ instructions (later also the tools it may use). Several agents can share one mod
 """
 
 import re
+from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 
 from app import config
 
@@ -45,6 +46,19 @@ class Agent(BaseModel):
     instructions: Text = ""  # its role and rules; app/agent.py adds what babasu is
 
 
+def _local(href: str) -> str:
+    if not href.startswith("/") or href.startswith("//"):
+        raise ValueError("a link in the app: a path starting with /, e.g. /views/model-comparison")
+    return href
+
+
+class NavItem(BaseModel):
+    """A link added to the navigation (by the agent, e.g. to a view it built)."""
+
+    label: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    href: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500), AfterValidator(_local)]
+
+
 class Settings(BaseModel):
     theme: Theme = "system"
     # Set by dragging the sidebar border and the collapse button, not by the Settings form.
@@ -56,6 +70,8 @@ class Settings(BaseModel):
     # The chat open in the sidebar (None: a new chat, started by its first message). Set by the
     # chat (New chat, history), not by the Settings form.
     conversation: int | None = None
+    # Links added to the navigation, after the app's own sections (config.NAV).
+    nav: list[NavItem] = Field([], max_length=30)
 
     @model_validator(mode="before")
     @classmethod
@@ -95,11 +111,16 @@ def get() -> Settings:
     return Settings()
 
 
+def write_file(path: Path, text: str) -> None:
+    """Write a file whole: a temporary file, then renamed over it, so it's never half-written."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
+
+
 def save(settings: Settings) -> None:
-    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = SETTINGS_FILE.with_suffix(".tmp")
-    tmp.write_text(settings.model_dump_json(indent=2))
-    tmp.replace(SETTINGS_FILE)  # atomic: never leaves a half-written file
+    write_file(SETTINGS_FILE, settings.model_dump_json(indent=2))
 
 
 def update(**changes) -> Settings:
@@ -107,6 +128,24 @@ def update(**changes) -> Settings:
     updated = Settings.model_validate(get().model_dump() | changes)
     save(updated)
     return updated
+
+
+def nav() -> list[dict]:
+    """The links added to the navigation: label, href."""
+    return [item.model_dump() for item in get().nav]
+
+
+def set_nav(items: list[dict]) -> list[dict]:
+    """Replace the added links (each checked; ValidationError refuses them all) and return them."""
+    return [item.model_dump() for item in update(nav=items).nav]
+
+
+def remove_nav(href: str) -> list[dict]:
+    return set_nav([item for item in nav() if item["href"] != href])
+
+
+# What slug() makes, and what an id in a URL may be (a view's, a saved workflow's).
+SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 
 
 def slug(name: str, taken: set[str]) -> str:
