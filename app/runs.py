@@ -59,8 +59,12 @@ def workflows() -> list[dict]:
         except WorkflowError as e:
             out.append(_entry(id) | {"error": str(e)})
             continue
-        out.append(_entry(id, workflow) | {"models": [use._asdict() for use in workflow.check(device=config.DEVICE).models]})
+        out.append(_listed(id, workflow))
     return out
+
+
+def _listed(id: str, workflow: Workflow) -> dict:
+    return _entry(id, workflow) | {"models": [use._asdict() for use in workflow.check(device=config.DEVICE).models]}
 
 
 def load(id: str) -> Workflow | None:
@@ -115,7 +119,16 @@ def save_workflow(workflow_id: str, document: dict) -> dict:
     if not _kept(workflow):
         raise ValueError("Nothing reaches a save_to_babasu node, so a run would keep nothing")
     settings.write_file(config.WORKFLOWS_DIR / f"{workflow_id}.json", json.dumps(workflow.to_dict(), indent=2, ensure_ascii=False))
-    return next(w for w in workflows() if w["id"] == workflow_id)
+    return _listed(workflow_id, workflow)
+
+
+def create_workflow(document: dict) -> dict:
+    """Save a new workflow (as save_workflow does), its id made from its name, unique: a workflow
+    made in the builder, or a copy of one. ValueError as save_workflow, or if it has no name."""
+    name = (document.get("name") or "").strip()
+    if not name:
+        raise ValueError("A new workflow needs a name")
+    return save_workflow(settings.slug(name, set(_files())), document)
 
 
 def delete_workflow(workflow_id: str) -> bool:

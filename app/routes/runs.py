@@ -32,6 +32,16 @@ def api_workflow(workflow_id: str) -> dict:
     return runs.detail(workflow_id, workflow)
 
 
+@router.post("/workflows", status_code=201)
+def api_create_workflow(document: dict[str, Any]) -> dict:
+    """Saves a new workflow document, its id made from its name (unique), and returns it as the
+    list shows it. 422 with why if it has no name, doesn't load or keeps nothing."""
+    try:
+        return runs.create_workflow(document)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+
+
 @router.post("/workflows/check")
 def api_check_workflow(document: dict[str, Any]) -> dict:
     """Checks a workflow document without saving it: what a run keeps, which parameters take the
