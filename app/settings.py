@@ -26,7 +26,7 @@ SIDEBAR_MAX_WIDTH = 600
 # The instructions of the Assistant agent made from the earlier single-model setting.
 ASSISTANT_INSTRUCTIONS = (
     "Answer from the app's real data: use the tools to look things up instead of guessing. "
-    "If a tool fails, say so plainly. Keep answers short and concrete."
+    "If a tool fails, say so plainly. Be concrete."
 )
 
 
