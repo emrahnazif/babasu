@@ -26,11 +26,11 @@ from app import config
 
 @cache
 def _annotated():
-    """The app's own macro for an image with its annotations (projects/macros.html), the one its
-    pages use. It needs only Jinja's built-in filters; templating's environment would import the
-    agent, which imports views, which imports this."""
+    """The app's own macro for an image with its annotations (projects/annotated.html), the one its
+    pages use. Its file needs only Jinja's built-in filters; templating's environment would import
+    the agent, which imports views, which imports this."""
     env = Environment(loader=FileSystemLoader(config.TEMPLATES_DIR), autoescape=True, auto_reload=False)
-    return env.get_template("projects/macros.html").module.annotated
+    return env.get_template("projects/annotated.html").module.annotated
 
 
 def _value(row, key: str):

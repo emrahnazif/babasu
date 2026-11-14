@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% from "projects/macros.html" import annotated, downloads, no_classes %}
+{% from "projects/annotated.html" import annotated %}
+{% from "projects/macros.html" import downloads, no_classes %}
 {% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
 {% set params = {"where": project.filter} %}  {# these links keep the filter #}

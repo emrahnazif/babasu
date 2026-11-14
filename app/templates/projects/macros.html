@@ -8,30 +8,3 @@
       {{ icon("exclamation-triangle") }}Add classes</a>
   {% endif %}
 {% endmacro %}
-
-{# An image with its annotations drawn on it. The image and its annotations share one coordinate
-   system, the original image's pixels; `src` (the image or its thumbnail) is stretched over
-   that same area, so annotations line up on either. When a filter asked for objects
-   (image.matches), the others are drawn faint. #}
-{% macro annotated(image, classes, src) %}
-  <svg viewBox="0 0 {{ image.width }} {{ image.height }}" role="img" aria-label="{{ image.filename }}">
-    <image href="{{ src }}" width="{{ image.width }}" height="{{ image.height }}"/>
-    {% set keypoint_r = ([image.width, image.height] | max / 80) | round(1) %}
-    {% for a in image.annotations %}
-      {% set color = (classes | selectattr("id", "equalto", a.class_id) | first).color %}
-      {% if image.matches is defined and loop.index0 not in image.matches %}<g opacity="0.25">{% else %}<g>{% endif %}
-      {# An object with a polygon shows the polygon; its box would only repeat the outline. #}
-      {% if a.segments %}
-        <polygon points="{% for x, y in a.segments %}{{ x }},{{ y }} {% endfor %}"
-                 fill="{{ color }}" fill-opacity="0.2" stroke="{{ color }}" stroke-width="2" vector-effect="non-scaling-stroke"/>
-      {% elif a.bbox %}
-        <rect x="{{ a.bbox[0] }}" y="{{ a.bbox[1] }}" width="{{ a.bbox[2] }}" height="{{ a.bbox[3] }}"
-              fill="none" stroke="{{ color }}" stroke-width="2" vector-effect="non-scaling-stroke"/>
-      {% endif %}
-      {% for k in a.keypoints %}
-        <circle cx="{{ k.point[0] }}" cy="{{ k.point[1] }}" r="{{ keypoint_r }}" fill="{{ color }}"/>
-      {% endfor %}
-      </g>
-    {% endfor %}
-  </svg>
-{% endmacro %}
