@@ -167,13 +167,11 @@ def api_rename_run(run_id: int, changes: RunChanges, conn: DB) -> None:
 def api_delete_run(run_id: int, conn: DB) -> None:
     """Deletes the run and its results, and the images no project or run uses any more; 409 while its job runs."""
     try:
-        unused = runs.delete(conn, run_id)
+        found = runs.delete(conn, run_id)
     except ValueError as e:
         raise HTTPException(409, str(e)) from None
-    if unused is None:
+    if not found:
         raise HTTPException(404, "Run not found")
-    for path in unused:
-        path.unlink(missing_ok=True)
 
 
 @router.get("/runs/{run_id}/annotations")

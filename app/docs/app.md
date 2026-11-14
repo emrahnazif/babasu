@@ -11,6 +11,7 @@ babasu is a local computer vision app: everything runs on the person's computer,
 - Views: pages written by an agent, from reports to a workflow's Studio page (see views).
 - Vision models: downloaded, loaded and unloaded on the Models page (see models).
 - Background jobs for everything long (see jobs).
+- History: everything done in the last 30 days (by the person, you and jobs), each request, job or agent turn undoable as one, deleted files included.
 
 ## What comes later (not there yet)
 Training models (mayaku), evaluation, exporting models, COCO import and export of annotations, classification projects, a review queue for model-made objects, video, versions as their own feature, and searching images by what's in them. Asked for one of these, say it isn't in the app yet.
@@ -20,5 +21,5 @@ Training models (mayaku), evaluation, exporting models, COCO import and export o
 - /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, auto-annotator, classes), Duplicate and Delete.
 - /projects/ID/images/IMAGE_ID: one image in the editor, with its objects and the click tool; stepping to the previous and next image.
 - /workflows: every workflow. /workflows/ID/edit: the builder. /studio/ID: a workflow's Studio page.
-- /models: vision models. /jobs/ID: a job and its log. /views/ID: a view.
+- /models: vision models. /jobs/ID: a job and its log. /views/ID: a view. /history: what was done in the last 30 days, with Undo.
 - /settings/general, /settings/models, /settings/agents: the theme, and the language models and agents (you) run on.

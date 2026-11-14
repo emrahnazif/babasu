@@ -16,7 +16,7 @@ from pathlib import Path
 
 from mozo.workflow import Detections, Workflow, WorkflowError, annotation_line, node
 
-from app import config, db, jobs, media, projects, settings, vision
+from app import config, db, history, jobs, media, projects, settings, vision
 
 BUILTIN_DIR = config.BASE_DIR / "workflows"
 KIND = "workflow_run"  # job kind
@@ -144,7 +144,8 @@ def delete_workflow(workflow_id: str) -> bool:
     path = _files().get(workflow_id)
     if workflow_id in BUILTIN or path is None:
         return False
-    path.unlink()
+    with closing(db.connect()) as conn, conn:
+        history.trash(conn, path)
     return True
 
 
@@ -394,16 +395,16 @@ def rename(conn: sqlite3.Connection, run_id: int, name: str) -> bool:
         return conn.execute("UPDATE run SET name = ? WHERE id = ?", (name, run_id)).rowcount > 0
 
 
-def delete(conn: sqlite3.Connection, run_id: int) -> list[Path] | None:
-    """Delete a run and its results; returns the image files no project or run uses any more, for
-    the caller to delete after this commits. None if there's no such run. ValueError while its job
-    is queued or running."""
+def delete(conn: sqlite3.Connection, run_id: int) -> bool:
+    """Delete a run and its results, and the images no project or run uses any more; False if
+    there's no such run. ValueError while its job is queued or running."""
     row = _run(conn, run_id)
     if row is None:
-        return None
+        return False
     if row["status"] in jobs.ACTIVE:
         raise ValueError("The run's job is still going; cancel it first")
     with conn:
         used = [r[0] for r in conn.execute("SELECT DISTINCT media_id FROM run_result WHERE run_id = ?", (run_id,))]
         conn.execute("DELETE FROM run WHERE id = ?", (run_id,))
-        return media.remove_unused(conn, used)
+        media.remove_unused(conn, used)
+    return True

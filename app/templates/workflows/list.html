@@ -26,7 +26,7 @@
               <div id="delete-{{ w.id }}" class="dialog" popover role="alertdialog" aria-labelledby="delete-{{ w.id }}-title">
                 <form method="post" action="/workflows/{{ w.id }}/delete">
                   <h2 id="delete-{{ w.id }}-title">Delete {{ w.name }}?</h2>
-                  <p class="muted">Runs made with it keep their results and their own copy of it. This can't be undone.</p>
+                  <p class="muted">Runs made with it keep their results and their own copy of it. History can undo it for 30 days.</p>
                   <div class="actions">
                     <button class="button secondary" type="button" popovertarget="delete-{{ w.id }}" popovertargetaction="hide" autofocus>Cancel</button>
                     <button class="button destructive" type="submit">Delete</button>

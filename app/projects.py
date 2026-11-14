@@ -492,8 +492,8 @@ def deletion(conn: sqlite3.Connection, project_id: int) -> dict:
 
 def delete(conn: sqlite3.Connection, project_id: int) -> list[int]:
     """Delete a project, its rows of images and its runs (with their results), and return the ids
-    of the media they used (the files are another matter: media.remove_unused). The run rows go
-    here, not through runs.delete (its own transaction and file cleanup). Its versions stay: if
+    of the media they used (for media.remove_unused). The run rows go
+    here, not through runs.delete (its own transaction). Its versions stay: if
     it's an original, its oldest version becomes the original. Caller commits.
 
     Raises ValueError while one of its jobs is queued or running."""
@@ -516,12 +516,10 @@ def delete(conn: sqlite3.Connection, project_id: int) -> list[int]:
 
 
 def remove(conn: sqlite3.Connection, project_id: int) -> None:
-    """Delete the project as delete() does and commit, then the image files nothing uses any more.
+    """Delete the project as delete() does, and the images nothing uses any more, and commit.
     Raises ValueError as delete()."""
     with conn:
-        unused = media.remove_unused(conn, delete(conn, project_id))
-    for path in unused:
-        path.unlink(missing_ok=True)
+        media.remove_unused(conn, delete(conn, project_id))
 
 
 def add_image(

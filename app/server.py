@@ -9,10 +9,11 @@ from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from mozo.workflow.api import workflow_router
 
-from app import agent, config, db, jobs, views, vision
+from app import agent, config, db, history, jobs, views, vision
 from app.filters import FilterError
 from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
+from app.routes import history as history_routes
 from app.routes import jobs as jobs_routes
 from app.routes import pages, projects, settings
 from app.routes import runs as runs_routes
@@ -31,10 +32,24 @@ class AppFiles(StaticFiles):
         return response
 
 
+class Actions:
+    """Each request is one action in the history: what it writes is undone together (db.action)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        with db.action("request", f"{scope['method']} {scope['path']}"):
+            await self.app(scope, receive, send)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Owns startup and shutdown of everything long-lived (database schema, job workers, loaded models)."""
     db.migrate()
+    history.purge()
     vision.setup()
     agent.recover()
     jobs.run_workers()
@@ -45,6 +60,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=config.APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app.add_middleware(Actions)
 app.mount("/static", AppFiles(directory=config.STATIC_DIR), name="static")
 # check_dir=False: the folder appears with the first stored file.
 app.mount("/media", StaticFiles(directory=config.MEDIA_DIR, check_dir=False), name="media")
@@ -57,6 +73,7 @@ app.include_router(agents_routes.router)
 app.include_router(vision_routes.router)
 app.include_router(runs_routes.router)
 app.include_router(views_routes.router)
+app.include_router(history_routes.router)
 # mozo's workflow editor and the routes it calls (the builder's canvas, /mozo/workflow): its Test
 # loads models through ours, and whole runs are our jobs, so it offers no Run of its own.
 app.include_router(workflow_router(models=vision.load, process=False), prefix="/mozo")

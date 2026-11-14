@@ -21,7 +21,7 @@ NAV = [
         {"label": "Studio", "href": "/studio"},
         {"label": "Models", "href": "/models"},
     ],
-    [{"label": "Data lake", "href": "/data-lake"}],
+    [{"label": "Data lake", "href": "/data-lake"}, {"label": "History", "href": "/history"}],
 ]
 
 # Works in dev and in PyInstaller builds (bundled modules get __file__ under _MEIPASS).
@@ -41,6 +41,7 @@ MEDIA_DIR = DATA_DIR / "media"
 WEIGHTS_DIR = DATA_DIR / "weights"  # model weights mozo downloads
 WORKFLOWS_DIR = DATA_DIR / "workflows"  # workflows the user saved (<id>.json)
 VIEWS_DIR = DATA_DIR / "views"  # pages the agent wrote (<id>/view.json, <id>/<version>.html)
+TRASH_DIR = DATA_DIR / "trash"  # deleted views and workflows, for 30 days (<action id>/<their path>)
 
 # The device vision models run on, one default per platform: Apple silicon, else an NVIDIA GPU.
 DEVICE = "mps" if sys.platform == "darwin" else "cuda"

@@ -18,7 +18,6 @@ report exists (the view_media table), so the media cleanup keeps them.
 import html
 import json
 import re
-import shutil
 import traceback
 from contextlib import closing
 from datetime import UTC, datetime
@@ -33,6 +32,7 @@ from jinja2.sandbox import SandboxedEnvironment
 from markupsafe import Markup
 
 from app import config, db, media, settings, view_components
+from app.history import trash  # views.history() is a view's versions
 
 Kind = Literal["report", "studio"]
 TEMPLATE_NAME = "<template>"  # what Jinja calls a template made from a string, in its tracebacks
@@ -177,11 +177,9 @@ def delete(view_id: str) -> bool:
     folder = _dir(view_id)
     if not _versions(folder):
         return False
-    shutil.rmtree(folder)
     with closing(db.connect()) as conn, conn:
-        unused = media.release(conn, view_id)
-    for path in unused:
-        path.unlink(missing_ok=True)
+        media.release(conn, view_id)
+        trash(conn, folder)
     return True
 
 

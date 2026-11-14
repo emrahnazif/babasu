@@ -356,7 +356,9 @@ def _end_failed_waits(conn: sqlite3.Connection) -> None:
 
 
 def _run(job: sqlite3.Row) -> None:
-    with closing(db.connect()) as conn, (LOG_DIR / f"{job['id']}.log").open("a", encoding="utf-8") as log:
+    """Run a job as one action in the history: what it wrote is undone together."""
+    with (closing(db.connect()) as conn, db.action("job", _label(job["id"], job["kind"])),
+          (LOG_DIR / f"{job['id']}.log").open("a", encoding="utf-8") as log):
         ctx = Context(conn, job["id"], log)
         result, error = None, None
         try:

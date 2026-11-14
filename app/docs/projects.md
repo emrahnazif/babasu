@@ -23,4 +23,4 @@ A new project with the same description, type, annotator, classes (removed ones 
 A frozen project never changes; to change it, duplicate it. (Freezing comes with training.)
 
 ## Deleting
-Deleting a project removes its images (from it), their annotations and its runs, and the image files no other project or run uses. It can't be undone. It's refused while one of its jobs is queued or running: cancel them first.
+Deleting a project removes its images (from it), their annotations and its runs, and the image files no other project or run uses. It can be undone for 30 days (see app: History). It's refused while one of its jobs is queued or running: cancel them first.

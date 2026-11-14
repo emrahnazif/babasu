@@ -89,7 +89,7 @@
 
     <section>
       <h2>Delete project</h2>
-      <p class="muted">Removes its images, their annotations and its runs. This can't be undone.</p>
+      <p class="muted">Removes its images, their annotations and its runs. History can undo it for 30 days.</p>
       {% if deletion.jobs %}<p class="error">{{ deletion.jobs | plural("job") }} of this project {{ "is" if deletion.jobs == 1 else "are" }} queued or running: cancel {{ "it" if deletion.jobs == 1 else "them" }} in Jobs first.</p>{% endif %}
       <div class="actions">
         <button class="button destructive" type="button" popovertarget="delete-project"{% if deletion.jobs %} disabled{% endif %}>Delete project…</button>
@@ -106,7 +106,7 @@
             <li>{{ deletion.runs | plural("run") }} (auto-annotate, Try and workflow runs on its images) and their results</li>
             <li>the image files no other project, run or report uses, from the workspace</li>
           </ul>
-          <p class="muted">This can't be undone.</p>
+          <p class="muted">History can undo it for 30 days.</p>
         </div>
         <div class="actions">
           <button class="button secondary" type="button" popovertarget="delete-project" popovertargetaction="hide" autofocus>Cancel</button>

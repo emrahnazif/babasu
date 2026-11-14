@@ -91,27 +91,24 @@ def keep(conn: sqlite3.Connection, view_id: str, media_ids: set[int]) -> None:
                  "WHERE id IN (SELECT value FROM json_each(?))", (view_id, json.dumps(sorted(media_ids))))
 
 
-def release(conn: sqlite3.Connection, view_id: str) -> list[Path]:
-    """A report no longer uses its media: the files nothing else uses, for the caller to delete
-    after this commits (remove_unused)."""
+def release(conn: sqlite3.Connection, view_id: str) -> None:
+    """A report no longer uses its media (remove_unused). Caller commits."""
     used = [r[0] for r in conn.execute("DELETE FROM view_media WHERE view_id = ? RETURNING media_id", (view_id,))]
-    return remove_unused(conn, used)
+    remove_unused(conn, used)
 
 
-def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> list[Path]:
-    """Of these media, delete the rows no project, run or report uses any more, and return their files
-    (with thumbnails). The caller commits first, then deletes the files, so a failed commit never
-    loses a file that's still in use."""
+def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> None:
+    """Of these media, delete the rows no project, run or report uses any more. Caller commits.
+    Their files stay while the history can put the rows back; history.purge removes them after."""
     if not media_ids:
-        return []
-    rows = conn.execute(
+        return
+    conn.execute(
         """DELETE FROM media WHERE id IN (SELECT value FROM json_each(?))
            AND NOT EXISTS (SELECT 1 FROM project_media WHERE media_id = media.id)
            AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id)
-           AND NOT EXISTS (SELECT 1 FROM view_media WHERE media_id = media.id) RETURNING sha256, ext""",
+           AND NOT EXISTS (SELECT 1 FROM view_media WHERE media_id = media.id)""",
         (json.dumps(media_ids),),
-    ).fetchall()
-    return [path(sha, ext) for sha, ext in rows] + [path(sha, "thumb.webp") for sha, _ in rows]
+    )
 
 
 def _thumbnail(image: Image.Image) -> bytes:

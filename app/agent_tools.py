@@ -1,8 +1,8 @@
 """Tools the agent can call: babasu's own functions, the same ones the UI and the API use.
 
 Each tool's arguments are a pydantic model, so the JSON schema the model sees is generated, never
-written by hand. Tools that change things (downloading, loading models) don't ask for
-confirmation yet; some may later (product.md "The agent").
+written by hand. Tools that change things don't ask for confirmation: what they change in the
+database, and the views and workflows they delete, can be undone for 30 days (app/history.py).
 A tool registered with opens=True returns {"open": "/a/page", …}: that page is shown to the person
 once the reply is done (app/agent.py, run_turn); after a tool that `writes`, the page they're on
 reloads then instead (unless one opens). What tools return carries each thing's page, so the agent
@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app import (
     annotators,
     config,
+    history,
     jobs,
     projects,
     runs,
@@ -80,6 +81,10 @@ class StatsArgs(FilterArgs):
     )
 
 
+class UndoArgs(Args):
+    action_id: str = Field(description="The action's id, from read_api /api/history.")
+
+
 class JobArgs(Args):
     job_id: int = Field(description="The job's id, from list_jobs.")
 
@@ -113,11 +118,6 @@ class UpdateProjectArgs(ProjectArgs):
 
 class DuplicateArgs(ProjectArgs):
     name: projects.Name | None = Field(None, description='The copy\'s name; empty: "<its name> copy".')
-
-
-class DeleteArgs(ProjectArgs):
-    confirmed: bool = Field(False, description="True only once the person has said yes to deleting it; without it, "
-                            "you get what deleting it would remove, to tell them and ask.")
 
 
 class AutoAnnotateArgs(FilterArgs):
@@ -565,13 +565,10 @@ def duplicate_project(conn: sqlite3.Connection, args: DuplicateArgs) -> dict:
     return {"id": new_id, "open": f"/projects/{new_id}"}
 
 
-@tool("Delete a project with its images, their annotations and its runs; it can't be undone. Call it first without "
-      "confirmed: you get what it would remove. Tell the person, and call it again with confirmed only after they "
-      "say yes.", DeleteArgs, opens=True)
-def delete_project(conn: sqlite3.Connection, args: DeleteArgs) -> dict:
+@tool("Delete a project with its images, their annotations and its runs (undo brings it all back).", ProjectArgs,
+      opens=True)
+def delete_project(conn: sqlite3.Connection, args: ProjectArgs) -> dict:
     project = _project(conn, args.project_id)
-    if not args.confirmed:
-        return {"would_remove": projects.deletion(conn, args.project_id), "next": "ask the person to confirm"}
     try:
         projects.remove(conn, args.project_id)
     except ValueError as e:
@@ -621,6 +618,16 @@ def wait_for_job(conn: sqlite3.Connection, args: WaitArgs) -> dict:
     while (job := get_job(conn, args)) and job["status"] in jobs.ACTIVE and time.monotonic() < deadline:
         time.sleep(1)
     return job
+
+
+@tool("Undo an action: what one request, job or agent turn changed goes back as it was, deleted files included "
+      "(read_api /api/history lists the last 30 days, newest first; your turns are labelled with the person's "
+      "message). Undoing an undo does it again.", UndoArgs, writes=True)
+def undo(conn: sqlite3.Connection, args: UndoArgs) -> dict:
+    try:
+        return history.undo(conn, args.action_id)
+    except (LookupError, history.Refused) as e:
+        raise ToolError(str(e)) from None
 
 
 # --- Views ---

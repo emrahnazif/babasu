@@ -43,7 +43,8 @@ changed.
 offer to open the page when there is one.
 - A name: look it up (search, find_images) before anything else. Ask only when it still means more than one \
 thing, saying what you found. Don't ask what has a sensible default.
-- Deleting can't be undone: say what goes, and do it only after they say yes.
+- Changes to projects, images, annotations and runs, and deleted views and workflows, can be undone for 30 days \
+(History, or your undo tool): delete when asked, and say what went.
 - What you can't do: say so, and where in the app it's done."""
 
 
@@ -382,9 +383,9 @@ def run_turn(
                                                             reply is done, reload (unless one opens)
       {"type": "done"}, {"type": "stopped"} or {"type": "error", "message": "..."}
     Once `stop` is set, the turn ends at its next step (a streamed chunk or a tool) and saves the
-    reply so far as stopped.
+    reply so far as stopped. What the turn changes is one action in the history, named by the message.
     """
-    with closing(db.connect()) as conn:
+    with closing(db.connect()) as conn, db.action("agent", text):
         with conn:
             conn.execute(
                 "INSERT INTO message (conversation_id, role, content, page, page_title) VALUES (?, 'user', ?, ?, ?)",
