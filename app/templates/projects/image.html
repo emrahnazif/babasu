@@ -60,12 +60,13 @@
          and turns it off and on. The models' list is refreshed when a job ends or the tool changes. #}
       {% set t = click_tool %}
       <button class="topbar__button" id="click-tool" type="button" popovertarget="click-tool-menu"
-              aria-pressed="{{ t.on | tojson }}" data-in-use="{{ t.in_use or '' }}" title="Click to segment">
+              aria-pressed="{{ t.on | tojson }}" data-in-use="{{ t.in_use or '' }}" data-loaded="{{ t.loaded | tojson }}"
+              title="Click to segment">
         {{ icon("cursor-arrow-rays") }}{{ icon("chevron-up-down") }}</button>
       <div id="click-tool-menu" class="menu" popover>
         <div id="click-models" data-refresh-on="job-ended click-tool-changed">
           {% for m in t.models %}
-            <button class="menu__item" type="button" data-click-model="{{ m.id }}" aria-selected="{{ (m.id == t.model) | tojson }}">
+            <button class="menu__item" type="button" data-click-model="{{ m.id }}" data-name="{{ m.name }}" aria-selected="{{ (m.id == t.model) | tojson }}">
               <span class="menu__check">{{ icon("check") }}</span>{{ m.name }}
               <span class="menu__note">{{ m.license }}{% if m.downloading %} · downloading…{% elif not m.downloaded %} · {{ m.to_download | filesize }}{% endif %}</span>
             </button>
@@ -107,5 +108,8 @@
       <button class="icon-button" type="button" data-accept aria-label="Add" title="Add (Enter)">{{ icon("check") }}</button>
       <button class="icon-button" type="button" data-reject aria-label="Discard" title="Discard (Esc)">{{ icon("x-mark") }}</button>
     </div>
+    {# While the click tool gets ready (js/click-tool.js says what: its model loading, the image
+       being encoded); the image can be looked at and edited meanwhile. #}
+    <div id="click-busy" class="busy" role="status" hidden></div>
   </figure>
 {% endblock %}

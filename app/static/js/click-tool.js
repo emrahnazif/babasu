@@ -13,6 +13,11 @@
 // Off, the pointer sends nothing, and a drag on the image moves the view again (with the tool on,
 // Space + drag does).
 //
+// Getting ready, said over the image (#click-busy): the image is encoded ahead (prepare), then
+// the next one, so → opens a ready image. A model not in memory is loaded by its load job, never
+// by the call: prepare answers 409 with the job, the pill says the model is loading (or waiting
+// for the job ahead of it), and prepare is asked again when a job ends.
+//
 // Only the latest request matters: a new one aborts the one on its way, and the server skips calls
 // a newer one overtook (204).
 import { toast } from "./toast.js";
@@ -38,11 +43,43 @@ export function clickTool(editor, canvas, currentClass) {
 
   let dragging = false; // a box is being drawn
 
-  // This image's encoding, then the next one's, so → opens an image that's ready too.
-  const post = (url) => fetch(url, { method: "POST" });
-  const prepare = () => post(canvas.dataset.prepare)
-    .then((response) => response.ok && canvas.dataset.prepareNext && post(canvas.dataset.prepareNext))
-    .catch(() => {});
+  // --- Getting ready: the model in memory, then this image's encoding, then the next one's ---
+
+  const busy = document.querySelector("#click-busy");
+  const say = (text) => ((busy.textContent = text ?? ""), (busy.hidden = !text));
+  const modelName = () => document.querySelector(`[data-click-model="${button.dataset.inUse}"]`)?.dataset.name ?? "The click model";
+  let loading = false; // its load job is under way: prepare again when a job ends
+  let preparing = null; // AbortController of the prepare on its way: a newer one replaces it
+  const post = (url, signal) => fetch(url, { method: "POST", signal });
+
+  async function prepare() {
+    preparing?.abort();
+    const controller = (preparing = new AbortController());
+    say(button.dataset.loaded === "true" ? "Getting the image ready…" : `Loading ${modelName()}…`);
+    try {
+      const response = await post(canvas.dataset.prepare, controller.signal);
+      const answer = response.status === 409 ? await response.json() : null;
+      if (answer?.loading) {
+        const { model, ahead, started } = answer.loading;
+        loading = true;
+        say(ahead ? `Waiting for ${ahead}, then loading ${model}…` : `Loading ${model}…`);
+        if (started) document.dispatchEvent(new CustomEvent("submitted")); // the jobs list shows it now
+        return;
+      }
+      loading = false;
+      say(null);
+      if (!response.ok) throw new Error(answer?.detail ?? response.statusText);
+      button.dataset.loaded = "true";
+      if (canvas.dataset.prepareNext) post(canvas.dataset.prepareNext).catch(() => {});
+    } catch (error) {
+      if (error.name === "AbortError") return; // a newer prepare took over
+      say(null);
+      toast("Couldn't get the image ready", error.message);
+    } finally {
+      if (preparing === controller) preparing = null;
+    }
+  }
+
   const takeOver = () => editor.setOptions({ panOnEmpty: !on() }); // a drag is a box while it's on
   takeOver();
   if (on()) prepare();
@@ -262,12 +299,15 @@ export function clickTool(editor, canvas, currentClass) {
     const before = on() && button.dataset.inUse;
     button.setAttribute("aria-pressed", String(tool.on));
     button.dataset.inUse = tool.in_use ?? "";
+    button.dataset.loaded = String(tool.loaded);
     toggle.lastChild.textContent = tool.on ? "Turn off" : "Turn on";
     takeOver();
     if (!on()) {
       clearHover();
       if (candidate) finish();
-    } else if (before !== tool.in_use) {
+      loading = false;
+      say(null);
+    } else if (before !== tool.in_use || loading) {
       clearHover();
       prepare();
     }
@@ -295,7 +335,8 @@ export function clickTool(editor, canvas, currentClass) {
     else if (event.target.closest("[data-click-toggle]")) change({ on: !pressed() });
   });
 
-  // A download that ends may bring the chosen model in.
+  // A job that ends may bring the chosen model in (a download), load it, or free the gpu lane for
+  // its load: show the tool again, which prepares again while it's loading.
   document.addEventListener("job-ended", async () => {
     try {
       show(await (await fetch("/api/click-tool")).json());

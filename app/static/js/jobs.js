@@ -4,8 +4,9 @@
 // (partials/jobs.html); this file fetches it again and applies the changes.
 //
 // For other parts of the page: a "job-ended" event fires on document when a job ends (detail:
-// the job's data-* values, e.g. projectId), and a "submitted" form (js/background-form.js) makes
-// the list refresh at once, so a job it started shows up with its "Started" toast.
+// the job's data-* values, e.g. projectId), and a "submitted" event (a form, js/background-form.js,
+// or anything else that started a job, e.g. the click tool's model load) makes the list refresh at
+// once, so the job shows up with its "Started" toast.
 import { toast } from "./toast.js";
 
 const panel = document.querySelector("#jobs-panel");
@@ -110,7 +111,7 @@ if (panel) {
     refresh();
   });
 
-  // A form that may have started a job (js/background-form.js): look now, not at the next tick.
+  // Something that may have started a job (a form, the click tool): look now, not at the next tick.
   document.addEventListener("submitted", refresh);
 
   // No polling while the window is hidden; catch up as soon as it's visible again.

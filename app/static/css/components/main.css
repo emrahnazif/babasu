@@ -308,6 +308,7 @@ a.card:hover { background: var(--color-accent-bg); }
 
 /* Fills the main area: one image as large as it allows, whole; the workflow builder's editor. */
 .stage {
+  position: relative;
   height: 100%;
 }
 
@@ -330,6 +331,42 @@ a.card:hover { background: var(--color-accent-bg); }
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+/* Something under way that the person should know about, in a few words with a turning circle,
+   over the top left corner of what it's in (a positioned container): e.g. a model loading. It
+   doesn't block what's under it. */
+.busy {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+
+.busy::before {
+  content: "";
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: busy-turn 0.8s linear infinite;
+}
+
+.busy[hidden] { display: none; }
+
+@keyframes busy-turn {
+  to { rotate: 1turn; }
 }
 
 /* Placed by a script at a point on screen (style left/top), over everything in the main area:
