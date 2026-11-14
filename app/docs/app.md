@@ -13,6 +13,9 @@ babasu is a local computer vision app: everything runs on the person's computer,
 - Background jobs for everything long (see jobs).
 - History: everything done in the last 30 days (by the person, you and jobs), each request, job or agent turn undoable as one, deleted files included.
 
+## Finding what's in images nobody annotated
+The annotations say only what someone (or auto-annotate) marked. To find things in images that aren't marked ("our images with a person"), look with a model: run a detector workflow over them (POST /api/runs: e.g. grounding-dino with prompts ["person"], on a project's images or any media_ids), wait for its job, then read what it found per image (GET /api/runs/ID/annotations; each found object has a score). Auto-annotate does the same for a project's own classes and keeps what it finds.
+
 ## What comes later (not there yet)
 Training models (mayaku), evaluation, exporting models, COCO import and export of annotations, classification projects, a review queue for model-made objects, video, versions as their own feature, and searching images by what's in them. Asked for one of these, say it isn't in the app yet.
 
