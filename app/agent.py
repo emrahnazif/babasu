@@ -471,6 +471,11 @@ def run_turn(
                     return
 
                 tool_calls = list(calls.values())
+                if not tool_calls and not text_parts:  # e.g. a model that put its tool call in its thinking and stopped
+                    message = f"{model.name} answered nothing (no text, no tool call). Send it again, or try another model."
+                    finish("error", message)
+                    yield {"type": "error", "message": message}
+                    return
                 finish("done", tool_calls=tool_calls)
                 if not tool_calls:
                     yield {"type": "done"}
