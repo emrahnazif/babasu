@@ -518,6 +518,30 @@ def api_image(project_id: int, media_id: int, conn: DB, where: Where = "") -> di
     return _image(conn, project_id, media_id, Filter.parse(where))
 
 
+class ImageAdd(BaseModel):
+    """An image already stored (in another project or a run) to add to this one."""
+
+    model_config = ConfigDict(extra="forbid")
+    media_id: int = Field(description="The image's id, e.g. from GET /api/projects/{id} (its media_id).")
+    filename: str = Field(min_length=1, max_length=500, description="Its file name in this project, e.g. the one it has elsewhere.")
+    annotations: list[projects.Annotation] = Field([], description="Its objects here, with this project's class ids.")
+
+
+@router.post("/api/projects/{project_id}/images", status_code=201)
+def api_add_image(project_id: int, image: ImageAdd, conn: DB) -> dict:
+    """Adds an image that's already stored to the project, with its objects (class ids of this
+    project). The file isn't copied: projects share it. {added: false} if it's there already.
+    422 for an unknown image or class; 409 if the project is frozen."""
+    if conn.execute("SELECT 1 FROM media WHERE id = ?", (image.media_id,)).fetchone() is None:
+        raise HTTPException(422, f"No image {image.media_id}")
+    try:
+        with _writing(conn, project_id):
+            added = projects.add_image(conn, project_id, image.media_id, image.filename, image.annotations)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+    return {"added": added}
+
+
 @router.put("/api/projects/{project_id}/images/{media_id}/annotations", status_code=204)
 def api_set_annotations(project_id: int, media_id: int, annotations: list[projects.Annotation], conn: DB) -> None:
     """Replaces the image's annotations with this list (read them with GET …/images/{media_id},

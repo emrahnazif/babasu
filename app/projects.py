@@ -530,15 +530,15 @@ def add_image(
     project_id: int,
     media_id: int,
     filename: str,
-    annotations: list[dict] | None = None,
+    annotations: list[Annotation] | None = None,
     split: str | None = None,
 ) -> bool:
     """Add a stored media file to a project. Returns False if it was already there. Caller commits.
 
-    Raises pydantic.ValidationError for a malformed annotation, ValueError for an unknown class.
+    Raises ValueError for an unknown class.
     """
     project = _editable(conn, project_id)
-    objects = [Annotation.model_validate(a) for a in annotations or []]
+    objects = annotations or []
     # Inactive classes count: their annotations are kept, only hidden.
     unknown = {o.class_id for o in objects} - {c["id"] for c in json.loads(project["classes"])}
     if unknown:
