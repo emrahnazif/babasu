@@ -10,7 +10,13 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
-from app.desktop import main  # noqa: E402
+import multiprocessing  # noqa: E402
 
 if __name__ == "__main__":
+    # Code mode's child processes (app/code.py) start through here too, in a PyInstaller build as
+    # in development: freeze_support runs them, and the app is imported only past it, so a child
+    # doesn't load the whole app (webview, server, models) before the agent's code runs.
+    multiprocessing.freeze_support()
+    from app.desktop import main
+
     main()

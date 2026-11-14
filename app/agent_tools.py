@@ -25,6 +25,7 @@ from urllib.parse import urlencode
 from mozo.workflow import catalogue
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from app import code as code_mode  # `code` is run_code's argument
 from app import config, filters, jobs, projects, runs, views
 from app.filters import Filter
 from app.routes import UI_ONLY
@@ -266,22 +267,63 @@ class CallApiArgs(Args):
     writes=lambda args: args.method != "GET",
 )
 def call_api(conn: sqlite3.Connection, args: CallApiArgs) -> object:
-    path = args.path.strip()
-    target = path.split("?")[0]
-    methods = [o["operation"].split(" ")[0] for o, _, answers in _search() if answers.match(target)]
-    if not methods:
-        raise ToolError(f"There's no operation at {target}; the list in your instructions has them all.")
-    if args.method not in methods:
-        raise ToolError(f"{target} takes {', '.join(methods)}, not {args.method}.")
-    response = views.client().request(args.method, path, json=args.body)
-    if response.status_code >= 400:
-        raise ToolError(views.refusal(response))
+    response = _request(args.method, args.path, args.body)
     if not response.content:
         return {"done": True}
     if len(response.text) <= ANSWER_SIZE:
         return response.json()
     return {"cut": f"The answer is {len(response.text):,} characters; its start (ask for less: a filter, ?images=, "
             "?limit=):", "start": response.text[:ANSWER_SIZE]}
+
+
+def _request(method: str, path: str, body=None):
+    """One of the agent's API operations, made in this turn (its writes are the turn's action).
+    Raises ToolError: an unknown operation, a method the path doesn't take, the API's refusal."""
+    path = path.strip()
+    target = path.split("?")[0]
+    methods = [o["operation"].split(" ")[0] for o, _, answers in _search() if answers.match(target)]
+    if not methods:
+        raise ToolError(f"There's no operation at {target}; the list in your instructions has them all.")
+    if method not in methods:
+        raise ToolError(f"{target} takes {', '.join(methods)}, not {method}.")
+    response = views.client().request(method, path, json=body)
+    if response.status_code >= 400:
+        raise ToolError(views.refusal(response))
+    return response
+
+
+def _for_code(method: str, path: str, body) -> object:
+    """An API call the agent's code makes (code_mode.Call): the whole answer, never cut."""
+    try:
+        response = _request(method, path, body)
+    except ToolError as e:
+        raise code_mode.Refused(str(e)) from None
+    return response.json() if response.content else None
+
+
+class CodeArgs(Args):
+    code: str = Field(description="Python to run. `api` is the app's API: api.get(path), api.post(path, body), "
+                      "api.put, api.patch, api.delete: the JSON answer back; a refusal raises Refused with the "
+                      "reason. api.images(project_id, where='') goes through a project's images: each has media_id, "
+                      "filename and annotations (objects: class_id, bbox [x, y, w, h], …); write an image's objects "
+                      "back with api.put(f'/api/projects/{id}/images/{media_id}/annotations', objects). Class ids "
+                      "and names: api.get(f'/api/projects/{id}?images=0')['classes']. print() what you need to see "
+                      "or report. pixelflow and numpy are there.")
+    seconds: int = Field(code_mode.TIMEOUT, ge=1, le=600, description="How long it may take at most, in seconds.")
+
+
+@tool(
+    "Run Python for what one API call can't do: going through many images or projects, filtering objects, "
+    "changing many at once, combining projects. Read read_docs code first (the client, paging, examples). Its "
+    "changes go through the API, so they're checked, and undone with your turn. Returns what it printed.",
+    CodeArgs,
+    writes=True,
+)
+def run_code(conn: sqlite3.Connection, args: CodeArgs) -> dict:
+    result = code_mode.run(args.code, _for_code, args.seconds)
+    if result["error"]:
+        raise ToolError(result["error"] + (f"\nPrinted before it:\n{result['output']}" if result["output"] else ""))
+    return {"output": result["output"]}
 
 
 # --- The tools ---
