@@ -5,7 +5,7 @@ import time
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from mozo.workflow.api import workflow_router
 
@@ -18,6 +18,17 @@ from app.routes import pages, projects, settings
 from app.routes import runs as runs_routes
 from app.routes import views as views_routes
 from app.routes import vision as vision_routes
+
+
+class AppFiles(StaticFiles):
+    """The app's own static files (CSS, JS, vendor builds), checked again on every use: without a
+    Cache-Control the browser guesses how long a file stays fresh and keeps old code after an update.
+    Unchanged files answer 304, so asking costs nothing on localhost."""
+
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 @asynccontextmanager
@@ -34,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=config.APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
+app.mount("/static", AppFiles(directory=config.STATIC_DIR), name="static")
 # check_dir=False: the folder appears with the first stored file.
 app.mount("/media", StaticFiles(directory=config.MEDIA_DIR, check_dir=False), name="media")
 app.include_router(pages.router)
