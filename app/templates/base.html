@@ -86,6 +86,10 @@
         </div>
       </div>
 
+      {# What the page is missing before it works (e.g. a project without classes): {% block notice %}. #}
+      {% set notice %}{% block notice %}{% endblock %}{% endset %}
+      {% if notice | trim %}<div class="topbar__center">{{ notice }}</div>{% endif %}
+
       <div class="topbar__right">
         {# The page's own actions, before the app-wide icons. #}
         {% set actions %}{% block actions %}{% endblock %}{% endset %}

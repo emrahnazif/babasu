@@ -49,16 +49,16 @@
       </label>
       {% if project %}
         <label class="field">
-          Annotator
+          Auto-annotator
           {{ select("annotator-select", "annotator", annotators.items() | list + [("", "None")], values.annotator or "") }}
         </label>
       {% endif %}
     </div>
 
-    <section>
+    <section id="classes-section">
       <h2>Classes</h2>
       <p class="muted">
-        The prompt is what the annotator looks for, e.g. "hole in the road surface" for a class named pothole.
+        The prompt is what the auto-annotator looks for, e.g. "hole in the road surface" for a class named pothole.
         {% if project %}Removing a class hides its annotations without deleting them; adding a class by that name again brings them back.{% endif %}
       </p>
       <table>

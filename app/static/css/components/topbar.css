@@ -50,6 +50,7 @@
   font-weight: var(--weight-medium);
   color: var(--color-text);
   white-space: nowrap;
+  text-decoration: none;  /* also an <a> */
   cursor: pointer;
 }
 
@@ -60,6 +61,10 @@
   height: 1rem;
   color: var(--color-text-muted);
 }
+
+/* A button that says something is missing (e.g. "Add classes"), its text and icon in amber. */
+.topbar__button--warning,
+.topbar__button--warning svg { color: var(--color-warning); }
 
 /* A thin line between groups in a slot, e.g. a page's actions and the app-wide ones. */
 .topbar__divider {

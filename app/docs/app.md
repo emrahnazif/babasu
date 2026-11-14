@@ -5,7 +5,7 @@ babasu is a local computer vision app: everything runs on the person's computer,
 
 ## What it does today
 - Projects with classes; importing images from files and folders (local disk or a network drive).
-- Annotating by hand in the image editor (boxes, polygons, points), and auto-annotating with an annotator (see auto-annotate).
+- Annotating by hand in the image editor (boxes, polygons, points), and auto-annotating with an auto-annotator (see auto-annotate).
 - Filtering a project's images by what's in them, and measuring them (see filters).
 - Workflows: mozo graphs of models and steps, built in the builder, run over a project's images (see workflows).
 - Views: pages written by an agent, from reports to a workflow's Studio page (see views).
@@ -17,7 +17,7 @@ Training models (mayaku), evaluation, exporting models, COCO import and export o
 
 ## The pages
 - /projects: every project. /projects/new: create one.
-- /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, annotator, classes), Duplicate and Delete.
+- /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, auto-annotator, classes), Duplicate and Delete.
 - /projects/ID/images/IMAGE_ID: one image in the editor, with its objects; stepping to the previous and next image.
 - /workflows: every workflow. /workflows/ID/edit: the builder. /studio/ID: a workflow's Studio page.
 - /models: vision models. /jobs/ID: a job and its log. /views/ID: a view.

@@ -1,3 +1,11 @@
+{# For a project's main bar: without classes nothing can be annotated, so the way to add them. #}
+{% macro no_classes(project) %}
+  {% if not project.classes %}
+    <a class="topbar__button topbar__button--warning" href="/projects/{{ project.id }}/edit#classes-section">
+      {{ icon("exclamation-triangle") }}Add classes</a>
+  {% endif %}
+{% endmacro %}
+
 {# An image with its annotations drawn on it. The image and its annotations share one coordinate
    system, the original image's pixels; `src` (the image or its thumbnail) is stretched over
    that same area, so annotations line up on either. When a filter asked for objects

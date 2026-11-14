@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "projects/macros.html" import annotated %}
+{% from "projects/macros.html" import annotated, no_classes %}
 {% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
 {% set params = {"where": project.filter} %}  {# these links keep the filter #}
@@ -93,6 +93,8 @@
 
 {% set parts = [("class", "Class", "tag"), ("size", "Object size", "arrows-pointing-out"), ("aspect", "Aspect", "arrows-right-left"),
                 ("edge", "Touching the edge", "viewfinder-circle"), ("count", "Number of objects", "hashtag")] %}
+
+{% block notice %}{{ no_classes(project) }}{% endblock %}
 
 {# The main bar: the project's own actions. #}
 {% block actions %}
@@ -215,7 +217,7 @@
           New objects go next to the ones there; an image is done once per class.
         </p>
       {% else %}
-        <p class="muted">The project has no annotator: choose one with More → Edit.</p>
+        <p class="muted">The project has no auto-annotator: choose one in its settings.</p>
       {% endif %}
       <table>
         <thead><tr><th>Class</th><th>Prompt</th><th>Images to do</th></tr></thead>
@@ -233,7 +235,7 @@
       </table>
       <div class="fields">
         <label class="field">
-          Minimum score <span class="muted">0 keeps everything the annotator finds</span>
+          Minimum score <span class="muted">0 keeps everything the auto-annotator finds</span>
           <input type="number" name="min_score" min="0" max="1" step="0.05" value="0">
         </label>
         <label><input type="checkbox" name="again" value="true"> Also images already done for a class</label>
