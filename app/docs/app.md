@@ -20,6 +20,7 @@ The annotations say only what someone (or auto-annotate) marked. To find things 
 Training models (mayaku), evaluation, exporting models, COCO import and export of annotations, classification projects, a review queue for model-made objects, video, versions as their own feature, and searching images by what's in them. Asked for one of these, say it isn't in the app yet.
 
 ## The pages
+- /: Home, where the app opens (nothing on it yet).
 - /projects: every project. /projects/new: create one.
 - /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, auto-annotator, classes), Duplicate and Delete.
 - /projects/ID/images/IMAGE_ID: one image in the editor, with its objects and the click tool; stepping to the previous and next image.

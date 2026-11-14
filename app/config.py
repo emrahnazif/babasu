@@ -15,6 +15,7 @@ HOST = "127.0.0.1"
 # The app's sections, in the menu of the breadcrumb's first item; each inner list is a group,
 # with a line between groups.
 NAV = [
+    [{"label": "Home", "href": "/"}],
     [
         {"label": "Projects", "href": "/projects"},
         {"label": "Workflows", "href": "/workflows"},

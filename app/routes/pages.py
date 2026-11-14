@@ -10,9 +10,10 @@ from app.templating import templates
 router = APIRouter()
 
 
-@router.get("/")
-def home():
-    return RedirectResponse("/projects")
+@router.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    """Where the app opens. A placeholder until it's designed."""
+    return templates.TemplateResponse(request, "pages/home.html")
 
 
 # Sections that aren't built yet: each shows a short note (its name is the breadcrumb's switcher).
