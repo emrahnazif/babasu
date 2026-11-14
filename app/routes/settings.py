@@ -116,14 +116,15 @@ def default_agent(agent_id: str, next: Annotated[str | None, Form()] = None):
     return _back(AGENTS, next, lambda: agents.set_default(agent_id))
 
 
-SIDEBAR_FIELDS = {"sidebar_width", "sidebar_collapsed"}
+UI_FIELDS = {"sidebar_width", "sidebar_collapsed"}
 
 
-@router.post("/sidebar", status_code=204)
-def save_sidebar(change: dict = Body()):
-    """Called from sidebar.js after a resize or collapse, so the next page renders the same way."""
-    if not change or not change.keys() <= SIDEBAR_FIELDS:
-        raise HTTPException(422, f"expected only {sorted(SIDEBAR_FIELDS)}")
+@router.post("/ui", status_code=204)
+def save_ui(change: dict = Body()):
+    """Saves how the UI was left (the sidebar resized or collapsed), from the page's JS, so the next
+    page renders the same way."""
+    if not change or not change.keys() <= UI_FIELDS:
+        raise HTTPException(422, f"expected only {sorted(UI_FIELDS)}")
     try:
         settings.update(**change)
     except ValidationError as e:

@@ -9,6 +9,8 @@ An auto-annotator (the project's `annotator` setting) is a workflow: an image an
 
 A project points at one (its settings). The models an auto-annotator uses that aren't downloaded are downloaded first, by itself: the run waits for the download (the dialog says which models and how big; so does downloads_first in what auto_annotate returns).
 
+For one object at a time, as a person works, there's the click tool in the image editor (see annotating).
+
 ## A run
 - It runs over the project's images matching a filter (all of them, some picked at random, or the ones given, e.g. the open image), for all classes or some.
 - **Once per class:** an image is auto-annotated once for each class. Running again only does what's new: a class added since, images added since. With **again**, the images are done again. The image page's button always does its image again.

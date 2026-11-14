@@ -64,6 +64,10 @@ class Settings(BaseModel):
     # Set by dragging the sidebar border and the collapse button, not by the Settings form.
     sidebar_width: int = Field(320, ge=SIDEBAR_MIN_WIDTH, le=SIDEBAR_MAX_WIDTH)
     sidebar_collapsed: bool = False
+    # The image editor's click to segment tool, on or off, and its model (segment.MODELS): its
+    # toolbar menu, not the Settings form.
+    segment_tool: bool = True
+    click_model: str = "edgetam/edgetam"
     models: list[Model] = []
     agents: list[Agent] = []
     default_agent: str = ""

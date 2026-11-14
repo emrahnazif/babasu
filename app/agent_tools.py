@@ -21,7 +21,17 @@ from urllib.parse import urlencode
 from mozo.workflow import catalogue
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app import annotators, config, jobs, projects, runs, settings, views, vision
+from app import (
+    annotators,
+    config,
+    jobs,
+    projects,
+    runs,
+    segment,
+    settings,
+    views,
+    vision,
+)
 from app.filters import Filter
 from app.templating import filesize
 
@@ -440,6 +450,35 @@ def download_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
 def load_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
     job_id = vision.start_load(conn, args.family, args.variant)
     return {"job_id": job_id} | _downloads(conn, job_id)
+
+
+def _click_tool(tool: dict) -> dict:
+    """The click tool as segment.tool() has it, sizes for people."""
+    return {k: tool[k] for k in ("on", "model", "in_use")} | {"models": [
+        {k: m[k] for k in ("id", "name", "license", "downloaded", "downloading")}
+        | ({} if m["downloaded"] else {"download_size": filesize(m["to_download"])})
+        for m in tool["models"]]}
+
+
+@tool(
+    "Show the image editor's click tool (click to segment: point at an object and it's outlined): whether it's on, "
+    "the model chosen and the one in use (another downloaded one answers while the chosen one downloads), and the "
+    "models it can use, each with its licence and whether it's downloaded."
+)
+def get_click_tool(conn: sqlite3.Connection, args: NoArgs) -> dict:
+    return _click_tool(segment.tool(conn))
+
+
+@tool(
+    "Change the image editor's click tool: turn it on or off, and/or choose its model. A model that isn't downloaded "
+    "starts downloading (its download_size says how big: tell the person), and the tool switches to it when done.",
+    segment.Change,
+    writes=True,
+)
+def change_click_tool(conn: sqlite3.Connection, args: segment.Change) -> dict:
+    if args.on is None and args.model is None:
+        raise ToolError("Give on, model, or both.")
+    return _click_tool(segment.change(conn, args))
 
 
 @tool("Unload a vision model from memory, freeing it (e.g. before training).", ModelArgs, writes=True)

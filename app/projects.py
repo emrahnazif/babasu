@@ -167,6 +167,19 @@ def get(conn: sqlite3.Connection, project_id: int) -> dict | None:
     return _project(row) if row else None
 
 
+def image_file(conn: sqlite3.Connection, project_id: int, media_id: int) -> dict | None:
+    """One image of a project as a model works on it, read cheaply (on every mouse move of the click
+    tool): its file (path), the project's task and its active classes' ids. None if there's none."""
+    row = conn.execute(
+        """SELECT media.sha256, media.ext FROM project_media JOIN media ON media.id = project_media.media_id
+           WHERE project_media.project_id = ? AND project_media.media_id = ?""", (project_id, media_id)).fetchone()
+    project = row and get(conn, project_id)
+    if not project:
+        return None
+    return {"path": media.path(row["sha256"], row["ext"]), "task": project["task"],
+            "class_ids": {c["id"] for c in project["classes"]}}
+
+
 def _row(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
 

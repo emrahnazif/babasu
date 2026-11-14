@@ -34,7 +34,7 @@
 {% endblock %}
 
 {% block scripts %}
-  <script defer src="{{ url_for('static', path='vendor/markin-0.3.2.min.js') }}"></script>
+  <script defer src="{{ url_for('static', path='vendor/markin-0.5.0.min.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/annotation-editor.js') }}"></script>
 {% endblock %}
 
@@ -56,6 +56,25 @@
             <span class="menu__swatch" style="--swatch-color: {{ class.color }}"></span>{{ class.name }}</button>
         {% endfor %}
       </div>
+      {# Click to segment (js/click-tool.js): its menu picks the model (one not downloaded downloads)
+         and turns it off and on. The models' list is refreshed when a job ends or the tool changes. #}
+      {% set t = click_tool %}
+      <button class="topbar__button" id="click-tool" type="button" popovertarget="click-tool-menu"
+              aria-pressed="{{ t.on | tojson }}" data-in-use="{{ t.in_use or '' }}" title="Click to segment">
+        {{ icon("cursor-arrow-rays") }}{{ icon("chevron-up-down") }}</button>
+      <div id="click-tool-menu" class="menu" popover>
+        <div id="click-models" data-refresh-on="job-ended click-tool-changed">
+          {% for m in t.models %}
+            <button class="menu__item" type="button" data-click-model="{{ m.id }}" aria-selected="{{ (m.id == t.model) | tojson }}">
+              <span class="menu__check">{{ icon("check") }}</span>{{ m.name }}
+              <span class="menu__note">{{ m.license }}{% if m.downloading %} · downloading…{% elif not m.downloaded %} · {{ m.to_download | filesize }}{% endif %}</span>
+            </button>
+          {% endfor %}
+        </div>
+        <div class="menu__separator"></div>
+        <button class="menu__item" type="button" data-click-toggle data-shortcut="s" title="Turn the click tool off or on">
+          <span class="menu__check"></span>{{ "Turn off" if t.on else "Turn on" }}</button>
+      </div>
     </div>
   {% endif %}
   <div class="topbar__right">
@@ -72,7 +91,21 @@
       <svg viewBox="0 0 {{ image.width }} {{ image.height }}"
            data-annotations='{{ image.annotations | tojson }}' data-classes='{{ project.classes | tojson }}'
            data-source="/api/projects/{{ project.id }}/images/{{ image.media_id }}" data-project-id="{{ project.id }}"
-           {% if editable %}data-save="/api/projects/{{ project.id }}/images/{{ image.media_id }}/annotations"{% endif %}></svg>
+           {% if editable %}data-save="/api/projects/{{ project.id }}/images/{{ image.media_id }}/annotations"
+             data-segment="/api/projects/{{ project.id }}/images/{{ image.media_id }}/segment"
+             data-prepare="/api/projects/{{ project.id }}/images/{{ image.media_id }}/prepare"
+             {% if image.next_id %}data-prepare-next="/api/projects/{{ project.id }}/images/{{ image.next_id }}/prepare"{% endif %}{% endif %}></svg>
+    </div>
+    {# The click tool's object being shaped: its points, and Add and Discard next to it; Refine
+       next to a selected object, to shape it again. #}
+    <div id="candidate-points"></div>
+    <div id="refine-action" class="floating" hidden>
+      <button class="icon-button" type="button" data-refine data-shortcut="r" aria-label="Refine"
+              title="Refine: shape it again with clicks">{{ icon("cursor-arrow-rays") }}</button>
+    </div>
+    <div id="candidate-actions" class="floating" hidden>
+      <button class="icon-button" type="button" data-accept aria-label="Add" title="Add (Enter)">{{ icon("check") }}</button>
+      <button class="icon-button" type="button" data-reject aria-label="Discard" title="Discard (Esc)">{{ icon("x-mark") }}</button>
     </div>
   </figure>
 {% endblock %}

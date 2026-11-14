@@ -6,10 +6,10 @@ from contextlib import contextmanager
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, BeforeValidator, Field, field_validator
 
-from app import annotators, db, imports, jobs, projects, runs
+from app import annotators, db, imports, jobs, projects, runs, segment
 from app.filters import Filter, FilterError, ObjectCondition, Range
 from app.templating import query, templates
 
@@ -348,7 +348,8 @@ def image_page(request: Request, project_id: int, media_id: int, conn: DB, where
     except FilterError:  # the project page says why; here, step through all images instead
         image = _image(conn, project_id, media_id, Filter())
     annotator = image["project"]["annotator"]
-    context = {"image": image, "to_download": runs.to_download(annotator) if annotator else []}
+    context = {"image": image, "to_download": runs.to_download(annotator) if annotator else [],
+               "click_tool": segment.tool(conn)}
     return templates.TemplateResponse(request, "projects/image.html", context)
 
 
@@ -483,6 +484,61 @@ def api_image(project_id: int, media_id: int, conn: DB, where: Where = "") -> di
 def api_set_annotations(project_id: int, media_id: int, annotations: list[projects.Annotation], conn: DB) -> None:
     """Replaces the image's annotations (those of active classes, as the image's read returns them)."""
     _set_annotations(conn, project_id, media_id, annotations)
+
+
+@contextmanager
+def _clicking(conn: sqlite3.Connection, project_id: int, media_id: int):
+    """The image click to segment works on (projects.image_file); 404 if there's none, 409 if no
+    click model is downloaded."""
+    image = projects.image_file(conn, project_id, media_id)
+    if image is None:
+        raise HTTPException(404, "Image not found")
+    try:
+        yield image
+    except LookupError as e:
+        raise HTTPException(409, f"{e}: choose one (PUT /api/click-tool) and it downloads") from None
+
+
+@router.get("/api/click-tool")
+def api_click_tool(conn: DB) -> dict:
+    """The image editor's click to segment tool: on or off, the model chosen, the one in use (the
+    chosen one, or while it downloads another that's downloaded), and each model with its licence
+    and whether it's downloaded, downloading, or how many bytes it would download."""
+    return segment.tool(conn)
+
+
+@router.put("/api/click-tool")
+def api_change_click_tool(change: segment.Change, conn: DB) -> dict:
+    """Turns the click tool on or off and/or chooses its model. A model that isn't downloaded starts
+    downloading (a job); until it's done, the first downloaded one answers. Returns the tool as GET
+    does."""
+    return segment.change(conn, change)
+
+
+@router.post("/api/projects/{project_id}/images/{media_id}/prepare", status_code=204)
+def api_prepare_image(project_id: int, media_id: int, conn: DB) -> None:
+    """Gets the image ready for click to segment: encodes it now (the slow half, a fraction of a
+    second), so each segment call on it afterwards takes milliseconds. Optional: the first segment
+    call prepares it too."""
+    with _clicking(conn, project_id, media_id) as image:
+        segment.prepare(image["path"])
+
+
+@router.post("/api/projects/{project_id}/images/{media_id}/segment", response_model=projects.Annotation | None)
+def api_segment(project_id: int, media_id: int, prompt: segment.Prompt, conn: DB):
+    """The object at some points and/or in a box, found by the click model in use, as an
+    annotation of the class given, ready to add to the image's annotations: its box, and in a
+    segmentation project its polygon too. Points are in the image's pixels; label 1 includes a point,
+    0 leaves it out (e.g. one click on a car, then 0 on its wheel to leave the wheel out). null if
+    nothing was found. Nothing is saved. Only the latest call runs, for a pointer that keeps moving:
+    a call a newer one overtook while it waited is skipped and answers 204, with no content."""
+    with _clicking(conn, project_id, media_id) as image:
+        if prompt.class_id not in image["class_ids"]:
+            raise HTTPException(422, f"No class {prompt.class_id} in this project")
+        try:
+            return segment.segment(image["path"], prompt, image["task"])
+        except segment.Superseded:
+            return Response(status_code=204)
 
 
 @router.patch("/api/projects/{project_id}/classes/prompts", status_code=204)

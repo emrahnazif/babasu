@@ -6,7 +6,7 @@ const resizer = document.querySelector(".app__resizer");
 const toggle = document.querySelector("#sidebar-toggle");
 
 function saveSidebar(change) {
-  fetch("/settings/sidebar", {
+  fetch("/settings/ui", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(change),

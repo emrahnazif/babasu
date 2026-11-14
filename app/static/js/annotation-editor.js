@@ -12,7 +12,9 @@
 // its way are sent together after it, so the last edit always wins.
 //
 // The class in the toolbar (#class-shown) is the selected object's, or with nothing selected the
-// class new objects get; picking one in #class-menu changes both.
+// class new objects get; picking one in #class-menu changes both. New objects come from the click
+// tool (js/click-tool.js).
+import { clickTool } from "./click-tool.js";
 import { toast } from "./toast.js";
 
 const canvas = document.querySelector("svg[data-annotations]");
@@ -35,7 +37,7 @@ if (canvas) {
   const url = canvas.dataset.save;
   if (url) {
     editor.on("change", saver(url));
-    classTool(editor, classes);
+    clickTool(editor, canvas, classTool(editor, classes));
   } else {
     editor.disable();
   }
@@ -66,6 +68,7 @@ function saver(url) {
   };
 }
 
+// Returns a function giving the class new objects get.
 function classTool(editor, classes) {
   const shown = document.querySelector("#class-shown");
   let newClass = classes[0].id; // the class new objects get
@@ -86,4 +89,5 @@ function classTool(editor, classes) {
     if (selected) editor.updateAnnotation(selected.id, { class_id: newClass });
     show(newClass);
   });
+  return () => newClass;
 }

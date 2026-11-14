@@ -332,6 +332,38 @@ a.card:hover { background: var(--color-accent-bg); }
   height: 100%;
 }
 
+/* Placed by a script at a point on screen (style left/top), over everything in the main area:
+   e.g. Add and Discard next to an object being drawn. */
+.floating {
+  position: fixed;
+  z-index: 10;
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-overlay);
+}
+
+.floating[hidden] { display: none; }
+
+/* A point placed on an image by a script (style left/top: its centre): "dot" includes,
+   "dot exclude" leaves out. */
+.dot {
+  position: fixed;
+  z-index: 10;
+  width: 0.75rem;
+  height: 0.75rem;
+  translate: -50% -50%;
+  border: 2px solid #ffffff;
+  border-radius: var(--radius-full);
+  background: var(--color-highlight);
+  pointer-events: none;
+}
+
+.dot.exclude { background: var(--color-destructive); }
+
 /* Small label. A coloured dot comes from style="--badge-color: #e11d48"; "badge plain" has none.
    A link inside it (e.g. an × to remove a filter) sits at its end. */
 .badge {
