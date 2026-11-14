@@ -78,7 +78,7 @@
     </div>
   {% endif %}
   <div class="topbar__right">
-    <span id="image-count" class="muted" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
+    <span id="image-count" class="muted" data-refresh-on="job-ended annotations-saved" data-refresh-if="projectId={{ project.id }}">
       {{ image.width }} × {{ image.height }} · {{ image.annotations | length | plural("annotation") }}</span>
   </div>
 {% endblock %}

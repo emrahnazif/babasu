@@ -9,7 +9,9 @@
 // from data-source: what the job added shows up.
 //
 // Each completed edit saves the whole list. One request at a time: edits made while one is on
-// its way are sent together after it, so the last edit always wins.
+// its way are sent together after it, so the last edit always wins. When they're through, the
+// editor dispatches "annotations-saved" (detail: projectId) on document, for what the page shows
+// about them (the toolbar's count is a js/refresh-region.js region listening to it).
 //
 // The class in the toolbar (#class-shown) is the selected object's, or with nothing selected the
 // class new objects get; picking one in #class-menu changes both. New objects come from the click
@@ -65,6 +67,8 @@ function saver(url) {
       }
     }
     sending = false;
+    // What the page shows about them (the count) is read again.
+    document.dispatchEvent(new CustomEvent("annotations-saved", { detail: { projectId: canvas.dataset.projectId } }));
   };
 }
 
