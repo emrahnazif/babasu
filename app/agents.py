@@ -4,23 +4,27 @@ is app/agent.py. Every change is checked by the Settings model; problems raise V
 message for people.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import agent, settings
 from app.settings import Agent, Model, Settings, slug
 
 
 class ModelForm(BaseModel):
-    name: str
-    base_url: str
-    model: str
-    api_key: str = ""  # blank on edit keeps the saved key (forms never show it)
+    """A language model: a connection to an OpenAI-compatible chat completions API."""
+
+    name: str = Field(description="Its name for people, e.g. Qwen 3 8B.")
+    base_url: str = Field(description="The API's address, e.g. http://localhost:11434/v1 (Ollama).")
+    model: str = Field(description="The server's name for the model, e.g. qwen3:8b.")
+    api_key: str = Field("", description="The API key, if the server needs one; blank on a change keeps the saved one.")
 
 
 class AgentForm(BaseModel):
-    name: str
-    model_id: str
-    instructions: str = ""
+    """An agent: who answers in the chat."""
+
+    name: str = Field(description="Its name, e.g. Assistant.")
+    model_id: str = Field(description="The model it runs on, an id from GET /api/models.")
+    instructions: str = Field("", description="Its role and rules, e.g. Answer from the app's real data.")
 
 
 def _find(items: list, item_id: str, kind: str):

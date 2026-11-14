@@ -55,8 +55,10 @@ def _local(href: str) -> str:
 class NavItem(BaseModel):
     """A link added to the navigation (by the agent, e.g. to a view it built)."""
 
-    label: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
-    href: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500), AfterValidator(_local)]
+    label: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)] = Field(
+        description="The link's text, short, e.g. Model comparison.")
+    href: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500), AfterValidator(_local)] = Field(
+        description="Where it goes in the app, e.g. /views/model-comparison.")
 
 
 class Settings(BaseModel):

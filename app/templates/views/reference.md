@@ -9,7 +9,7 @@ where they don't.
 - Data comes from `api("/api/…")`: the app's own API (GET only, the endpoints listed at the end), the
   same JSON a browser gets. E.g. `{% set runs = api("/api/runs") %}`. A refused call stops the page
   with the reason, so ask only for what exists.
-- Look at an answer with the `read_api` tool before using its fields, so the template uses the
+- Look at an answer with the `call_api` tool (GET) before using its fields, so the template uses the
   names it really has.
 - The template sees only `api`, `ui` (the components below) and `view` (its id, title, kind, workflow). Jinja's usual tags and
   filters work (`for`, `if`, `set`, `length`, `round`, `sum`, `groupby`, `selectattr`, `map`…).

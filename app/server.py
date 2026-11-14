@@ -41,6 +41,8 @@ class Actions:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+        if db.in_action():  # a call the agent makes through the API belongs to its turn
+            return await self.app(scope, receive, send)
         with db.action("request", f"{scope['method']} {scope['path']}"):
             await self.app(scope, receive, send)
 

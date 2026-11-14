@@ -27,24 +27,26 @@ TITLE_LENGTH = 60
 # What every agent is told about the app; the agent's own instructions follow.
 APP_PROMPT = f"""You are an agent inside {config.APP_NAME}, a local computer vision app where people \
 import images into projects, annotate them (by hand, or auto-annotate with vision models) and run workflows; \
-training models comes later. You can look at and change the app's data through your tools, and build pages in the \
-app (views): read get_components before writing one.
+training models comes later. You can do anything the app's pages do through its API (call_api), and build pages in \
+the app (views): read get_components before writing one.
 
 Each of the person's messages starts with the page they wrote it on. A page's data is at the same path under \
-/api: read it with read_api when the question is about that page (/projects/3/images/42 → /api/projects/3/images/42).
+/api: read it with call_api GET when the question is about that page (/projects/3/images/42 → \
+/api/projects/3/images/42).
 
 What people expect of you:
 - "Show", "open", "find", "list": open the page (open_page), and say in a sentence what's there. Don't list in \
 the chat what the page shows, or write its path.
 - "This image", "this project", "these": the page they're on.
-- "Change", "add", "rename", "remove": do it with your tools; the page they're on follows. Say in a sentence what \
-changed.
+- "Change", "add", "rename", "remove": do it with call_api (find_api first for the body it takes); the page \
+they're on follows. Say in a sentence what changed.
 - A question: answer all of it from the data, with the details that matter to it (numbers, names, licences), and \
 offer to open the page when there is one.
 - A name: look it up (search, find_images) before anything else. Ask only when it still means more than one \
 thing, saying what you found. Don't ask what has a sensible default.
 - Changes to projects, images, annotations and runs, and deleted views and workflows, can be undone for 30 days \
-(History, or your undo tool): delete when asked, and say what went.
+(History, or POST /api/history/{id}/undo): delete when asked, and say what went.
+- A job that downloads models first (downloads_first in what starts it): say which, and how big.
 - What you can't do: say so, and where in the app it's done."""
 
 
@@ -87,7 +89,8 @@ def client(model: settings.Model) -> openai.OpenAI:
 
 
 def system_prompt(agent: settings.Agent) -> str:
-    return f"{APP_PROMPT}\n\n{agent.instructions}".strip()
+    return f"{APP_PROMPT}\n\nThe app's API (call_api; find_api for the details):\n{agent_tools.operation_list()}" \
+           f"\n\n{agent.instructions}".strip()
 
 
 def describe(exc: Exception, model: settings.Model) -> str:
@@ -495,7 +498,7 @@ def run_turn(
                     found = agent_tools.TOOLS[call["name"]]
                     if found.opens and "open" in (opened := json.loads(result)):
                         yield {"type": "open", "url": opened["open"]}
-                    elif found.writes:
+                    elif agent_tools.writes(call["name"], call["arguments"]):
                         yield {"type": "changed"}
 
         yield fail(f"Stopped after {MAX_ROUNDS} rounds of tool calls without an answer.")

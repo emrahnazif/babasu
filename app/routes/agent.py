@@ -15,10 +15,10 @@ from fastapi.responses import (
 from pydantic import BaseModel, StringConstraints
 
 from app import agent, db
-from app.routes import safe_next
+from app.routes import UI_ONLY, safe_next
 from app.templating import page_name, templates
 
-router = APIRouter()
+router = APIRouter(tags=[UI_ONLY])
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
 
 

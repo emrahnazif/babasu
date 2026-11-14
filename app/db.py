@@ -45,6 +45,11 @@ def action(source: str, label: str) -> Iterator[None]:
         _action.reset(token)
 
 
+def in_action() -> bool:
+    """Whether an action was started here (else writes go to the process's "app" action)."""
+    return _action.get(None) is not None
+
+
 def current_action() -> Action:
     return _action.get(_APP_ACTION)
 

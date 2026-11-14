@@ -213,13 +213,16 @@ def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict, proje
 def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], overrides: dict | None = None,
           project_id: int | None = None, name: str | None = None, prompts: list[str] | None = None) -> tuple[int, int]:
     """Create a run of a workflow over stored images and start its job; returns (run id, job id).
-    `prompts`: what to look for, given to every prompted node (see execute()); `overrides`:
+    `prompts`: what to look for, given to every prompted node (see execute()); none given, a
+    project's run of a workflow that takes prompts finds its class prompts. `overrides`:
     parameter values as mozo's run takes them, by name or one node's ("dino.threshold").
     ValueError as create(). The models it uses that aren't downloaded are downloaded first (the job
     waits). The workflow's own problems (a missing file, prompts it can't take) fail the job,
     which says why."""
     media_ids = list(dict.fromkeys(media_ids))
     run_id = create(conn, workflow_id, media_ids, project_id, name)
+    if prompts is None and project_id is not None and load(workflow_id).prompt_parameters:
+        prompts = [c["prompt"] for c in projects.get(conn, project_id)["classes"]]
     params = {"media_ids": media_ids, "overrides": overrides, "prompts": prompts}
     return run_id, launch(conn, run_id, KIND, params, project_id)
 

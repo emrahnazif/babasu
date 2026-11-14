@@ -25,21 +25,23 @@ Coord = Annotated[float, AfterValidator(lambda v: round(v, 1))]
 
 
 class Keypoint(BaseModel):
+    """One named point of an object (keypoints projects)."""
+
     model_config = ConfigDict(extra="forbid")
-    name: str
-    point: tuple[Coord, Coord]
+    name: str = Field(description="Which point, e.g. left_eye.")
+    point: tuple[Coord, Coord] = Field(description="x, y in pixels of the original image.")
 
 
 class Annotation(BaseModel):
     """One thing in an image, with whichever shapes it has (like COCO and pixelflow's Detection)."""
 
     model_config = ConfigDict(extra="forbid")
-    class_id: int
-    bbox: tuple[Coord, Coord, Coord, Coord] | None = None  # x, y, w, h
-    segments: list[tuple[Coord, Coord]] | None = None  # polygon points
-    keypoints: list[Keypoint] | None = None
-    # The model's confidence, on an object a model made and nobody has reviewed yet.
-    score: Annotated[float, Field(ge=0, le=1), AfterValidator(lambda v: round(v, 3))] | None = None
+    class_id: int = Field(description="One of the project's class ids.")
+    bbox: tuple[Coord, Coord, Coord, Coord] | None = Field(None, description="Its box: x, y, width, height in pixels.")
+    segments: list[tuple[Coord, Coord]] | None = Field(None, description="Its outline: polygon points [x, y] in pixels.")
+    keypoints: list[Keypoint] | None = Field(None, description="Its named points.")
+    score: Annotated[float, Field(ge=0, le=1), AfterValidator(lambda v: round(v, 3))] | None = Field(
+        None, description="A model's confidence (0..1), on an object a model made and nobody has reviewed yet.")
 
     @model_validator(mode="after")
     def _has_a_shape(self):
@@ -72,7 +74,7 @@ class NewClass(BaseModel):
     """A class to add. No colour: it gets the first palette colour not in use; a blank prompt is the name."""
 
     model_config = ConfigDict(extra="forbid")
-    name: ClassName
+    name: ClassName = Field(description="What the objects are, e.g. car.")
     color: Color | None = Field(None, description="A colour name or #rrggbb; empty: one not in use.")
     prompt: Prompt = Field("", description=PROMPT)
 
@@ -81,7 +83,7 @@ class ClassChange(NewClass):
     """One class of a project's class list, as it's set (set_classes): an existing one by its id
     (no colour: it keeps its own), or a new one (no id)."""
 
-    id: int | None = None
+    id: int | None = Field(None, description="An existing class's id; empty for a new class.")
 
 
 # One of a project's classes, by its id or its name.
@@ -188,11 +190,12 @@ def _count(conn: sqlite3.Connection, where: str, params: list) -> int:
     return conn.execute(f"SELECT count(*) FROM project_media WHERE {where}", params).fetchone()[0]
 
 
-def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Filter = Filter()) -> dict | None:
-    """A project with one page of the images matching `filter` (by file name) and their
-    annotations (marking the objects the filter asks for), how many images it has and how many
-    are labelled, and how many annotations each class has. Raises FilterError for a filter
-    that names a class the project doesn't have."""
+def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Filter = Filter(),
+           page_size: int = PAGE_SIZE) -> dict | None:
+    """A project with one page of the images matching `filter` (by file name, `page_size` a page;
+    0: none) and their annotations (marking the objects the filter asks for), how many images it
+    has and how many are labelled, and how many annotations each class has. Raises FilterError for
+    a filter that names a class the project doesn't have."""
     row = _row(conn, project_id)
     if row is None:
         return None
@@ -202,11 +205,11 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     image_count = _count(conn, "project_media.project_id = ?", [project_id])
     where, params = _where(row, filter)
     match_count = image_count if filter == Filter() else _count(conn, where, params)
-    pages = max(1, math.ceil(match_count / PAGE_SIZE))
+    pages = max(1, math.ceil(match_count / page_size)) if page_size else 1
     page = min(max(page, 1), pages)
     rows = conn.execute(
         f"""{_IMAGE_SELECT} WHERE {where} ORDER BY project_media.filename, project_media.media_id LIMIT ? OFFSET ?""",
-        (*params, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+        (*params, page_size, (page - 1) * page_size),
     ).fetchall()
     active = {c["id"] for c in project["classes"]}
     matches = _matches(conn, row, filter, [r["media_id"] for r in rows])

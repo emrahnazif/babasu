@@ -7,4 +7,4 @@ Everything long runs as a background job: lanes, progress, statuses, cancel and 
 - **Statuses:** queued → running → succeeded, failed, cancelled or interrupted (the app closed or crashed while it was queued or running).
 - **Cancel** stops a job between items; what it did so far stays. **Retry** starts a new job with the same settings; it skips what's done (an import skips images it has).
 - Nothing restarts by itself.
-- You follow a job with get_job or wait_for_job.
+- You follow a job with wait_for_job, or GET /api/jobs/ID.

@@ -33,7 +33,7 @@ def undo_page(action_id: str, conn: DB):
 
 
 @router.get("/api/history")
-def api_history(conn: DB, limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict]:
+def api_history(conn: DB, limit: Annotated[int, Query(ge=1, le=500, description="How many, newest first.")] = 100) -> list[dict]:
     """What was done in the last 30 days, newest first: each action (one request, job or agent turn,
     named by its source and label: the request, the job, the person's message to the agent), its
     kind (do, undo, redo), when, what it changed in words, the undo that undid it (`undone_by`) or

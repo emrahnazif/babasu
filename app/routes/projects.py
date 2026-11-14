@@ -5,19 +5,22 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
-from pydantic import BaseModel, BeforeValidator, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
-from app import annotators, db, imports, jobs, projects, runs, segment
-from app.filters import Filter, FilterError, ObjectCondition, Range
+from app import annotators, db, imports, jobs, projects, runs, segment, vision
+from app.filters import WHERE, Filter, FilterError, ObjectCondition, Range
 from app.templating import query, templates
 
 router = APIRouter()
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
-Page = Annotated[int, Query(ge=1)]
+Page = Annotated[int, Query(ge=1, description="Which page of the matching images (100 a page), from 1.")]
 # Which images: the filter's text form (app/filters.py), e.g. ?where=(car size:8..16) -person
-Where = Annotated[str, Query(max_length=2000)]
+Where = Annotated[str, Query(max_length=2000, description=WHERE)]
+FINDER = "The workflow that auto-annotates it, from GET /api/workflows (e.g. sam3); null for none."
+ANNOTATOR = "Another annotator than the project's, from GET /api/workflows; empty: the project's."
+CLASS_IDS = "Which classes (ids from GET /api/projects/{id}); empty for all of them."
 
 
 # A number field of a form: empty means "no limit".
@@ -91,18 +94,21 @@ def filter_error(request: Request, error: FilterError) -> JSONResponse:
     return JSONResponse({"detail": str(error)}, status_code=422)
 
 
+TASK = "What its annotations are: boxes (detection), outlines (segmentation) or points (keypoints)."
+
+
 class ProjectFields(BaseModel):
     """A project's name, description and type."""
 
-    name: projects.Name
-    description: projects.Description = ""
-    task: projects.Task
+    name: projects.Name = Field(description="The project's name, e.g. Street cars.")
+    description: projects.Description = Field("", description="What it's for, in a sentence or two.")
+    task: projects.Task = Field(description=TASK)
 
 
 class NewProject(ProjectFields):
     """A new project, with its classes; it gets the annotator suggested for its type."""
 
-    classes: list[projects.ClassChange] = []
+    classes: list[projects.ClassChange] = Field([], description="The kinds of objects to annotate, in order (no ids: all new).")
 
 
 Prompt = projects.Prompt
@@ -112,7 +118,17 @@ class ProjectChanges(ProjectFields):
     """A project's name, description, type and annotator, all of them, when it's changed.
     Left out (a form's empty choice), the annotator is none."""
 
-    annotator: annotators.Finder | None = None
+    annotator: annotators.Finder | None = Field(None, description=FINDER)
+
+
+class ProjectPatch(BaseModel):
+    """Changes to a project: only the fields given change; the others stay as they are."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: projects.Name | None = Field(None, description="A new name.")
+    description: projects.Description | None = Field(None, description="A new description.")
+    task: projects.Task | None = Field(None, description=TASK)
+    annotator: annotators.Finder | None = Field(None, description=FINDER)
 
 
 class ProjectForm(ProjectChanges):
@@ -135,13 +151,13 @@ class ProjectForm(ProjectChanges):
 class AutoAnnotate(BaseModel):
     """Which of the project's images to auto-annotate, and how (see annotators.start)."""
 
-    where: str = Field("", max_length=2000)
-    count: int | None = Field(None, ge=1)
-    annotator: annotators.Finder | None = None
-    class_ids: list[int] | None = None
-    min_score: float = Field(0.0, ge=0, le=1)
-    again: bool = False
-    media_ids: list[int] | None = None
+    where: str = Field("", max_length=2000, description=WHERE)
+    count: int | None = Field(None, ge=1, description="How many of the images, picked at random among those with work left; empty for all.")
+    annotator: annotators.Finder | None = Field(None, description=ANNOTATOR)
+    class_ids: list[int] | None = Field(None, description=CLASS_IDS)
+    min_score: float = Field(0.0, ge=0, le=1, description="Leave out objects scoring below this (0..1), beyond the annotator's own threshold.")
+    again: bool = Field(False, description="Also run images already auto-annotated for a class (objects already there are still not added twice).")
+    media_ids: list[int] | None = Field(None, description="Only these images (their ids; /projects/3/images/42 is image 42); empty for all that match.")
 
 
 class AutoAnnotateForm(BaseModel):
@@ -160,16 +176,16 @@ class AutoAnnotateForm(BaseModel):
 class TryAnnotator(BaseModel):
     """Which images to try the annotator on, and with what (see annotators.try_)."""
 
-    where: str = Field("", max_length=2000)
-    annotator: annotators.Finder | None = None
-    class_ids: list[int] | None = None
-    prompts: dict[int, Prompt] | None = None
+    where: str = Field("", max_length=2000, description=WHERE)
+    annotator: annotators.Finder | None = Field(None, description=ANNOTATOR)
+    class_ids: list[int] | None = Field(None, description=CLASS_IDS)
+    prompts: dict[int, Prompt] | None = Field(None, description="Other prompts to try, by class id, e.g. {\"3\": \"red car\"}; not saved.")
 
 
 class ImageImport(BaseModel):
     """Files and folders on this computer or a NAS. Blank entries (an empty path field) are ignored."""
 
-    paths: list[str]
+    paths: list[str] = Field(description="Image files and folders (searched with their subfolders), e.g. [\"~/Desktop/potholes\"].")
 
     @field_validator("paths")
     @classmethod
@@ -180,8 +196,8 @@ class ImageImport(BaseModel):
         return paths
 
 
-def _detail(conn: sqlite3.Connection, project_id: int, page: int, filter: Filter) -> dict:
-    project = projects.detail(conn, project_id, page, filter)
+def _detail(conn: sqlite3.Connection, project_id: int, page: int, filter: Filter, page_size: int = projects.PAGE_SIZE) -> dict:
+    project = projects.detail(conn, project_id, page, filter, page_size)
     if project is None:
         raise HTTPException(404, "Project not found")
     return project
@@ -419,13 +435,15 @@ def import_images(project_id: int, request: Annotated[ImageImport, Form()], conn
 
 @router.get("/api/projects")
 def api_project_list(conn: DB) -> list[dict]:
-    """Every project: id, name, type, image counts, how many are labelled, classes, covers."""
+    """Every project, most recently changed first: id, name, type, how many images and how many of
+    them labelled, and its classes."""
     return projects.list_all(conn)
 
 
 @router.post("/api/projects", status_code=201)
 def api_create_project(new: NewProject, conn: DB) -> dict:
-    """Creates a project with its classes (see projects.set_classes)."""
+    """Creates a project with its classes; it gets the annotator suggested for its type. Returns its id.
+    422 with why if a class is given twice or a colour isn't one."""
     try:
         return {"id": _create(conn, new, new.classes)}
     except ValueError as e:
@@ -433,14 +451,22 @@ def api_create_project(new: NewProject, conn: DB) -> dict:
 
 
 @router.get("/api/projects/{project_id}")
-def api_project(project_id: int, conn: DB, where: Where = "", name: str | None = None, page: Page = 1) -> dict:
-    """The project with one page of the images matching ?where= (app/filters.py) and ?name=."""
-    return _detail(conn, project_id, page, _parse(where, name))
+def api_project(project_id: int, conn: DB, where: Where = "",
+                name: Annotated[str | None, Query(description="Only images whose file name contains this.")] = None,
+                page: Page = 1,
+                images: Annotated[int, Query(ge=0, le=projects.PAGE_SIZE, description="Images a page; 0 for the project alone.")] = projects.PAGE_SIZE) -> dict:
+    """The project (name, type, annotator, classes with their prompts, colours and object counts,
+    image and labelled counts) with one page of the images matching ?where=, each with its
+    annotations. ?images=0 for the project alone. 422 if the filter names a class it doesn't have."""
+    return _detail(conn, project_id, page, _parse(where, name), images)
 
 
 @router.get("/api/projects/{project_id}/stats")
-def api_stats(project_id: int, conn: DB, field: str, where: Where = "") -> dict:
-    """How ?field= (class, w, h, area, aspect or objects) is spread over the images matching ?where=."""
+def api_stats(project_id: int, conn: DB, where: Where = "",
+              field: str = Query(description="class: objects per class; w, h, area, aspect: a histogram of the "
+                                 "objects (those the filter asks for in brackets, or all); objects: how many images "
+                                 "have how many objects.")) -> dict:
+    """Measures the images matching ?where=: how ?field= is spread over them."""
     result = projects.stats(conn, project_id, field, Filter.parse(where))
     if result is None:
         raise HTTPException(404, "Project not found")
@@ -448,12 +474,20 @@ def api_stats(project_id: int, conn: DB, field: str, where: Where = "") -> dict:
 
 
 @router.patch("/api/projects/{project_id}", status_code=204)
-def api_update_project(project_id: int, changed: ProjectChanges, conn: DB) -> None:
-    _update(conn, project_id, changed)
+def api_update_project(project_id: int, changes: ProjectPatch, conn: DB) -> None:
+    """Changes a project's name, description, type or annotator: only the fields given (classes:
+    PATCH /api/projects/{id}/classes). 409 if it's frozen."""
+    project = projects.get(conn, project_id)
+    if project is None:
+        raise HTTPException(404, "Project not found")
+    fields = {k: project[k] for k in ProjectChanges.model_fields} | changes.model_dump(exclude_unset=True)
+    _update(conn, project_id, ProjectChanges(**fields))
 
 
 class Duplicate(BaseModel):
-    name: projects.Name | None = None
+    """The copy's name."""
+
+    name: projects.Name | None = Field(None, description='Its name; empty: "<the project\'s name> copy".')
 
 
 @router.post("/api/projects/{project_id}/duplicate", status_code=201)
@@ -464,25 +498,30 @@ def api_duplicate_project(project_id: int, conn: DB, body: Duplicate | None = No
 
 @router.get("/api/projects/{project_id}/deletion")
 def api_deletion(project_id: int, conn: DB) -> dict:
-    """What deleting the project would remove, and how many of its jobs still run (see projects.deletion)."""
+    """What deleting the project would remove (images, annotations, runs), and how many of its jobs
+    are queued or running (deleting is refused while they are)."""
     _exists(conn, project_id)
     return projects.deletion(conn, project_id)
 
 
 @router.delete("/api/projects/{project_id}", status_code=204)
 def api_delete_project(project_id: int, conn: DB) -> None:
+    """Deletes a project with its images (from it), their annotations and its runs; History can
+    undo it for 30 days. 409 while one of its jobs is queued or running."""
     _delete(conn, project_id)
 
 
 @router.get("/api/projects/{project_id}/images/{media_id}")
 def api_image(project_id: int, media_id: int, conn: DB, where: Where = "") -> dict:
-    """One image with its annotations, and its previous and next among the images matching ?where=."""
+    """One image of the project: file name, size, its annotations (class, box, outline, points,
+    score), and its previous and next among the images matching ?where=."""
     return _image(conn, project_id, media_id, Filter.parse(where))
 
 
 @router.put("/api/projects/{project_id}/images/{media_id}/annotations", status_code=204)
 def api_set_annotations(project_id: int, media_id: int, annotations: list[projects.Annotation], conn: DB) -> None:
-    """Replaces the image's annotations (those of active classes, as the image's read returns them)."""
+    """Replaces the image's annotations with this list (read them with GET …/images/{media_id},
+    change the list, send it back: to remove one, leave it out). 422 for an unknown class."""
     _set_annotations(conn, project_id, media_id, annotations)
 
 
@@ -542,8 +581,10 @@ def api_segment(project_id: int, media_id: int, prompt: segment.Prompt, conn: DB
 
 
 @router.patch("/api/projects/{project_id}/classes/prompts", status_code=204)
-def api_set_prompts(project_id: int, prompts: dict[int, Prompt], conn: DB) -> None:
-    """Changes some classes' prompts ({class id: prompt}); see projects.set_prompts."""
+def api_set_prompts(project_id: int, prompts: Annotated[dict[int, Prompt], Body(
+        description="Prompts by class id, e.g. {\"3\": \"hole in the road surface\"}; empty: the class's name.")],
+                    conn: DB) -> None:
+    """Changes some classes' prompts: what annotators look for."""
     try:
         with _writing(conn, project_id):
             projects.set_prompts(conn, project_id, prompts)
@@ -553,7 +594,9 @@ def api_set_prompts(project_id: int, prompts: dict[int, Prompt], conn: DB) -> No
 
 @router.put("/api/projects/{project_id}/classes", status_code=204)
 def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: DB) -> None:
-    """Sets the project's class list, in order; see projects.set_classes."""
+    """Sets the project's whole class list, in order: classes with an id are kept (renamed,
+    recoloured), without one added, those left out removed (their annotations hidden, back if a
+    class by that name returns). To change a few, PATCH …/classes instead."""
     try:
         with _writing(conn, project_id):
             projects.set_classes(conn, project_id, classes)
@@ -564,14 +607,17 @@ def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: 
 class ClassEdits(BaseModel):
     """Classes to add, change and remove; the others stay (projects.edit_classes)."""
 
-    add: list[projects.NewClass] = []
-    change: list[projects.ClassEdit] = []
-    remove: list[projects.ClassRef] = []
+    add: list[projects.NewClass] = Field([], description="New classes, added after the others.")
+    change: list[projects.ClassEdit] = Field([], description="Classes to rename, or to give another prompt or colour, "
+                                             "e.g. [{\"name\": \"car\", \"new_name\": \"vehicle\"}].")
+    remove: list[projects.ClassRef] = Field([], description="Classes to remove (names or ids): their annotations are "
+                                            "hidden, not deleted, and come back if a class by that name is added again.")
 
 
 @router.patch("/api/projects/{project_id}/classes", status_code=204)
 def api_edit_classes(project_id: int, edits: ClassEdits, conn: DB) -> None:
-    """Adds, changes and removes some of the project's classes; see projects.edit_classes."""
+    """Adds, changes and removes some of the project's classes; the others stay. 422 with why
+    (an unknown class, a name taken)."""
     try:
         with _writing(conn, project_id):
             projects.edit_classes(conn, project_id, edits.add, edits.change, edits.remove)
@@ -591,9 +637,16 @@ def api_auto_annotate_overview(project_id: int, conn: DB, where: Where = "") -> 
 
 @router.post("/api/projects/{project_id}/annotate", status_code=202)
 def api_auto_annotate(project_id: int, request: AutoAnnotate, conn: DB) -> dict:
-    """Starts auto-annotating; follow the job at /api/jobs/{job_id}, the run at /api/runs/{run_id}."""
-    return _started(lambda: annotators.start(conn, project_id, Filter.parse(request.where), request.count, request.annotator,
-                                             request.class_ids, request.min_score, request.again, request.media_ids))
+    """Starts auto-annotating the images matching `where` with the project's annotator (or the one
+    given): each class is found from its prompt and the objects are added next to the ones there
+    (never replacing them; one already there is left out). An image is done once per class, so
+    running again does only what's new (a class or images added since; `again` does them again).
+    Returns {run_id, job_id, images, downloads_first: the models it downloads before it starts};
+    follow the job at /api/jobs/{job_id}. 422 with why it can't start (no classes, no annotator)."""
+    started = _started(lambda: annotators.start(conn, project_id, Filter.parse(request.where), request.count,
+                                                request.annotator, request.class_ids, request.min_score, request.again,
+                                                request.media_ids))
+    return started | {"downloads_first": vision.downloads_first(conn, started["job_id"])}
 
 
 @router.post("/api/projects/{project_id}/try", status_code=202)
@@ -606,5 +659,6 @@ def api_try_annotator(project_id: int, request: TryAnnotator, conn: DB) -> dict:
 
 @router.post("/api/projects/{project_id}/import", status_code=202)
 def api_import_images(project_id: int, request: ImageImport, conn: DB) -> dict:
-    """Starts an import job for {"paths": [files and folders]}; follow it at /api/jobs/{job_id}."""
+    """Starts importing images into the project from files and folders on this computer; returns
+    {job_id}: follow it at /api/jobs/{job_id} (its result says what was imported and skipped)."""
     return {"job_id": _start_import(conn, project_id, request)}

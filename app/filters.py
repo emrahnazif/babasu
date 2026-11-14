@@ -29,6 +29,15 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+# The text form in short, for the API's ?where= and the agent.
+WHERE = """Which images, as a filter; empty for all. Terms, all of which must hold:
+labelled | unlabelled; name:TEXT (file name contains); objects:RANGE (how many objects the image has);
+(…) the image has an object with ALL of these at once, -(…) it has none: class names (car|truck for
+either; quote names with spaces), w:RANGE h:RANGE size:RANGE (pixels; size is both), area:RANGE,
+aspect:RANGE (width/height), edge or edge:no (touches the image edge). `car` is short for (car),
+`-person` for -(person). RANGE: 8..16, 8.., ..16, >8, <16, >=8, <=16 or 8.
+Example: labelled (car size:8..16) -person. Use the project's own class names."""
+
 
 class FilterError(ValueError):
     """The filter's text can't be read, or names something the project doesn't have."""

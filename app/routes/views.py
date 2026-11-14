@@ -2,8 +2,9 @@
 added to the navigation."""
 
 from functools import cache
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -17,14 +18,17 @@ class ViewWrite(BaseModel):
     """A new version of a view: its whole template; title (needed for a new view), kind and
     workflow change only when given."""
 
-    template: str = Field(max_length=500_000)
-    title: str | None = Field(None, min_length=1, max_length=200)
-    kind: views.Kind | None = None
-    workflow: str | None = None
+    template: str = Field(max_length=500_000, description="The whole page: a Jinja template (its components: /components).")
+    title: str | None = Field(None, min_length=1, max_length=200, description="The page's title; needed for a new view.")
+    kind: views.Kind | None = Field(None, description="report (the default; kept as it was when written) or studio "
+                                    "(a live page for one workflow).")
+    workflow: str | None = Field(None, description="For a studio page: the workflow's id, from GET /api/workflows.")
 
 
 class Restore(BaseModel):
-    version: int
+    """Which version to make the newest again."""
+
+    version: int = Field(description="A version number, from GET /api/views/{view_id}/versions.")
 
 
 def _found(found):
@@ -81,7 +85,7 @@ def api_views() -> list[dict]:
 
 
 @router.get("/api/views/{view_id}")
-def api_view(view_id: str, version: int | None = None) -> dict:
+def api_view(view_id: str, version: Annotated[int | None, Query(description="An older version; empty for the newest.")] = None) -> dict:
     """The view with its template (the newest version, or ?version=), and for a report the API
     answers it recorded."""
     return _found(views.get(view_id, version))
@@ -108,7 +112,8 @@ def api_restore_view(view_id: str, restore: Restore) -> dict:
 
 @router.delete("/api/views/{view_id}", status_code=204)
 def api_delete_view(view_id: str) -> None:
-    """Deletes the view, all its versions and its link in the navigation."""
+    """Deletes the view, all its versions and its link in the navigation. History can bring the
+    view back for 30 days (not its link)."""
     _found(views.delete(view_id) or None)
     settings.remove_nav(f"/views/{view_id}")
 

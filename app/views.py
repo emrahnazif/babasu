@@ -194,7 +194,7 @@ def reference() -> str:
     """How to build a view (reference.md), and the API a view can read: each GET endpoint with its
     query parameters and what it returns, from the app's own OpenAPI description."""
     lines = []
-    for path, ops in _app.openapi()["paths"].items():
+    for path, ops in openapi()["paths"].items():
         get = ops.get("get")
         if not get or not path.startswith(API_FOR_VIEWS):
             continue
@@ -217,23 +217,39 @@ def setup(app: FastAPI) -> None:
 
 
 @cache
-def _client() -> TestClient:
-    # The app in the same process, without starting it again (no lifespan): requests only.
+def client() -> TestClient:
+    """The app's API in the same process, without starting it again (no lifespan): requests only,
+    for views and the agent."""
     return TestClient(_app, base_url="http://babasu", raise_server_exceptions=True)
+
+
+def openapi() -> dict:
+    """The app's OpenAPI spec: every operation, its description, parameters and schemas."""
+    return _app.openapi()
 
 
 def api(path: str):
     """babasu's own API, GET only: the same JSON the browser gets. ApiError if it refuses."""
     if not isinstance(path, str) or not path.startswith("/api/"):
         raise ApiError(f"api() reads babasu's API, a path starting with /api/ (not {path!r})")
-    response = _client().get(path)
+    response = client().get(path)
     if response.status_code >= 400:
-        try:
-            detail = response.json().get("detail")
-        except ValueError:
-            detail = None
-        raise ApiError(f"api({path!r}): {response.status_code} {detail or response.reason_phrase}")
+        raise ApiError(f"api({path!r}): {refusal(response)}")
     return response.json()
+
+
+def refusal(response) -> str:
+    """Why the API refused a request, in words: its status and `detail` (a refused body or
+    parameter, field by field; for a method the path doesn't take, the ones it does)."""
+    try:
+        detail = response.json().get("detail")
+    except ValueError:
+        detail = None
+    if isinstance(detail, list):
+        detail = "; ".join(f"{'.'.join(str(p) for p in d.get('loc', []))}: {d.get('msg')}" for d in detail)
+    if response.status_code == 405:
+        detail = f"{response.request.url.path} takes {response.headers.get('allow', 'another method')}, not {response.request.method}"
+    return f"{response.status_code}: {detail or response.reason_phrase}"
 
 
 def page_title(path: str) -> str:
@@ -241,7 +257,7 @@ def page_title(path: str) -> str:
     shows (the agent opens it). ApiError if there's no such page or it fails."""
     if not isinstance(path, str) or not path.startswith("/") or path.startswith(("//", "/api/", "/static/")):
         raise ApiError(f"{path!r} isn't a page of the app: give its path, e.g. /projects/3")
-    response = _client().get(path, follow_redirects=False)
+    response = client().get(path, follow_redirects=False)
     if response.status_code != 200 or not response.headers.get("content-type", "").startswith("text/html"):
         raise ApiError(f"{path}: no page there ({response.status_code} {response.reason_phrase})")
     found = re.search(r"<title>(.*?)</title>", response.text, re.DOTALL)

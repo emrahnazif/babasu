@@ -2,6 +2,10 @@
 
 from pydantic import ValidationError
 
+# The tag of API operations only the app's own pages use (the chat's, uploads): the agent's list
+# of operations leaves them out (agent_tools.operations).
+UI_ONLY = "ui-only"
+
 
 def safe_next(next: str | None) -> str:
     """A return target from a form or query: only local paths are allowed, anything else is "/"."""

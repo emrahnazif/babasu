@@ -124,9 +124,11 @@ def api_loaded() -> list[dict]:
 
 @router.delete("/api/vision/loaded/{family}/{variant}")
 def api_unload(family: str, variant: str) -> dict:
+    """Unloads a model from memory (it loads again when something uses it); {unloaded: true/false}."""
     return {"unloaded": vision.unload(family, variant)}
 
 
 @router.delete("/api/vision/loaded")
 def api_unload_all() -> dict:
+    """Unloads every model from memory, e.g. to free it for something else; {unloaded: how many}."""
     return {"unloaded": vision.unload_all()}

@@ -7,7 +7,7 @@ An auto-annotator (the project's `annotator` setting) is a workflow: an image an
 - **Grounding DINO**: boxes; Apache-2.0.
 - **Grounding DINO → EdgeTAM**: boxes, then outlines; Apache-2.0 (the permissive choice).
 
-A project points at one (its settings). The models an auto-annotator uses that aren't downloaded are downloaded first, by itself: the run waits for the download (the dialog says which models and how big; so does downloads_first in what auto_annotate returns).
+A project points at one (its settings). The models an auto-annotator uses that aren't downloaded are downloaded first, by itself: the run waits for the download (the dialog says which models and how big; so does downloads_first in what POST /api/projects/ID/annotate returns).
 
 For one object at a time, as a person works, there's the click tool in the image editor (see annotating).
 
@@ -17,7 +17,7 @@ For one object at a time, as a person works, there's the click tool in the image
 - Objects are **added** next to the ones there, never replacing them. A new object overlapping one of its class almost entirely (90%) is already there, and left out.
 - Objects scoring below the **minimum score** are left out, beyond the auto-annotator's own threshold.
 - Each object keeps its **score**; it's removed when someone edits the object.
-- It's a background job in the gpu lane: one at a time with workflow runs and model loading. Its results are a run (get_run).
+- It's a background job in the gpu lane: one at a time with workflow runs and model loading. Its results are a run (GET /api/runs/ID/summary).
 
 ## Try
 Try runs the auto-annotator on 4 images of the filter and shows what it finds, saving nothing: to find a good prompt or threshold before running. A prompt that works is saved to its class.

@@ -56,6 +56,8 @@ def job_detail(job_id: int, conn: DB) -> dict:
 
 @router.post("/api/jobs/{job_id}/cancel")
 def job_cancel(job_id: int, conn: DB) -> dict:
+    """Cancels a queued job, or asks a running one to stop (it stops at its next step). Returns the
+    job as GET /api/jobs/{job_id} does."""
     _get(conn, job_id)
     jobs.cancel(conn, job_id)
     return _get(conn, job_id)
@@ -63,6 +65,8 @@ def job_cancel(job_id: int, conn: DB) -> dict:
 
 @router.post("/api/jobs/{job_id}/retry", status_code=201)
 def job_retry(job_id: int, conn: DB) -> dict:
+    """Runs a failed, cancelled or interrupted job again, as a new job with the same work (an
+    import or a run skips what's already done). Returns the new job. 409 for any other job."""
     _get(conn, job_id)
     new_id = jobs.retry(conn, job_id)
     if new_id is None:
@@ -71,8 +75,9 @@ def job_retry(job_id: int, conn: DB) -> dict:
 
 
 @router.get("/api/jobs/{job_id}/log")
-def job_log(job_id: int, conn: DB, offset: Annotated[int, Query(ge=0)] = 0) -> dict:
-    """Log text from byte `offset`; pass the returned `offset` to read what comes next."""
+def job_log(job_id: int, conn: DB, offset: Annotated[int, Query(ge=0, description="Where to start reading, in bytes: 0, or the offset the last read returned.")] = 0) -> dict:
+    """The job's log (what it did, and the traceback of an error) from byte `offset`; pass the
+    returned `offset` to read what comes next. Read it to find why a job failed."""
     _get(conn, job_id)
     text, next_offset = jobs.read_log(job_id, offset)
     return {"text": text, "offset": next_offset}
