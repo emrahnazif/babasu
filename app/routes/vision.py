@@ -23,10 +23,7 @@ def _exists(family: str, variant: str) -> None:
 
 def _start_load(conn: sqlite3.Connection, family: str, variant: str) -> int:
     _exists(family, variant)
-    try:
-        return vision.start_load(conn, family, variant)
-    except ValueError as e:
-        raise HTTPException(409, str(e)) from None
+    return vision.start_load(conn, family, variant)
 
 
 def _remove(family: str, variant: str) -> int:
@@ -115,7 +112,7 @@ def api_remove(family: str, variant: str) -> dict:
 
 @router.post("/api/vision/models/{family}/{variant}/load", status_code=202)
 def api_load(family: str, variant: str, conn: DB) -> dict:
-    """Starts a job that loads the model; 409 if it isn't downloaded."""
+    """Starts a job that loads the model, after downloading it if it isn't downloaded."""
     return {"job_id": _start_load(conn, family, variant)}
 
 

@@ -5,6 +5,8 @@ Downloading is a job (io lane) with progress in bytes. Loading is a job too (gpu
 imports torch and takes seconds, and only a downloaded model loads.
 """
 
+import json
+
 from mozo import MODEL_REGISTRY, weights
 from mozo.manager import ModelManager
 from mozo.registry import get_model_info
@@ -76,6 +78,24 @@ def start_download(conn, family: str, variant: str) -> int:
     return jobs.start(conn, DOWNLOAD, {"family": family, "variant": variant})
 
 
+def ensure(conn, family: str, variant: str) -> int | None:
+    """None if the model is downloaded; else the job downloading it: the one under way, or a new
+    one. What needs a model waits for this (a job kind's `needs`), so it's downloaded once, first."""
+    if downloaded(family, variant):
+        return None
+    return jobs.find_active(conn, DOWNLOAD, {"family": family, "variant": variant}) or start_download(conn, family, variant)
+
+
+def downloads_first(conn, job_id: int) -> list[dict]:
+    """The model downloads a job waits for: [{model ("family variant"), size (bytes to download)}]."""
+    rows = conn.execute(
+        """SELECT waited.params FROM job, json_each(job.waits_for) AS w JOIN job AS waited ON waited.id = w.value
+           WHERE job.id = ? AND waited.kind = ?""", (job_id, DOWNLOAD))
+    models = [json.loads(row["params"]) for row in rows]
+    return [{"model": f"{m['family']} {m['variant']}", "size": weights.download_size(m["family"], m["variant"], device=config.DEVICE)}
+            for m in models]
+
+
 @jobs.kind(DOWNLOAD, lane="io", title="Download model", unit="bytes")
 def download(ctx: jobs.Context, family: str, variant: str) -> dict:
     ctx.advance(0, f"{family} {variant}")
@@ -129,15 +149,18 @@ def busy(conn) -> dict[tuple[str, str], str]:
 
 
 def start_load(conn, family: str, variant: str) -> int:
-    """Queue loading a downloaded model; returns the job id. ValueError if it isn't downloaded."""
+    """Queue loading a model, after downloading it if it isn't; returns the job id."""
     _check(family, variant)
-    if not downloaded(family, variant):
-        raise ValueError(f"{family} {variant} isn't downloaded; download it first")
     return jobs.start(conn, LOAD, {"family": family, "variant": variant})
 
 
-@jobs.kind(LOAD, lane="gpu", title="Load model")
+def _download_first(conn, params: dict) -> list[int]:
+    job = ensure(conn, params["family"], params["variant"])
+    return [job] if job else []
+
+
+@jobs.kind(LOAD, lane="gpu", title="Load model", needs=_download_first)
 def load_job(ctx: jobs.Context, family: str, variant: str) -> dict:
-    ctx.advance(0, f"{family} {variant}")  # no total: it's downloaded, and torch loading reports none
+    ctx.advance(0, f"{family} {variant}")  # no total: torch loading reports none
     load(family, variant)
     return {"model": f"{family} {variant}"}

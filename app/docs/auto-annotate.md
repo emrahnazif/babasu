@@ -7,7 +7,7 @@ An auto-annotator (the project's `annotator` setting) is a workflow: an image an
 - **Grounding DINO**: boxes; Apache-2.0.
 - **Grounding DINO → EdgeTAM**: boxes, then outlines; Apache-2.0 (the permissive choice).
 
-A project points at one (its settings). The models an auto-annotator uses must be downloaded first (Models page, or download_model); a run without them fails and says which.
+A project points at one (its settings). The models an auto-annotator uses that aren't downloaded are downloaded first, by itself: the run waits for the download (the dialog says which models and how big; so does downloads_first in what auto_annotate returns).
 
 ## A run
 - It runs over the project's images matching a filter (all of them, some picked at random, or the ones given, e.g. the open image), for all classes or some.

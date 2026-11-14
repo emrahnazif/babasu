@@ -4,6 +4,11 @@ A job kind is a function `f(ctx, **params) -> dict | None`, registered with `@ki
 Each lane runs one job at a time, oldest first, in its own thread, so an import never waits
 for a training run and two trainings never share the GPU.
 
+A job can wait for other jobs (`waits_for`): a run for the download of a model it uses. A kind
+says what its jobs need with `needs(conn, params) -> job ids`, called by start(), so every way a
+job starts (Retry too) waits for the same things. A waiting job stays queued while its lane runs
+others; if what it waits for fails or is cancelled, it ends the same way, saying which job.
+
 The database is the only channel between a job and the app: progress goes into the job row,
 and a stop request (`stop_reason`: 'user' or 'shutdown') comes back from it. A job therefore
 behaves the same in a thread or, later, in a subprocess.
@@ -40,12 +45,17 @@ RETRYABLE = ("failed", "cancelled", "interrupted")
 Unit = Literal["items", "bytes"]
 
 
+# What a job of a kind waits for, given its parameters: job ids (e.g. downloads it starts).
+Needs = Callable[[sqlite3.Connection, dict], list[int]]
+
+
 @dataclass(frozen=True)
 class Kind:
     func: Callable[..., dict | None]
     lane: str
     title: str  # shown in the jobs drawer, e.g. "Import images"
     unit: Unit  # what its progress counts
+    needs: Needs | None  # the jobs a new job of this kind waits for, given its parameters
 
 
 _kinds: dict[str, Kind] = {}
@@ -54,12 +64,13 @@ _stopping = threading.Event()  # ends the worker loops; jobs themselves are stop
 _threads: list[threading.Thread] = []
 
 
-def kind(name: str, lane: str, title: str, unit: Unit = "items"):
-    """Register a job function under `name`, to run in `lane`; its progress counts `unit`."""
+def kind(name: str, lane: str, title: str, unit: Unit = "items", needs: Needs | None = None):
+    """Register a job function under `name`, to run in `lane`; its progress counts `unit`; its jobs
+    wait for the jobs `needs` returns."""
     assert lane in LANES, lane
 
     def register(func):
-        _kinds[name] = Kind(func, lane, title, unit)
+        _kinds[name] = Kind(func, lane, title, unit, needs)
         return func
 
     return register
@@ -115,15 +126,30 @@ class Context:
 
 
 def start(conn: sqlite3.Connection, kind_name: str, params: dict, project_id: int | None = None) -> int:
-    """Queue a job and return its id. Commits, so the lane's worker can see it."""
-    lane = _kinds[kind_name].lane
+    """Queue a job and return its id, waiting for what its kind needs. Commits, so the lane's
+    worker can see it."""
+    known = _kinds[kind_name]
+    waits_for = known.needs(conn, params) if known.needs else []
+    waited = conn.execute("SELECT id, kind FROM job WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(waits_for),))
+    message = "Waiting for " + ", ".join(_label(row["id"], row["kind"]) for row in waited) if waits_for else ""
     with conn:
         job_id = conn.execute(
-            "INSERT INTO job (kind, project_id, params) VALUES (?, ?, ?)",
-            (kind_name, project_id, json.dumps(params)),
+            "INSERT INTO job (kind, project_id, params, waits_for, message) VALUES (?, ?, ?, ?, ?)",
+            (kind_name, project_id, json.dumps(params), json.dumps(waits_for), message),
         ).lastrowid
-    _wake[lane].set()
+    _wake[known.lane].set()
     return job_id
+
+
+def _label(job_id: int, kind_name: str) -> str:
+    """A job as its messages name it: "job 12 (Download model)"."""
+    known = _kinds.get(kind_name)
+    return f"job {job_id} ({known.title if known else kind_name})"
+
+
+def _wake_all() -> None:
+    for event in _wake.values():
+        event.set()
 
 
 def cancel(conn: sqlite3.Connection, job_id: int) -> None:
@@ -134,6 +160,7 @@ def cancel(conn: sqlite3.Connection, job_id: int) -> None:
             (job_id,),
         )
         conn.execute("UPDATE job SET stop_reason = 'user' WHERE id = ? AND status = 'running'", (job_id,))
+    _wake_all()  # jobs waiting for it end too
 
 
 def retry(conn: sqlite3.Connection, job_id: int) -> int | None:
@@ -188,12 +215,20 @@ def overview(conn: sqlite3.Connection) -> dict:
     return {"jobs": recent, "active": sum(job["active"] for job in recent)}
 
 
+def _active(conn: sqlite3.Connection, kind_name: str) -> dict[int, dict]:
+    """The queued and running jobs of one kind: id -> parameters."""
+    rows = conn.execute(f"SELECT id, params FROM job WHERE kind = ? AND status IN {ACTIVE}", (kind_name,))
+    return {row["id"]: json.loads(row["params"]) for row in rows}
+
+
 def active_params(conn: sqlite3.Connection, kind_name: str) -> list[dict]:
     """The parameters of the queued and running jobs of one kind."""
-    rows = conn.execute(
-        f"SELECT params FROM job WHERE kind = ? AND status IN {ACTIVE}", (kind_name,)
-    ).fetchall()
-    return [json.loads(row["params"]) for row in rows]
+    return list(_active(conn, kind_name).values())
+
+
+def find_active(conn: sqlite3.Connection, kind_name: str, params: dict) -> int | None:
+    """The queued or running job of this kind with these parameters, if there is one."""
+    return next((job_id for job_id, p in _active(conn, kind_name).items() if p == params), None)
 
 
 def get(conn: sqlite3.Connection, job_id: int) -> dict | None:
@@ -246,8 +281,7 @@ def shutdown(timeout: float = 5.0) -> None:
         with conn:
             conn.execute("UPDATE job SET stop_reason = 'shutdown' WHERE status = 'running'")
         _stopping.set()
-        for event in _wake.values():
-            event.set()
+        _wake_all()
         deadline = time.monotonic() + timeout
         for thread in _threads:
             thread.join(max(0.0, deadline - time.monotonic()))
@@ -281,17 +315,44 @@ def _worker(lane: str) -> None:
 
 
 def _claim_next(kinds: list[str]) -> sqlite3.Row | None:
-    """Mark the oldest queued job of these kinds as running, and return it."""
+    """Mark the oldest queued job of these kinds whose waits are over as running, and return it."""
     if not kinds:
         return None
     marks = ", ".join("?" * len(kinds))
     with closing(db.connect()) as conn, conn:
+        _end_failed_waits(conn)
         return conn.execute(
-            f"""UPDATE job SET status = 'running', started_at = {db.NOW}
-                WHERE id = (SELECT id FROM job WHERE status = 'queued' AND kind IN ({marks}) ORDER BY id LIMIT 1)
+            f"""UPDATE job SET status = 'running', started_at = {db.NOW}, message = ''
+                WHERE id = (
+                    SELECT id FROM job AS queued WHERE status = 'queued' AND kind IN ({marks})
+                      AND NOT EXISTS (SELECT 1 FROM json_each(queued.waits_for) AS waited
+                                      JOIN job AS first ON first.id = waited.value
+                                      WHERE first.status != 'succeeded')
+                    ORDER BY id LIMIT 1)
                 RETURNING *""",
             kinds,
         ).fetchone()
+
+
+# How a waiting job ends when the job it waits for ended this way: its status, and the words.
+_WAIT_ENDED = {"failed": ("failed", "failed"), "cancelled": ("cancelled", "was cancelled"),
+               "interrupted": ("failed", "was interrupted")}
+
+
+def _end_failed_waits(conn: sqlite3.Connection) -> None:
+    """End the queued jobs waiting for one that failed, was cancelled or was interrupted: the same
+    way (a cancelled wait is cancelled, the others failed), saying which job."""
+    ended = conn.execute(
+        f"""SELECT queued.id, first.id AS first_id, first.kind, first.status, first.error
+            FROM job AS queued, json_each(queued.waits_for) AS waited
+            JOIN job AS first ON first.id = waited.value
+            WHERE queued.status = 'queued' AND first.status IN {RETRYABLE}"""
+    ).fetchall()
+    for row in ended:
+        status, how = _WAIT_ENDED[row["status"]]
+        error = f"Waited for {_label(row['first_id'], row['kind'])}, which {how}" + (f": {row['error']}" if row["error"] else "")
+        conn.execute(f"UPDATE job SET status = ?, error = ?, message = '', finished_at = {db.NOW} WHERE id = ? AND status = 'queued'",
+                     (status, error, row["id"]))
 
 
 def _run(job: sqlite3.Row) -> None:
@@ -320,3 +381,4 @@ def _run(job: sqlite3.Row) -> None:
                 (status, json.dumps(result) if result is not None else None, error,
                  ctx.done, ctx.total_count, ctx.message, job["id"]),
             )
+    _wake_all()  # a job in any lane may have waited for this one

@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app import annotators, config, jobs, projects, runs, settings, views, vision
 from app.filters import Filter
+from app.templating import filesize
 
 
 class Args(BaseModel):
@@ -409,14 +410,36 @@ def list_models(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     return vision.catalogue(conn)
 
 
-@tool("Download a vision model's files, as a background job (follow it with get_job). Large models take a while.", ModelArgs, writes=True)
+def _downloads(conn: sqlite3.Connection, job_id: int) -> dict:
+    """What a job downloads before it runs, for the agent to tell the person: downloads_first
+    (["sam3 sam3 (3.45 GB)"]) and a sentence saying so; nothing if it downloads nothing."""
+    found = [f"{d['model']} ({filesize(d['size'])})" for d in vision.downloads_first(conn, job_id)]
+    if not found:
+        return {}
+    return {"downloads_first": found,
+            "note": f"Not downloaded yet: {', '.join(found)} downloads first, then this starts. Tell the person."}
+
+
+@tool(
+    "Download a vision model's files, as a background job (follow it with get_job). Large models take a while. "
+    "Rarely needed: what uses a model (runs, auto-annotate, loading) downloads it first by itself.",
+    ModelArgs,
+    writes=True,
+)
 def download_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
-    return {"job_id": vision.start_download(conn, args.family, args.variant)}
+    job_id = vision.ensure(conn, args.family, args.variant)
+    return {"job_id": job_id} if job_id else {"already_downloaded": True}
 
 
-@tool("Load a downloaded vision model into memory, as a background job (follow it with get_job).", ModelArgs, writes=True)
+@tool(
+    "Load a vision model into memory, as a background job (follow it with get_job). One that isn't downloaded is "
+    "downloaded first.",
+    ModelArgs,
+    writes=True,
+)
 def load_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
-    return {"job_id": vision.start_load(conn, args.family, args.variant)}
+    job_id = vision.start_load(conn, args.family, args.variant)
+    return {"job_id": job_id} | _downloads(conn, job_id)
 
 
 @tool("Unload a vision model from memory, freeing it (e.g. before training).", ModelArgs, writes=True)
@@ -426,7 +449,7 @@ def unload_model(conn: sqlite3.Connection, args: ModelArgs) -> dict:
 
 @tool(
     "List the workflows that can be run (mozo graphs: e.g. SAM 3, Grounding DINO, Grounding DINO → EdgeTAM), each "
-    "with the models it uses: licence and bytes left to download (0: ready). A model must be downloaded before a run."
+    "with the models it uses: licence and bytes left to download (0: ready). A run downloads the ones it needs first."
 )
 def list_workflows(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
     keep = ("family", "variant", "license", "size")
@@ -438,7 +461,7 @@ def list_workflows(conn: sqlite3.Connection, args: NoArgs) -> list[dict]:
 @tool(
     "Run a workflow over a project's images matching a filter (all, or `count` picked at random), as a background job. "
     "It finds the prompts (the project's class prompts unless given) and keeps what it found per image. Follow the job "
-    "with get_job, then read the results with get_run.",
+    "with get_job, then read the results with get_run. Models it needs that aren't downloaded are downloaded first.",
     RunArgs,
     writes=True,
 )
@@ -448,7 +471,7 @@ def start_run(conn: sqlite3.Connection, args: RunArgs) -> dict:
     if not prompts:
         raise ToolError("Nothing to find: the project has no classes, so give prompts.")
     run_id, job_id = runs.start(conn, args.workflow_id, media_ids, project_id=args.project_id, name=args.name, prompts=prompts)
-    return {"run_id": run_id, "job_id": job_id, "images": len(media_ids), "prompts": prompts}
+    return {"run_id": run_id, "job_id": job_id, "images": len(media_ids), "prompts": prompts} | _downloads(conn, job_id)
 
 
 def _project(conn: sqlite3.Connection, project_id: int) -> dict:
@@ -522,8 +545,8 @@ def delete_project(conn: sqlite3.Connection, args: DeleteArgs) -> dict:
     "from its prompt and the objects are added to the images, next to the ones there (never replacing them; an object "
     "already there is left out). An image is done once per class, so running again only does what's new (a class "
     "added since, images added since; `again` does them again). 'This image' is the image page the person is on, by "
-    "its id in image_ids. Follow the job with get_job; the run's results are in get_run. The annotator's "
-    "models must be downloaded first (list_workflows).",
+    "its id in image_ids. Follow the job with get_job; the run's results are in get_run. Models the annotator "
+    "needs that aren't downloaded are downloaded first.",
     AutoAnnotateArgs,
     writes=True,
 )
@@ -532,7 +555,7 @@ def auto_annotate(conn: sqlite3.Connection, args: AutoAnnotateArgs) -> dict:
                                args.min_score, args.again, args.image_ids)
     if started is None:
         raise ToolError(f"There is no project {args.project_id}.")
-    return started
+    return started | _downloads(conn, started["job_id"])
 
 
 @tool("List workflow runs, newest first: name, workflow, project, job status, and how many images have results.")

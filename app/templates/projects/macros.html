@@ -1,3 +1,6 @@
+{# The models something downloads before it runs (runs.to_download): "sam3 sam3 (3.45 GB), …". #}
+{% macro downloads(models) %}{% for m in models %}{{ m.model }} ({{ m.size | filesize }}){% if not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
+
 {# For a project's main bar: without classes nothing can be annotated, so the way to add them. #}
 {% macro no_classes(project) %}
   {% if not project.classes %}

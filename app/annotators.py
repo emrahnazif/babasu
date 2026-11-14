@@ -15,7 +15,7 @@ from typing import Literal, get_args
 
 import pixelflow as pf
 
-from app import db, jobs, media, projects, runs
+from app import db, jobs, media, projects, runs, vision
 from app.filters import Filter
 from app.projects import Task
 
@@ -108,11 +108,14 @@ def _prompts(conn: sqlite3.Connection, project_id: int, annotator: Finder | None
 def _launch(conn: sqlite3.Connection, project_id: int, annotator: Finder, label: str, media_ids: list[int],
             prompts: dict[int, str], kind: str, params: dict | None = None, annotates: bool = False) -> dict:
     """Create the annotator's run over the images with these prompts (class id -> prompt, in
-    order) and start its job: {run_id, job_id, images}."""
+    order) and start its job: {run_id, job_id, images, downloads_first (the models it downloads
+    before it runs, as vision.downloads_first)}."""
     name = runs.run_name(f"{label} · {FINDERS[annotator]}", len(media_ids))
     run_id = runs.create(conn, annotator, media_ids, project_id, name, list(prompts), annotates)
     params = {"media_ids": media_ids, "prompts": list(prompts.values())} | (params or {})
-    return {"run_id": run_id, "job_id": runs.launch(conn, run_id, kind, params, project_id), "images": len(media_ids)}
+    job_id = runs.launch(conn, run_id, kind, params, project_id)
+    return {"run_id": run_id, "job_id": job_id, "images": len(media_ids),
+            "downloads_first": vision.downloads_first(conn, job_id)}
 
 
 def start(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), count: int | None = None,
@@ -204,7 +207,7 @@ def latest_try(conn: sqlite3.Connection, project_id: int) -> dict | None:
     return row and results(conn, row[0])
 
 
-@jobs.kind(KIND, lane="gpu", title="Auto-annotate")
+@jobs.kind(KIND, lane="gpu", title="Auto-annotate", needs=runs.needs)
 def annotate_job(ctx: jobs.Context, run_id: int, media_ids: list[int], prompts: list[str], min_score: float,
                  again: bool) -> dict:
     """The run, and each image's objects added to the project as it finishes, in the same commit

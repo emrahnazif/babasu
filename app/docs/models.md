@@ -4,7 +4,8 @@ The vision models (downloaded, loaded, licences) and the language models and age
 ## Vision models
 - mozo publishes the vision models: families (SAM 3, Grounding DINO, EdgeTAM, YOLO, CLIP, …), each with variants of different sizes and licences.
 - **Downloading** stores a model's weights in the workspace, as a background job (io lane). Removing deletes them.
-- **Loading** puts a downloaded model in memory (gpu lane); workflows load what they need themselves. **Unloading** frees the memory.
+- **Using a model downloads it if needed:** a run, auto-annotate or loading that needs a model that isn't downloaded downloads it first and waits (one download, however many wait for it). Downloading by hand is rarely needed.
+- **Loading** puts a model in memory (gpu lane); workflows load what they need themselves. **Unloading** frees the memory.
 - Licences differ (MIT, Apache-2.0, the SAM License, AGPL…): say a model's licence when suggesting it.
 - Workflows and auto-annotators list the models they need and how much is left to download.
 

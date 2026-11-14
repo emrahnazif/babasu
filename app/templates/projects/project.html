@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "projects/macros.html" import annotated, no_classes %}
+{% from "projects/macros.html" import annotated, downloads, no_classes %}
 {% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
 {% set params = {"where": project.filter} %}  {# these links keep the filter #}
@@ -241,7 +241,7 @@
         <label><input type="checkbox" name="again" value="true"> Also images already done for a class</label>
       </div>
       {% if auto.to_download %}
-        <p>Download first: {{ auto.to_download | join(", ") }}. <a href="/models">Models page</a></p>
+        <p class="muted">Try and Run download {{ downloads(auto.to_download) }} first.</p>
       {% endif %}
       {# The latest Try: the ticked classes' prompts, as typed, on a few of the images; nothing is
          saved. Refreshed when it starts (the form is sent) and when it ends. #}
@@ -264,7 +264,7 @@
       <div class="actions">
         <button class="button secondary" type="button" popovertarget="auto-annotate" popovertargetaction="hide">Cancel</button>
         <button class="button secondary" type="submit" name="step" value="save">Save prompts</button>
-        {% if auto.annotator and not auto.to_download %}
+        {% if auto.annotator %}
           <button class="button secondary" type="submit" name="step" value="try" data-stay>Try</button>
           <button class="button" type="submit" name="step" value="run">Run</button>
         {% endif %}

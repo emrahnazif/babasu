@@ -156,10 +156,26 @@ def run_name(label: str, images: int) -> str:
     return f"{label} · {images:,} image{'' if images == 1 else 's'}"
 
 
-def to_download(workflow_id: str) -> list[str]:
-    """The models the workflow uses that aren't downloaded yet (for config.DEVICE), as
-    "family variant"; empty when it's ready to run."""
-    return [f"{use.family} {use.variant}" for use in load(workflow_id).check(device=config.DEVICE).models if use.size]
+def _missing(workflow: Workflow) -> list:
+    """The models a workflow uses that aren't downloaded (for config.DEVICE): mozo's model uses,
+    their size the bytes left to download."""
+    return [use for use in workflow.check(device=config.DEVICE).models if use.size]
+
+
+def to_download(workflow_id: str) -> list[dict]:
+    """The models the workflow uses that aren't downloaded yet (for config.DEVICE): [{model
+    ("family variant"), size (bytes)}]; a run downloads them first. Empty when it's ready to run."""
+    return [{"model": f"{use.family} {use.variant}", "size": use.size} for use in _missing(load(workflow_id))]
+
+
+def needs(conn: sqlite3.Connection, params: dict) -> list[int]:
+    """What a run's job waits for (a job kind's `needs`): the downloads of the models its workflow
+    uses that aren't downloaded, as the run keeps the workflow."""
+    row = conn.execute("SELECT workflow FROM run WHERE id = ?", (params["run_id"],)).fetchone()
+    if row is None:
+        return []
+    missing = _missing(_loaded(json.loads(row["workflow"])))
+    return [job for use in missing if (job := vision.ensure(conn, use.family, use.variant))]
 
 
 def create(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], project_id: int | None = None,
@@ -198,8 +214,9 @@ def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], over
     """Create a run of a workflow over stored images and start its job; returns (run id, job id).
     `prompts`: what to look for, given to every prompted node (see execute()); `overrides`:
     parameter values as mozo's run takes them, by name or one node's ("dino.threshold").
-    ValueError as create(). The workflow's own problems (a model not downloaded, a missing file,
-    prompts it can't take) fail the job, which says why."""
+    ValueError as create(). The models it uses that aren't downloaded are downloaded first (the job
+    waits). The workflow's own problems (a missing file, prompts it can't take) fail the job,
+    which says why."""
     media_ids = list(dict.fromkeys(media_ids))
     run_id = create(conn, workflow_id, media_ids, project_id, name)
     params = {"media_ids": media_ids, "overrides": overrides, "prompts": prompts}
@@ -229,7 +246,7 @@ def _kept(workflow: Workflow) -> dict[str, str]:
 OnImage = Callable[[sqlite3.Connection, sqlite3.Row, dict[str, Detections]], None]
 
 
-@jobs.kind(KIND, lane="gpu", title="Run workflow")
+@jobs.kind(KIND, lane="gpu", title="Run workflow", needs=needs)
 def run_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict | None = None,
             prompts: list[str] | None = None) -> dict:
     return execute(ctx, run_id, media_ids, overrides, prompts)

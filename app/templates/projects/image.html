@@ -5,7 +5,7 @@
    Edit project, as on the project page. A frozen
    project, or one without classes, only shows its annotations. #}
 {% extends "base.html" %}
-{% from "projects/macros.html" import no_classes %}
+{% from "projects/macros.html" import downloads, no_classes %}
 {% set project, params = image.project, {"where": image.filter} %}
 {% set editable = not project.frozen_at and project.classes %}
 {% set main_bleed = true %}
@@ -26,13 +26,8 @@
 {% block actions %}
   {% if editable and project.annotator %}
     <form method="post" action="/projects/{{ project.id }}/images/{{ image.media_id }}/annotate" data-background-form>
-      {% if to_download %}
-        <button class="icon-button" type="button" disabled aria-label="Auto-annotate"
-                title="Auto-annotate: download {{ to_download | join(', ') }} first (Models page)">{{ icon("sparkles") }}</button>
-      {% else %}
-        <button class="icon-button" type="submit" aria-label="Auto-annotate"
-                title="Auto-annotate this image with {{ annotators[project.annotator] }}">{{ icon("sparkles") }}</button>
-      {% endif %}
+      <button class="icon-button" type="submit" aria-label="Auto-annotate"
+              title="Auto-annotate this image with {{ annotators[project.annotator] }}{% if to_download %}; downloads {{ downloads(to_download) }} first{% endif %}">{{ icon("sparkles") }}</button>
     </form>
   {% endif %}
   <a class="icon-button" href="/projects/{{ project.id }}/edit" aria-label="Edit project" title="Edit project">{{ icon("pencil-square") }}</a>
