@@ -26,16 +26,26 @@ def connect() -> sqlite3.Connection:
 
 
 def migrate() -> None:
-    """Bring the schema up to date: run each NNN_*.sql newer than PRAGMA user_version."""
+    """Bring the schema up to date: run each NNN_*.sql newer than PRAGMA user_version.
+
+    Foreign keys are off while migrating, as SQLite's procedure for schema changes has it: a table
+    rebuilt (new table, copy, drop the old, rename) would otherwise cascade the drop into the rows
+    referring to it. Each migration is checked before its commit instead."""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     with closing(connect()) as conn:
         conn.execute("PRAGMA journal_mode = WAL")  # stored in the file; set once
+        conn.execute("PRAGMA foreign_keys = OFF")  # outside a transaction, or it does nothing
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
             number = int(path.name.split("_")[0])
             if number > version:
                 # One transaction per migration, including the version bump.
-                conn.executescript(f"BEGIN; {path.read_text()} PRAGMA user_version = {number}; COMMIT;")
+                conn.executescript(f"BEGIN; {path.read_text()}")
+                if broken := conn.execute("PRAGMA foreign_key_check").fetchall():
+                    conn.rollback()
+                    raise RuntimeError(f"Migration {path.name} leaves {len(broken)} broken references")
+                conn.execute(f"PRAGMA user_version = {number}")
+                conn.commit()
 
 
 def get() -> Iterator[sqlite3.Connection]:
