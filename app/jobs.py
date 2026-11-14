@@ -231,6 +231,18 @@ def find_active(conn: sqlite3.Connection, kind_name: str, params: dict) -> int |
     return next((job_id for job_id, p in _active(conn, kind_name).items() if p == params), None)
 
 
+def ahead(conn: sqlite3.Connection, job: dict) -> dict | None:
+    """What a queued job waits behind: the job running in its lane (a lane runs one at a time);
+    None if it isn't queued or its lane is free."""
+    known = _kinds.get(job["kind"])
+    if job["status"] != "queued" or known is None:
+        return None
+    kinds = _lane_kinds(known.lane)
+    row = conn.execute(f"{_SELECT} WHERE job.status = 'running' AND job.kind IN ({', '.join('?' * len(kinds))})",
+                       kinds).fetchone()
+    return _job(row) if row else None
+
+
 def get(conn: sqlite3.Connection, job_id: int) -> dict | None:
     row = conn.execute(f"{_SELECT} WHERE job.id = ?", (job_id,)).fetchone()
     return _job(row) if row else None
@@ -304,9 +316,14 @@ def _interrupt(conn: sqlite3.Connection, running: str, queued: str) -> None:
         )
 
 
+def _lane_kinds(lane: str) -> list[str]:
+    """The job kinds that run in a lane (one job at a time between them)."""
+    return [name for name, k in _kinds.items() if k.lane == lane]
+
+
 def _worker(lane: str) -> None:
     while not _stopping.is_set():
-        job = _claim_next([name for name, k in _kinds.items() if k.lane == lane])
+        job = _claim_next(_lane_kinds(lane))
         if job is None:
             _wake[lane].wait(timeout=IDLE_WAKE)
             _wake[lane].clear()

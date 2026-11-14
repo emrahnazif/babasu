@@ -2,7 +2,9 @@
 and a box.
 
 The model is the one chosen (a setting, EdgeTAM by default). One that isn't downloaded is
-downloaded when chosen; meanwhile the first downloaded one in MODELS' order answers.
+downloaded when chosen; meanwhile the first downloaded one in MODELS' order answers. It loads
+through the load job (vision.py), never in a request: a call for a model not in memory starts
+that job (or finds it) and raises Loading, which the editor shows until the job ends.
 
 The image is prepared once (its encoding, the expensive half, kept by the model); each prompt then
 runs only the cheap half, fast enough for every mouse move. That is why it's called directly
@@ -60,6 +62,18 @@ class Prompt(BaseModel):
         return self
 
 
+class Loading(Exception):
+    """The click model isn't in memory yet: the job loading it (vision.loading()), and its name."""
+
+    def __init__(self, name: str, job: dict):
+        self.name, self.job = name, job
+        if job["ahead"]:
+            super().__init__(f"{name} loads once {job['ahead']} finishes (job {job['id']} waits for it); "
+                             "the click tool answers when it's loaded")
+        else:
+            super().__init__(f"{name} is loading (job {job['id']}); the click tool answers when it's loaded")
+
+
 class Superseded(Exception):
     """A newer call came while this one waited: its answer would be for where the pointer was."""
 
@@ -84,15 +98,17 @@ def in_use(downloaded: set[str] | None = None) -> str | None:
 
 
 def tool(conn) -> dict:
-    """The editor's click tool, as its menu shows it: on or off, the chosen model, the one in use,
-    and each model with its name, licence, and whether it's downloaded, downloading or how many
-    bytes it would download."""
+    """The editor's click tool, as its menu shows it: on or off, the chosen model, the one in use
+    and whether it's in memory (`loaded`), and each model with its name, licence, and whether it's
+    downloaded, downloading or how many bytes it would download."""
     s, busy = settings.get(), vision.busy(conn)
     sizes = {m: weights.download_size(*_parts(m), device=config.DEVICE) for m in MODELS}  # 0: downloaded
+    model = in_use({m for m, size in sizes.items() if size == 0})
     return {
         "on": s.segment_tool,
         "model": s.click_model,
-        "in_use": in_use({m for m, size in sizes.items() if size == 0}),
+        "in_use": model,
+        "loaded": model is not None and vision.is_loaded(*_parts(model)),
         "models": [{"id": m, "name": name, "license": weights.license_of(*_parts(m)), "downloaded": sizes[m] == 0,
                     "downloading": busy.get(_parts(m)) == "downloading", "to_download": sizes[m]}
                    for m, name in MODELS.items()],
@@ -109,10 +125,14 @@ def change(conn, change: Change) -> dict:
     return tool(conn)
 
 
-def _model():
+def _model(conn):
+    """The click model, in memory. LookupError if none is downloaded; Loading (its load job,
+    started now if none is under way) if it isn't in memory yet."""
     model = in_use()
     if model is None:
         raise LookupError("No click model is downloaded yet")
+    if not vision.is_loaded(*_parts(model)):
+        raise Loading(MODELS[model], vision.loading(conn, *_parts(model)))
     return vision.load(*_parts(model))
 
 
@@ -123,16 +143,15 @@ def _pixels(path: Path) -> np.ndarray:
     return load_image(path)
 
 
-def prepare(path: Path) -> None:
-    """Encode the image now, so its prompts run only the cheap half."""
-    _model().prepare(_pixels(path))
+def prepare(conn, path: Path) -> None:
+    """Encode the image now, so its prompts run only the cheap half. Raises as _model()."""
+    _model(conn).prepare(_pixels(path))
 
 
-def segment(path: Path, prompt: Prompt, task: projects.Task) -> projects.Annotation | None:
+def segment(conn, path: Path, prompt: Prompt, task: projects.Task) -> projects.Annotation | None:
     """The object the prompt points at, as an annotation of `prompt.class_id`: its box, and for a
     segmentation (or keypoints) project its polygon too; None if nothing was found. Raises
-    Superseded if a newer call came while this one waited; LookupError if no click model is
-    downloaded."""
+    Superseded if a newer call came while this one waited; LookupError or Loading as _model()."""
     global _latest
     with _numbering:
         call = _latest = next(_calls)
@@ -141,7 +160,7 @@ def segment(path: Path, prompt: Prompt, task: projects.Task) -> projects.Annotat
             raise Superseded
         # One click is ambiguous (the handle, the door, the car): three candidates, the best kept.
         # More points or a box say which, and one mask is the model's answer to them.
-        found = _model().predict(
+        found = _model(conn).predict(
             _pixels(path),
             points=np.array(prompt.points, dtype=np.float32) if prompt.points else None,
             labels=np.array(prompt.labels, dtype=np.int64) if prompt.points else None,

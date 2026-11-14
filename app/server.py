@@ -9,7 +9,7 @@ from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from mozo.workflow.api import workflow_router
 
-from app import agent, config, db, history, jobs, views, vision
+from app import agent, config, db, history, jobs, segment, views, vision
 from app.filters import FilterError
 from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
@@ -80,6 +80,7 @@ app.include_router(history_routes.router)
 # loads models through ours, and whole runs are our jobs, so it offers no Run of its own.
 app.include_router(workflow_router(models=vision.load, process=False), prefix="/mozo")
 app.add_exception_handler(FilterError, projects.filter_error)
+app.add_exception_handler(segment.Loading, projects.click_loading)
 app.add_exception_handler(views.ViewError, views_routes.view_error)
 views.setup(app)
 

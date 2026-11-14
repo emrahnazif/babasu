@@ -2,7 +2,10 @@
 Workflow runs, tools and annotation all load through the one manager here.
 
 Downloading is a job (io lane) with progress in bytes. Loading is a job too (gpu lane): it
-imports torch and takes seconds, and only a downloaded model loads.
+imports torch and takes seconds, and only a downloaded model loads. Everything loads through the
+load job or inside another job (a run's models); a request never loads a model (the click tool
+starts the load job and says so, segment.py). The gpu lane runs one job at a time, so a load can
+wait behind a run: what it waits behind is said (loading()).
 """
 
 import json
@@ -137,6 +140,10 @@ def unload_all() -> int:
     return len(models.clear())
 
 
+def is_loaded(family: str, variant: str) -> bool:
+    return any((r["family"], r["variant"], r["device"]) == (family, variant, config.DEVICE) for r in models.resident())
+
+
 def downloaded(family: str, variant: str) -> bool:
     return weights.is_cached(family, variant, device=config.DEVICE)
 
@@ -152,6 +159,17 @@ def start_load(conn, family: str, variant: str) -> int:
     """Queue loading a model, after downloading it if it isn't; returns the job id."""
     _check(family, variant)
     return jobs.start(conn, LOAD, {"family": family, "variant": variant})
+
+
+def loading(conn, family: str, variant: str) -> dict:
+    """The job loading a model: the one under way, or a new one (as ensure() for downloads): {id,
+    status (queued or running), started (it's new), ahead: the title of the job it waits behind
+    in the gpu lane, or None}."""
+    job_id = jobs.find_active(conn, LOAD, {"family": family, "variant": variant})
+    started = job_id is None
+    job = jobs.get(conn, job_id or start_load(conn, family, variant))
+    blocking = jobs.ahead(conn, job)
+    return {"id": job["id"], "status": job["status"], "started": started, "ahead": blocking and blocking["title"]}
 
 
 def _download_first(conn, params: dict) -> list[int]:

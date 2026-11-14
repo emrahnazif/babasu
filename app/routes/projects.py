@@ -88,6 +88,12 @@ def _parse(where: str, name: str | None) -> Filter:
     return filter if name is None else filter.set(name=name.strip())
 
 
+def click_loading(request: Request, error: segment.Loading) -> JSONResponse:
+    """For the API (registered in app/server.py): the click model isn't in memory yet, a 409
+    saying so, with its load job (`loading`: id, status, ahead) for the editor to wait on."""
+    return JSONResponse({"detail": str(error), "loading": error.job | {"model": error.name}}, status_code=409)
+
+
 def filter_error(request: Request, error: FilterError) -> JSONResponse:
     """For the API (registered in app/server.py): a filter that can't be used is a 422 with
     the reason in words. The pages show the reason above the images instead."""
@@ -552,7 +558,7 @@ def api_set_annotations(project_id: int, media_id: int, annotations: list[projec
 @contextmanager
 def _clicking(conn: sqlite3.Connection, project_id: int, media_id: int):
     """The image click to segment works on (projects.image_file); 404 if there's none, 409 if no
-    click model is downloaded."""
+    click model is downloaded, or while it loads (segment.Loading: click_loading answers it)."""
     image = projects.image_file(conn, project_id, media_id)
     if image is None:
         raise HTTPException(404, "Image not found")
@@ -582,9 +588,10 @@ def api_change_click_tool(change: segment.Change, conn: DB) -> dict:
 def api_prepare_image(project_id: int, media_id: int, conn: DB) -> None:
     """Gets the image ready for click to segment: encodes it now (the slow half, a fraction of a
     second), so each segment call on it afterwards takes milliseconds. Optional: the first segment
-    call prepares it too."""
+    call prepares it too. 409 while the click model loads, with its job (`loading`: id, status, and
+    `ahead`, the job it waits behind): it's loaded by that job, never by this call."""
     with _clicking(conn, project_id, media_id) as image:
-        segment.prepare(image["path"])
+        segment.prepare(conn, image["path"])
 
 
 @router.post("/api/projects/{project_id}/images/{media_id}/segment", response_model=projects.Annotation | None)
@@ -599,7 +606,7 @@ def api_segment(project_id: int, media_id: int, prompt: segment.Prompt, conn: DB
         if prompt.class_id not in image["class_ids"]:
             raise HTTPException(422, f"No class {prompt.class_id} in this project")
         try:
-            return segment.segment(image["path"], prompt, image["task"])
+            return segment.segment(conn, image["path"], prompt, image["task"])
         except segment.Superseded:
             return Response(status_code=204)
 
