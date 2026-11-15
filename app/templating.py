@@ -106,7 +106,15 @@ def query(params: dict, **changes) -> str:
 
 def plural(n: int, word: str) -> str:
     """A count with its noun: "1 image", "1,240 images", "3 classes"."""
-    return f"{n:,} {word if n == 1 else word + ('es' if word.endswith('s') else 's')}"
+    return f"{number(n)} {word if n == 1 else word + ('es' if word.endswith('s') else 's')}"
+
+
+def number(n: int | float) -> str:
+    """A number for people: thousands grouped, a fraction to three significant digits: "5,084",
+    "0.912", "3.4", "-6.5"."""
+    if isinstance(n, float) and not n.is_integer() and abs(n) < 1000:
+        return f"{n:,.3g}"
+    return f"{n:,.0f}"
 
 
 def filesize(n: int) -> str:
@@ -146,6 +154,7 @@ templates.env.filters["options"] = options
 templates.env.filters["ago"] = ago
 templates.env.filters["period"] = period
 templates.env.filters["filesize"] = filesize
+templates.env.filters["number"] = number
 templates.env.filters["plural"] = plural
 templates.env.globals["app_name"] = config.APP_NAME
 templates.env.globals["nav"] = nav
