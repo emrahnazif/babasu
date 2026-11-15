@@ -403,9 +403,7 @@
           <p class="muted">6-month price history.</p>
         </header>
         <label class="field">Ticker
-          <select>
-            <option>VOO</option><option>VIG</option><option>AAPL</option><option>MSFT</option><option>GOOGL</option><option>AMZN</option><option>TSLA</option>
-          </select>
+          {{ select("demo-ticker", "ticker", [("VOO", "VOO"), ("VIG", "VIG"), ("AAPL", "AAPL"), ("MSFT", "MSFT"), ("GOOGL", "GOOGL"), ("AMZN", "AMZN"), ("TSLA", "TSLA")], "VOO") }}
         </label>
         <hr>
         <svg class="area" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="VOO, January to June: 412 to 462">
