@@ -25,7 +25,7 @@ NAV = [
     [
         {"label": "Data lake", "href": "/data-lake"},
         {"label": "History", "href": "/history"},
-        {"label": "Components", "href": "/components"},  # what views are built from, each drawn (for checking them)
+        {"label": "Components", "href": "/components"},  # what the app's pages are built from, each drawn (for designing them)
     ],
 ]
 

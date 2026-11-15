@@ -1,14 +1,13 @@
 """Views the agent writes: their pages, the API to write, read and restore them, and the links
 added to the navigation."""
 
-from functools import cache
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from app import settings, view_components, views
+from app import settings, views
 from app.templating import templates
 
 router = APIRouter()
@@ -18,7 +17,7 @@ class ViewWrite(BaseModel):
     """A new version of a view: its whole template; title (needed for a new view), kind and
     workflow change only when given."""
 
-    template: str = Field(max_length=500_000, description="The whole page: a Jinja template (its components: /components).")
+    template: str = Field(max_length=500_000, description="The whole page: a Jinja template (see get_components).")
     title: str | None = Field(None, min_length=1, max_length=200, description="The page's title; needed for a new view.")
     kind: views.Kind | None = Field(None, description="report (the default; kept as it was when written) or studio "
                                     "(a live page for one workflow).")
@@ -49,21 +48,6 @@ def view_error(request: Request, error: views.ViewError) -> JSONResponse:
 @router.get("/views", response_class=HTMLResponse)
 def view_list(request: Request):
     return templates.TemplateResponse(request, "views/list.html", {"views": views.list_all()})
-
-
-@cache
-def _examples() -> list[tuple]:
-    """Each component's name, call, what it does, example template and that example rendered
-    (they never change)."""
-    components, _ = view_components.docs()
-    return [(name, call, about, example, views.render(example, {})) for name, call, about, example in components]
-
-
-@router.get("/components", response_class=HTMLResponse)
-def components_page(request: Request):
-    """The components a view is built from, each with its example rendered."""
-    return templates.TemplateResponse(request, "views/components.html", {
-        "examples": _examples(), "layout": view_components.LAYOUT, "filters": view_components.docs()[1]})
 
 
 @router.get("/views/{view_id}", response_class=HTMLResponse)

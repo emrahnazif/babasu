@@ -16,6 +16,12 @@ def home(request: Request):
     return templates.TemplateResponse(request, "pages/home.html")
 
 
+@router.get("/components", response_class=HTMLResponse)
+def components(request: Request):
+    """The components the app's pages are built from, each drawn, for designing and checking them."""
+    return templates.TemplateResponse(request, "pages/components.html")
+
+
 # Sections that aren't built yet: each shows a short note (its name is the breadcrumb's switcher).
 def _coming(request: Request, title: str):
     return templates.TemplateResponse(request, "pages/coming.html", {"title": title})

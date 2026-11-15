@@ -5,9 +5,8 @@ reference shows them. What draws data is here, as functions a template calls on 
 (`{{ ui.table(rows) }}`), plus a few filters for shaping API answers. Each builds its HTML from
 values it escapes, and returns it as safe HTML.
 
-COMPONENTS is the reference: each component with an example the reference page (/components)
-renders; how to call it and what it does come from the function itself. The agent reads the same
-as text.
+COMPONENTS is the reference: each component with an example; how to call it and what it does come
+from the function itself. The agent reads it as text (get_components).
 """
 
 import inspect

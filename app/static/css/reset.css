@@ -7,6 +7,10 @@
 
 html, body { height: 100%; }
 
+/* An app, not a web page: scrolling stops at an area's ends, without the rubber-band bounce, and
+   an area at its end doesn't pass the scroll on to the one around it. */
+* { overscroll-behavior: none; }
+
 body {
   -webkit-font-smoothing: antialiased;
 }
