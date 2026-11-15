@@ -139,8 +139,8 @@
 
 .columns > img { width: 100%; border-radius: var(--radius-md); }
 
-/* Images, 4 columns if not given. Each a <figure>: a square image (covering it) and a one-line
-   caption. */
+/* Images, 4 columns if not given. Each a <figure>: a square image (covering it; an image with
+   annotations is an <svg> that covers it the same way) and a one-line caption. */
 .gallery {
   --columns: 4;
   --min: 8rem;
@@ -149,7 +149,8 @@
 
 .gallery > figure { display: grid; gap: var(--space-1); min-width: 0; margin: 0; }
 
-.gallery img {
+.gallery img,
+.gallery svg {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;

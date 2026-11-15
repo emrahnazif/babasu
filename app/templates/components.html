@@ -1,0 +1,482 @@
+{#
+  The components the app's pages are built from (pages/components.html shows each one).
+
+  A component as JSON is its macro's name and arguments: {"type": "card", "title": "Models",
+  "children": […]} draws as card(title="Models", children=[…]), so render() draws a page given as
+  JSON with these same macros. A container's content is its `children`, or what a page writes
+  between {% call %} and {% endcall %}.
+
+  What a component is given, it shows: to leave a part out, don't give it (an empty text or list
+  counts as not given; 0 is a value). An argument it doesn't take is an error.
+#}
+
+{% from "projects/annotated.html" import annotated %}
+{% from "partials/select.html" import select as _select %}  {# the app's pages call it directly until they're on these #}
+{% set _icon = icon %}  {# the app's icon(), the bare SVG; `icon` here is the component, or a macro's argument #}
+
+{# Anything a component holds: a component as JSON, a list of them (spaced like words, so buttons
+   in a line don't touch), or text (escaped, unless it's HTML a macro made). #}
+{% macro render(content) -%}
+  {%- if content is string -%}
+    {{ content }}
+  {%- elif content is number -%}
+    {{ content | number }}
+  {%- elif content is mapping -%}
+    {{ _types[content.type](**dict(content.items() | rejectattr("0", "equalto", "type"))) }}
+  {%- elif content is iterable -%}
+    {%- for part in content %}{{ render(part) }}{{ " " if not loop.last else "" }}{% endfor -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{# --- Page --- #}
+
+{# A page's title, and a line saying what it shows. #}
+{% macro heading(title, description=none) -%}
+  <h1>{{ title }}</h1>
+  {%- if description %}{{ text(description, muted=true) }}{% endif %}
+{%- endmacro %}
+
+{# A part of a page: its title, a line under it, then what it holds. #}
+{% macro section(title=none, description=none, children=none) -%}
+  <section>
+    {%- if title %}
+    <h2>{{ title }}</h2>
+    {%- endif %}
+    {%- if description %}{{ text(description, muted=true) }}{% endif %}
+    {{ caller() if caller else render(children) }}
+  </section>
+{%- endmacro %}
+
+{# A line between parts. #}
+{% macro divider() %}<hr>{% endmacro %}
+
+{# A paragraph; `note` is a quieter line under it (a name, then what it is). Either can hold
+   components too, in the line: ["SAM 3", {"type": "badge", "text": "Built in"}]. #}
+{% macro text(text, note=none, muted=false) -%}
+  <p{% if muted %} class="muted"{% endif %}>{{ render(text) }}{% if note %}<br><span class="muted">{{ render(note) }}</span>{% endif %}</p>
+{%- endmacro %}
+
+{# --columns / --min for a grid that has them (columns, gallery), when given. #}
+{% macro _grid(columns, min) -%}
+  {%- set vars = (["--columns: " ~ columns] if columns else []) + (["--min: " ~ min] if min else []) -%}
+  {%- if vars %} style="{{ vars | join('; ') }}"{% endif -%}
+{%- endmacro %}
+
+{# Parts side by side: `columns` of them (2 if not given) when there's room, one under the other
+   when a part would be narrower than `min` (a CSS length; e.g. "10rem" keeps small parts side by
+   side longer). #}
+{% macro columns(columns=none, min=none, children=none) -%}
+  <div class="columns"{{ _grid(columns, min) }}>
+    {{ caller() if caller else render(children) }}
+  </div>
+{%- endmacro %}
+
+{# Things one under the other: items, cards, drop zones. #}
+{% macro stack(children=none) -%}
+  <div class="stack">
+    {{ caller() if caller else render(children) }}
+  </div>
+{%- endmacro %}
+
+{# As many columns as fit, each at least 12rem wide (cards, images); `wide`: 14rem, and the cards
+   in a row as tall as each other (e.g. cards with a cover). #}
+{% macro grid(children=none, wide=false) -%}
+  <div class="grid{% if wide %} wide{% endif %}">
+    {{ caller() if caller else render(children) }}
+  </div>
+{%- endmacro %}
+
+{# One line: its first part fills it, the rest sit at its right at their own width (a note and its
+   value, a bar and its percentage). #}
+{% macro row(children=none) -%}
+  <div class="row">{{ caller() if caller else render(children) }}</div>
+{%- endmacro %}
+
+{# A bordered box. Every part is optional, in this order: a cover (up to four image URLs, or a line
+   saying why there are none), a title with a description under it and something at its right
+   (`action`: a button, a badge, a time), what it holds, and a footer (a muted strip along its
+   bottom: a note, buttons). With `href`, the whole card is a link. #}
+{% macro card(title=none, description=none, action=none, cover=none, footer=none, href=none, children=none) -%}
+  {%- set tag = "a" if href else "div" -%}
+  <{{ tag }}{{ {"class": "card", "href": href} | xmlattr }}>
+    {%- if cover is string %}
+    <div class="cover"><p class="muted">{{ cover }}</p></div>
+    {%- elif cover %}
+    <div class="cover">{% for src in cover %}{{ image(src) }}{% endfor %}</div>
+    {%- endif %}
+    {%- if title or description or action %}
+    <header>
+      {%- if title %}
+      <h2>{{ title }}</h2>
+      {%- endif %}
+      {%- if description %}{{ text(description, muted=true) }}{% endif %}
+      {{ render(action) }}
+    </header>
+    {%- endif %}
+    {{ caller() if caller else render(children) }}
+    {%- if footer %}
+    <footer>{{ render(footer) }}</footer>
+    {%- endif %}
+  </{{ tag }}>
+{%- endmacro %}
+
+{# --- Small parts --- #}
+
+{# A button; with `href`, a link that looks like one. variant: secondary, destructive, or icon (only
+   its icon shows; the label is its tooltip). `icon`: an icon's name (static/icons), before the
+   label. What it does, else nothing yet: `popover`, open the dialog or menu with that id;
+   `close`, close it; `submit`, send its form. #}
+{% macro button(label, href=none, variant=none, icon=none, popover=none, close=none, submit=false) -%}
+  {%- set only_icon = variant == "icon" -%}
+  {%- set class = "icon-button" if only_icon else "button" ~ (" " ~ variant if variant else "") -%}
+  {%- set inside %}{% if icon %}{{ _icon(icon) }}{% endif %}{% if not only_icon %}{{ label }}{% endif %}{% endset -%}
+  {%- set named %}{% if only_icon %} aria-label="{{ label }}" title="{{ label }}"{% endif %}{% endset -%}
+  {%- if href -%}
+    <a class="{{ class }}" href="{{ href }}"{{ named }}>{{ inside }}</a>
+  {%- else -%}
+    <button class="{{ class }}" type="{{ 'submit' if submit else 'button' }}"
+      {{- {"popovertarget": popover or close, "popovertargetaction": "hide" if close else none} | xmlattr }}{{ named }}>{{ inside }}</button>
+  {%- endif -%}
+{%- endmacro %}
+
+{# A row of buttons (and badges, menus, a note at its end), at the right. variant: start (at the
+   left, wrapping: e.g. a filter bar), divided (a line above it: a form's last row). #}
+{% macro actions(children=none, variant=none) -%}
+  <div class="actions{% if variant %} {{ variant }}{% endif %}">
+    {{ caller() if caller else render(children) }}
+  </div>
+{%- endmacro %}
+
+{# A small label. With a colour, a dot of it before the text (a class's colour); `icon` before the
+   text; `remove`: where the × after it goes (e.g. a link without that filter). #}
+{% macro badge(text, color=none, icon=none, remove=none) -%}
+  <span class="badge{% if not color %} plain{% endif %}"{% if color %} style="--badge-color: {{ color }}"{% endif %}>
+    {%- if icon %}{{ _icon(icon) }}{% endif %}{{ text }}
+    {%- if remove %}<a href="{{ remove }}" aria-label="Remove" title="Remove">{{ _icon("x-mark") }}</a>{% endif -%}
+  </span>
+{%- endmacro %}
+
+{# When something happened, as how long ago ("16h", "Yesterday"); the full time on hover. `at`: an
+   ISO time, as the API gives it. #}
+{% macro time(at) -%}
+  <time class="muted" datetime="{{ at }}" title="{{ at }}">{{ at | ago }}</time>
+{%- endmacro %}
+
+{# An icon (its name, from static/icons) in a muted square, e.g. at the start of a table row. #}
+{% macro icon(name) %}<span class="icon">{{ _icon(name) }}</span>{% endmacro %}
+
+{# --- Data --- #}
+
+{# A table. `columns`: the header's labels; a column of numbers as {"label": "Objects", "number":
+   true}, its cells at the right with their digits lined up (no header row when every label is
+   empty). `rows`: a list of cells per row; a cell is text, a number, or components (a badge,
+   buttons, text with a note, an icon). #}
+{% macro table(rows, columns=none) -%}
+  {%- set ns = namespace(head=false) -%}
+  {%- for c in columns or [] %}{% if (c.label if c is mapping else c) %}{% set ns.head = true %}{% endif %}{% endfor -%}
+  <table>
+    {%- if ns.head %}
+    <thead><tr>{% for c in columns %}<th{% if c is mapping and c.number %} class="number"{% endif %}>{{ c.label if c is mapping else c }}</th>{% endfor %}</tr></thead>
+    {%- endif %}
+    <tbody>
+      {%- for row in rows %}
+      <tr>
+        {%- for cell in row %}
+        {%- set c = columns[loop.index0] if columns else none %}
+        <td{% if c is mapping and c.number %} class="number"{% endif %}>{{ render(cell) }}</td>
+        {%- endfor %}
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+{%- endmacro %}
+
+{# Images in `columns` columns (4 if not given; fewer when one would be narrower than `min`), each a
+   square the image covers, with its caption under it. An image: {"src", "caption"}; with
+   "annotations" (and "width" and "height", the image's size they're measured in), they're drawn
+   on it, each in its class's colour (`classes`: [{"id", "color"}], as a project has them). #}
+{% macro gallery(images, columns=none, min=none, classes=none) -%}
+  <div class="gallery"{{ _grid(columns, min) }}>
+    {%- for each in images %}
+    <figure>
+      {%- if each.annotations %}{{ annotated(each, classes, each.src, label=each.caption, cover=true) }}
+      {%- else %}{{ image(each.src) }}{% endif %}
+      {%- if each.caption %}<figcaption>{{ each.caption }}</figcaption>{% endif -%}
+    </figure>
+    {%- endfor %}
+  </div>
+{%- endmacro %}
+
+{# Images in rows, like a photo library: each keeps its shape, a row's images share a height and the
+   row fills the width. An image: {"src", "width", "height"}, and "href" (where it leads),
+   "caption" (its name, for whoever can't see it), "annotations" (drawn as in a gallery), "badge"
+   ({"text", "icon"}: the icon at its corner, the text on hover). #}
+{% macro tiles(images, classes=none) -%}
+  <div class="justified">
+    {%- for each in images %}
+    {%- set tag = "a" if each.href else "div" %}
+    <{{ tag }}{{ {"class": "tile", "href": each.href, "style": "--ratio: " ~ (each.width / each.height) | round(3)} | xmlattr }}>
+      {{- annotated(each, classes, each.src, label=each.caption) -}}
+      {%- if each.badge %}<span class="badge plain" title="{{ each.badge.text }}" aria-label="{{ each.badge.text }}">{{ _icon(each.badge.icon) }}</span>{% endif -%}
+    </{{ tag }}>
+    {%- endfor %}
+  </div>
+{%- endmacro %}
+
+{# One image, as wide as where it is (e.g. a column). #}
+{% macro image(src) %}<img src="{{ src }}" alt="" loading="lazy">{% endmacro %}
+
+{# A bar showing how much of something is done or used: `value` from 0 to 1. #}
+{% macro progress(value) -%}
+  <div class="progress" role="progressbar" style="--value: {{ value }}" aria-valuenow="{{ (value * 100) | round | int }}" aria-valuemax="100"></div>
+{%- endmacro %}
+
+{# A number to notice: what it counts above it (`label`), what it holds under it (a progress bar, a
+   row: a bar and its percentage), and a quieter `note` under that. #}
+{% macro stat(label=none, value=none, note=none, children=none) -%}
+  <div class="stat">
+    {%- if label %}<span class="muted">{{ label }}</span>{% endif %}
+    {%- if value is number or value %}<strong>{{ render(value) }}</strong>{% endif %}
+    {{- caller() if caller else render(children) }}
+    {%- if note is number or note %}<span class="muted">{{ render(note) }}</span>{% endif -%}
+  </div>
+{%- endmacro %}
+
+{# Stats side by side, as far apart as they're wide. #}
+{% macro stats(children=none) -%}
+  <div class="stats">
+    {{ caller() if caller else render(children) }}
+  </div>
+{%- endmacro %}
+
+{# A line in a muted box: an icon (its name), a title with a note under it, then what it holds, at
+   its right (a badge, an amount, a small chart), or filling it when there's no title (a stat).
+   With `href` it's a link, a chevron at its end. Several go in a stack, or side by side in
+   columns. #}
+{% macro item(title=none, note=none, icon=none, href=none, children=none) -%}
+  {%- set tag = "a" if href else "div" -%}
+  <{{ tag }}{{ {"class": "item", "href": href} | xmlattr }}>
+    {%- if icon %}<span class="icon">{{ _icon(icon) }}</span>{% endif %}
+    {%- if title or note %}{{ text(title, note) }}{% endif %}
+    {{ caller() if caller else render(children) }}
+    {%- if href %}{{ _icon("chevron-right") }}{% endif -%}
+  </{{ tag }}>
+{%- endmacro %}
+
+{# A bar chart: a bar per value, as tall as it is of `max` (the largest value if not given), its
+   label under it. `values`: [label, number] pairs, or numbers for bars without labels. size: small
+   (half as tall), tiny (a little chart in a line, e.g. in an item: give it numbers). #}
+{% macro bars(values, max=none, size=none) -%}
+  {%- set numbers = values | map("last") | list if values and values[0] is not number else values -%}
+  <div class="bars{% if size %} {{ size }}{% endif %}" style="--max: {{ max or numbers | max }}">
+    {%- for v in values %}
+    <span style="--value: {{ v if v is number else v[1] }}">{% if v is not number %}{{ v[0] }}{% endif %}</span>
+    {%- endfor %}
+  </div>
+{%- endmacro %}
+
+{# An area chart of `values` (numbers) in order, left to right, from 0 at the bottom; the largest
+   at four fifths of its height. `label`: what it shows, for whoever can't see it. #}
+{% macro area(values, label=none) -%}
+  {%- set top = (values | max) / 0.8 or 1 -%}
+  {%- set step = 100 / ([values | length - 1, 1] | max) -%}
+  {%- set ns = namespace(d="", y=0) -%}
+  {%- for v in values -%}
+    {%- set x = loop.index0 * step -%}
+    {%- set y = 100 - v / top * 100 -%}
+    {%- if loop.first -%}
+      {%- set ns.d = "M0," ~ _n(y) -%}
+    {%- else -%}
+      {%- set ns.d = ns.d ~ "C" ~ _n(x - step / 2) ~ "," ~ _n(ns.y) ~ " " ~ _n(x - step / 2) ~ "," ~ _n(y) ~ " " ~ _n(x) ~ "," ~ _n(y) -%}
+    {%- endif -%}
+    {%- set ns.y = y -%}
+  {%- endfor -%}
+  <svg class="area" viewBox="0 0 100 100" preserveAspectRatio="none" role="img"{{ {"aria-label": label} | xmlattr }}>
+    <path d="M0,25H100M0,50H100M0,75H100"/>
+    <path class="fill" d="{{ ns.d }}L100,100L0,100Z"/>
+    <path class="line" d="{{ ns.d }}"/>
+  </svg>
+{%- endmacro %}
+
+{# A coordinate in a chart's path, to a tenth. #}
+{% macro _n(value) %}{{ "%g" | format(value | round(1)) }}{% endmacro %}
+
+{# Nothing here yet: an icon, a title, a sentence, and the one way forward (`action`: a button). #}
+{% macro empty(title, description=none, icon=none, action=none) -%}
+  <div class="empty">
+    {%- if icon %}
+    <span class="icon">{{ _icon(icon) }}</span>
+    {%- endif %}
+    <h2>{{ title }}</h2>
+    {%- if description %}{{ text(description, muted=true) }}{% endif %}
+    {{ render(action) }}
+  </div>
+{%- endmacro %}
+
+{# Which page of a long list this is, and links to the pages either side (`previous`, `next`:
+   their URLs; none at the ends). `note`: what the list holds (e.g. "5,084 images"). #}
+{% macro pagination(page, pages, previous=none, next=none, note=none) -%}
+  <div class="actions">
+    <span class="muted">Page {{ page | number }} of {{ pages | number }}{% if note %} · {{ note }}{% endif %}</span>
+    {%- if previous %}
+    {{ button("Previous", href=previous, variant="secondary") }}
+    {%- endif %}
+    {%- if next %}
+    {{ button("Next", href=next, variant="secondary") }}
+    {%- endif %}
+  </div>
+{%- endmacro %}
+
+{# --- Forms --- #}
+
+{# A form: its fields, and its buttons (one with submit=true sends it), in what it holds; it posts
+   to `action` (this page's address if not given). `error`: why the last try didn't go through, at
+   its top. #}
+{% macro form(action=none, method="post", error=none, children=none) -%}
+  <form{{ {"method": method, "action": action} | xmlattr }}>
+    {%- if error %}
+    <p class="error">{{ error }}</p>
+    {%- endif %}
+    {{ caller() if caller else render(children) }}
+  </form>
+{%- endmacro %}
+
+{# Fields one under the other. #}
+{% macro fields(children=none) -%}
+  <div class="fields">
+    {{ caller() if caller else render(children) }}
+  </div>
+{%- endmacro %}
+
+{# A field's label, its `note` (a hint) after it, quieter. #}
+{% macro _label(label, note) %}{{ label }}{% if note %} <span class="muted">{{ note }}</span>{% endif %}{% endmacro %}
+
+{# A field to type in, with its label. type: text if not given, number, search, color…; the rest
+   are the field's own (min, max and step for a number). #}
+{% macro input(name, label, value=none, type=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false) -%}
+  <label class="field">
+    {{ _label(label, note) }}
+    <input{{ {"type": type, "name": name, "value": value, "placeholder": placeholder, "min": min, "max": max, "step": step,
+              "maxlength": maxlength, "required": "required" if required else none} | xmlattr }}>
+  </label>
+{%- endmacro %}
+
+{# A field for a few lines of text, with its label. #}
+{% macro textarea(name, label, value=none, note=none, rows=3, maxlength=none) -%}
+  <label class="field">
+    {{ _label(label, note) }}
+    <textarea{{ {"name": name, "rows": rows, "maxlength": maxlength} | xmlattr }}>{{ value if value is not none }}</textarea>
+  </label>
+{%- endmacro %}
+
+{# One of several options, picked from a menu, with its label: `options` (value, label) pairs, one
+   whose value is none shown but not pickable; `value`, the chosen one (the first if not given).
+   `id`: its menu's, unique on the page (from the name if not given). #}
+{% macro select(name, label, options, value=none, note=none, id=none) -%}
+  <label class="field">
+    {{ _label(label, note) }}
+    {{ _select(id or "select-" ~ name, name, options, value) }}
+  </label>
+{%- endmacro %}
+
+{# One of a few options, side by side, with its label: `options` (value, label) pairs; `value`, the
+   chosen one (the first if not given). #}
+{% macro segmented(name, label, options, value=none, note=none) -%}
+  {%- set chosen = value if value is not none else options[0][0] -%}
+  <fieldset class="field">
+    <legend>{{ _label(label, note) }}</legend>
+    <div class="segmented" role="radiogroup" aria-label="{{ label }}">
+      {%- for v, text in options %}
+      <label class="segmented__item"><input type="radio" name="{{ name }}" value="{{ v }}"{% if v == chosen %} checked{% endif %}>{{ text }}</label>
+      {%- endfor %}
+    </div>
+  </fieldset>
+{%- endmacro %}
+
+{# Two numbers, from and to, with their label: `names`, the two fields'; `values`, theirs if any;
+   `min` and `step` for both. (Here `range` is this macro, not Jinja's.) #}
+{% macro range(label, names, values=none, note=none, min=none, step="any") -%}
+  <fieldset class="field">
+    <legend>{{ _label(label, note) }}</legend>
+    <div class="range">
+      {%- for end in ["from", "to"] %}
+      {%- if not loop.first %}
+      <span class="muted">–</span>
+      {%- endif %}
+      <input{{ {"type": "number", "name": names[loop.index0], "value": values[loop.index0] if values else none, "step": step,
+                "min": min, "placeholder": end, "aria-label": label ~ " " ~ end} | xmlattr }}>
+      {%- endfor %}
+    </div>
+  </fieldset>
+{%- endmacro %}
+
+{# A yes-or-no field: a box to tick, and what ticking it means. #}
+{% macro checkbox(name, label, checked=false, value="true") -%}
+  <label><input type="checkbox" name="{{ name }}" value="{{ value }}"{% if checked %} checked{% endif %}> {{ label }}</label>
+{%- endmacro %}
+
+{# Where files and folders are dropped, or clicked to choose files (js/drop-zone.js): their paths
+   become the form's `name` fields. `accept`: the file types (".jpg,.png"); `large`: a big target,
+   when dropping is the page's main action. `id`: unique on the page (the desktop window delivers
+   the paths to it). #}
+{% macro dropzone(id, name, text="Drop files or folders here, or click to choose files", accept=none, large=false) -%}
+  <div class="dropzone{% if large %} large{% endif %}" id="{{ id }}" data-drop-paths data-name="{{ name }}"
+    {{- {"data-accept": accept} | xmlattr }} role="button" tabindex="0">
+    <p>{{ text }}</p>
+    <ul></ul>
+  </div>
+{%- endmacro %}
+
+{# --- Over the page --- #}
+
+{# A dialog over the page, opened by a button with popover=its id: its title, a description, what
+   it holds, and its buttons (`actions`) after a Cancel that closes it. With `form` (a URL), it's a
+   form posting there; its main button has submit=true. `alert`: it asks before something that
+   can't be undone, Cancel ready to press. #}
+{% macro dialog(id, title, description=none, actions=none, form=none, alert=false, children=none) -%}
+  <div id="{{ id }}" class="dialog" popover{% if alert %} role="alertdialog"{% endif %} aria-labelledby="{{ id }}-title" aria-describedby="{{ id }}-text">
+    {%- if form %}<form method="post" action="{{ form }}">{% endif %}
+    <h2 id="{{ id }}-title">{{ title }}</h2>
+    <div id="{{ id }}-text">
+      {%- if description %}{{ text(description, muted=true) }}{% endif %}
+      {{ caller() if caller else render(children) }}
+    </div>
+    <div class="actions">
+      <button class="button secondary" type="button" popovertarget="{{ id }}" popovertargetaction="hide"{% if alert %} autofocus{% endif %}>Cancel</button>
+      {{ render(actions) }}
+    </div>
+    {%- if form %}</form>{% endif %}
+  </div>
+{%- endmacro %}
+
+{# A menu that opens from a button (popover=its id), under it. Items: {"label"}, each a link
+   ("href") or a button opening another menu or a dialog ("popover"), with an icon before the label
+   and a note after it. In a menu of choices, every item says whether it's the `current` one, and
+   that one is ticked. #}
+{% macro menu(id, items) -%}
+  <div id="{{ id }}" class="menu" popover>
+    {%- for item in items %}
+    {%- set inside -%}
+      {%- if item.current is defined %}<span class="menu__check">{{ _icon("check") }}</span>{% endif -%}
+      {%- if item.icon %}{{ _icon(item.icon) }}{% endif %}{{ item.label }}
+      {%- if item.note is number or item.note %}<span class="menu__note">{{ render(item.note) }}</span>{% endif -%}
+    {%- endset %}
+    {%- if item.href %}
+    <a class="menu__item" href="{{ item.href }}"{% if item.current %} aria-current="page"{% endif %}>{{ inside }}</a>
+    {%- else %}
+    <button class="menu__item" type="button"{{ {"popovertarget": item.popover} | xmlattr }}>{{ inside }}</button>
+    {%- endif %}
+    {%- endfor %}
+  </div>
+{%- endmacro %}
+
+{# The macro each JSON type draws with. #}
+{% set _types = {
+  "heading": heading, "section": section, "divider": divider, "text": text, "columns": columns,
+  "stack": stack, "grid": grid, "row": row, "card": card, "button": button, "actions": actions,
+  "badge": badge, "time": time, "icon": icon, "table": table, "gallery": gallery, "tiles": tiles,
+  "image": image, "progress": progress, "stat": stat, "stats": stats, "item": item, "bars": bars,
+  "area": area, "empty": empty, "pagination": pagination, "form": form, "fields": fields, "input": input,
+  "textarea": textarea, "select": select, "segmented": segmented, "range": range, "checkbox": checkbox,
+  "dropzone": dropzone, "dialog": dialog, "menu": menu,
+} %}
