@@ -9,8 +9,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
+from pydantic import Field
 
 from app import db, jobs
+from app.routes import Answer
 from app.templating import templates
 
 router = APIRouter()
@@ -42,19 +44,49 @@ def job_page(request: Request, job_id: int, conn: DB):
 # --- API ---
 
 
-@router.get("/api/jobs")
+class JobOut(Answer):
+    id: int = Field(description="The job's id.")
+    kind: str = Field(description="What it does: import, run, auto-annotate, download, load…")
+    title: str = Field(description="Its kind in words.")
+    project_id: int | None = Field(description="The project it works on; null: none.")
+    project_name: str | None
+    status: str = Field(description="queued, running, succeeded, failed, cancelled or interrupted.")
+    active: bool = Field(description="Queued or running.")
+    done: int = Field(description="How many of its items are done.")
+    total: int | None = Field(description="How many items it has; null until it knows.")
+    unit: str = Field(description="What its items are, e.g. images.")
+    message: str = Field(description="What it's doing now.")
+    params: dict = Field(description="What it was asked to do (its kind's arguments, e.g. a run's run_id and media_ids).")
+    result: dict | None = Field(description="What it did, when it's finished (by kind, e.g. {images, failed}).")
+    summary: str = Field(description="The result or the error, in one line.")
+    error: str | None = Field(description="Why it failed; read the log (GET /api/jobs/{id}/log) for the details.")
+    stop_reason: str | None = Field(description="user or shutdown: it was asked to stop.")
+    waits_for: str = Field(description="The jobs it waits for before it starts (a JSON list of job ids).")
+    can_cancel: bool
+    can_retry: bool
+    created_at: str = Field(description="UTC (ISO 8601), as are started_at and finished_at.")
+    started_at: str | None
+    finished_at: str | None
+
+
+class Log(Answer):
+    text: str = Field(description="The log from `offset` on.")
+    offset: int = Field(description="Where the next read starts (pass it as ?offset=).")
+
+
+@router.get("/api/jobs", response_model=list[JobOut])
 def job_list(conn: DB) -> list[dict]:
     """Recent background jobs, newest first: title, project, status, progress, summary."""
     return jobs.list_recent(conn)
 
 
-@router.get("/api/jobs/{job_id}")
+@router.get("/api/jobs/{job_id}", response_model=JobOut)
 def job_detail(job_id: int, conn: DB) -> dict:
     """One job: status, progress, result, error, when it started and finished."""
     return _get(conn, job_id)
 
 
-@router.post("/api/jobs/{job_id}/cancel")
+@router.post("/api/jobs/{job_id}/cancel", response_model=JobOut)
 def job_cancel(job_id: int, conn: DB) -> dict:
     """Cancels a queued job, or asks a running one to stop (it stops at its next step). Returns the
     job as GET /api/jobs/{job_id} does."""
@@ -63,7 +95,7 @@ def job_cancel(job_id: int, conn: DB) -> dict:
     return _get(conn, job_id)
 
 
-@router.post("/api/jobs/{job_id}/retry", status_code=201)
+@router.post("/api/jobs/{job_id}/retry", status_code=201, response_model=JobOut)
 def job_retry(job_id: int, conn: DB) -> dict:
     """Runs a failed, cancelled or interrupted job again, as a new job with the same work (an
     import or a run skips what's already done). Returns the new job. 409 for any other job."""
@@ -74,7 +106,7 @@ def job_retry(job_id: int, conn: DB) -> dict:
     return _get(conn, new_id)
 
 
-@router.get("/api/jobs/{job_id}/log")
+@router.get("/api/jobs/{job_id}/log", response_model=Log)
 def job_log(job_id: int, conn: DB, offset: Annotated[int, Query(ge=0, description="Where to start reading, in bytes: 0, or the offset the last read returned.")] = 0) -> dict:
     """The job's log (what it did, and the traceback of an error) from byte `offset`; pass the
     returned `offset` to read what comes next. Read it to find why a job failed."""

@@ -1,10 +1,55 @@
 """Route modules (one per area), plus what they share."""
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+# Not `from app import projects`: in this package that name is the projects route module.
+from app.projects import PROMPT, Annotation
 
 # The tag of API operations only the app's own pages use (the chat's, uploads): the agent's list
 # of operations leaves them out (agent_tools.operations).
 UI_ONLY = "ui-only"
+
+
+class Answer(BaseModel):
+    """What an API operation answers (its response_model): find_api shows its fields to the agent.
+    A field the code adds without declaring it is an error, so the description can't drift from
+    the answer. A field with a default may be left out of an answer: its route uses
+    response_model_exclude_unset, so it stays out. Plain types only (no validators): every answer
+    passes through its model."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def _said(field: str) -> str:
+    return Annotation.model_fields[field].description
+
+
+class KeypointOut(Answer):
+    name: str = Field(description="Which point, e.g. left_eye.")
+    point: tuple[float, float] = Field(description="x, y in pixels of the original image.")
+
+
+class AnnotationOut(Answer):
+    """An Annotation as an answer has it: checked when it was written, not again on each read."""
+
+    class_id: int = Field(description=_said("class_id"))
+    bbox: tuple[float, float, float, float] | None = Field(None, description=_said("bbox"))
+    segments: list[tuple[float, float]] | None = Field(None, description=_said("segments"))
+    keypoints: list[KeypointOut] | None = Field(None, description=_said("keypoints"))
+    score: float | None = Field(None, description=_said("score"))
+
+
+class ClassOut(Answer):
+    id: int = Field(description="The class's id in its project (what annotations' class_id refers to).")
+    name: str = Field(description="Its name, e.g. car.")
+    color: str = Field(description="The colour it's drawn in, #rrggbb.")
+    prompt: str = Field(description=PROMPT)
+    active: bool = Field(description="Always true here (removed classes are left out).")
+
+
+class ToDownload(Answer):
+    model: str = Field(description="The model: its family and variant, e.g. \"sam3 base\".")
+    size: int = Field(description="Bytes still to download.")
 
 
 def safe_next(next: str | None) -> str:

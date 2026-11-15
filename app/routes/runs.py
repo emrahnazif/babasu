@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app import annotators, db, media, runs, vision
 from app.filters import WHERE, Filter
-from app.routes import UI_ONLY
+from app.routes import UI_ONLY, AnnotationOut, Answer, ClassOut, ToDownload
 
 router = APIRouter(prefix="/api")
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -22,13 +22,127 @@ Document = Annotated[dict[str, Any], Body(description=(
     "same type. A run keeps what reaches a save_to_babasu node."))]
 
 
-@router.get("/workflows")
+# --- What the API answers ---
+
+
+class ModelUse(Answer):
+    node: str = Field(description="The node that uses it.")
+    family: str = Field(description="The model family (GET /api/vision/models).")
+    variant: str = Field(description="Which of the family's models.")
+    license: str = Field(description="Its licence.")
+    size: int = Field(description="Bytes still to download (0 once downloaded).")
+
+
+class WorkflowListed(Answer):
+    id: str = Field(description="The workflow's id (what runs and annotators name).")
+    name: str
+    description: str | None
+    builtin: bool = Field(description="Comes with the app (can't be changed or deleted).")
+    models: list[ModelUse] | None = Field(None, description="The models it uses.")
+    error: str | None = Field(None, description="Instead of models: why it doesn't load.")
+
+
+class MissingFile(Answer):
+    node: str
+    parameter: str
+    path: str = Field(description="The file it names, which isn't there.")
+
+
+class WorkflowDetail(WorkflowListed):
+    graph: dict[str, Any] = Field(description="The workflow document: name, description, nodes, edges (as PUT takes it).")
+    kept: list[str] = Field(description="What a run keeps: its save_to_babasu nodes' labels (a run's results are per label).")
+    prompt_parameters: list[str] = Field(description="The parameters that take the prompts, node.parameter.")
+    missing_files: list[MissingFile] = Field(description="Files its nodes name that aren't there.")
+
+
+class RunOut(Answer):
+    id: int = Field(description="The run's id.")
+    name: str
+    workflow_id: str = Field(description="The workflow it ran (its copy is kept with the run).")
+    project_id: int | None = Field(description="The project its images came from; null: images given by id.")
+    job_id: int | None = Field(description="The job that ran it (GET /api/jobs/{job_id}).")
+    status: str | None = Field(description="The job's status: queued, running, succeeded, failed, cancelled, interrupted.")
+    created_at: str = Field(description="When it started, UTC (ISO 8601).")
+    classes: list[int] | None = Field(description="The project's class ids its prompts stood for, in order; null: other prompts.")
+    annotates: bool = Field(description="It added its objects to the project (auto-annotate).")
+    images: int = Field(description="How many images have results so far.")
+
+
+class RunResult(Answer):
+    media_id: int = Field(description="The image's id.")
+    sha256: str
+    filename: str = Field(description="Its file name in the run's project (no project: the start of its sha256).")
+    label: str = Field(description="Which of the workflow's save_to_babasu nodes kept it.")
+    result: dict[str, Any] = Field(description="mozo's annotation line: detections (bbox [x1, y1, x2, y2] in pixels, "
+                                   "class_id, class_name, confidence, mask…), width, height.")
+
+
+class RunDetail(RunOut):
+    results: list[RunResult] = Field(description="Per image and label, by media_id.")
+
+
+class SummaryObject(Answer):
+    class_: str | None = Field(alias="class", description="The class (the prompt it was found for).")
+    score: float | None = Field(description="How sure the model was, 0..1.")
+    box: list[float] | None = Field(description="x1, y1, x2, y2 in pixels.")
+
+
+class SummaryImage(Answer):
+    image: str = Field(description="Its file name.")
+    objects: list[SummaryObject]
+
+
+class ClassFound(Answer):
+    objects: int = Field(description="How many objects of it were found.")
+    average_score: float = Field(description="Their average score, 0..1.")
+
+
+class LabelSummary(Answer):
+    classes: dict[str, ClassFound] = Field(description="Per class name.")
+    image_count: int = Field(description="How many images have results for this label.")
+    images: list[SummaryImage] = Field(description="The first ?images= images, with their objects.")
+
+
+class RunSummary(RunOut):
+    results: dict[str, LabelSummary] = Field(description="Per label (save_to_babasu node).")
+
+
+class LegendClass(ClassOut):
+    prompt: str | None = Field(None, description="A project's class: its prompt.")
+    active: bool | None = Field(None, description="A project's class: always true.")
+
+
+class ResultImage(Answer):
+    media_id: int = Field(description="The image's id.")
+    filename: str
+    label: str = Field(description="Which save_to_babasu node kept it.")
+    width: int
+    height: int
+    thumb_url: str
+    annotations: list[AnnotationOut] = Field(description="Its objects as a project stores them: class_id (in "
+                                                   "`legend`), bbox [x, y, w, h], segments, score.")
+
+
+class RunAnnotations(RunOut):
+    results: list[ResultImage] = Field(description="Per image and label.")
+    legend: list[LegendClass] = Field(description="The classes to draw them with: a project's run, the project's; "
+                                      "any other, its prompts in order.")
+
+
+class RunStarted(Answer):
+    run_id: int
+    job_id: int = Field(description="Follow it at /api/jobs/{job_id} (or wait_for_job).")
+    images: int = Field(description="How many images it runs on.")
+    downloads_first: list[ToDownload] = Field(description="The models it downloads before it starts.")
+
+
+@router.get("/workflows", response_model=list[WorkflowListed], response_model_exclude_unset=True)
 def api_workflows() -> list[dict]:
     """Every workflow: id, name, whether it's built in, and its models (or why it doesn't load)."""
     return runs.workflows()
 
 
-@router.get("/workflows/{workflow_id}")
+@router.get("/workflows/{workflow_id}", response_model=WorkflowDetail, response_model_exclude_unset=True)
 def api_workflow(workflow_id: str) -> dict:
     """The workflow's graph, the models it uses (licence, bytes left to download) and any missing files."""
     try:
@@ -134,7 +248,7 @@ def _found(run: dict | None) -> dict:
     return run
 
 
-@router.post("/runs", status_code=202)
+@router.post("/runs", status_code=202, response_model=RunStarted)
 def api_start_run(new: NewRun, conn: DB) -> dict:
     """Starts a workflow run over images (`media_ids`, or a project's: `project_id`, `where`,
     `count`), finding `prompts` (a project's class prompts unless given); returns {run_id, job_id,
@@ -153,7 +267,7 @@ def api_start_run(new: NewRun, conn: DB) -> dict:
             "downloads_first": vision.downloads_first(conn, job_id)}
 
 
-@router.get("/runs")
+@router.get("/runs", response_model=list[RunOut])
 def api_runs(conn: DB, workflow_id: Annotated[str | None, Query(description="Only this workflow's runs.")] = None,
              limit: Annotated[int | None, Query(ge=1, description="Only the newest few.")] = None) -> list[dict]:
     """Every run (?workflow_id= one workflow's; ?limit= the newest few), newest first: name,
@@ -161,13 +275,13 @@ def api_runs(conn: DB, workflow_id: Annotated[str | None, Query(description="Onl
     return runs.list_all(conn, workflow_id, limit)
 
 
-@router.get("/runs/{run_id}")
+@router.get("/runs/{run_id}", response_model=RunDetail)
 def api_run(run_id: int, conn: DB) -> dict:
     """The run with its results: per image and label, mozo's annotation line."""
     return _found(runs.get(conn, run_id))
 
 
-@router.get("/runs/{run_id}/summary")
+@router.get("/runs/{run_id}/summary", response_model=RunSummary)
 def api_run_summary(run_id: int, conn: DB, images: Annotated[int, Query(ge=0, le=1000, description="How many images' objects to show.")] = 20) -> dict:
     """The run in brief, per label: objects per class with average score, and the first ?images= images' objects."""
     return _found(runs.summary(conn, run_id, images))
@@ -191,7 +305,7 @@ def api_delete_run(run_id: int, conn: DB) -> None:
         raise HTTPException(404, "Run not found")
 
 
-@router.get("/runs/{run_id}/annotations")
+@router.get("/runs/{run_id}/annotations", response_model=RunAnnotations, response_model_exclude_unset=True)
 def api_run_annotations(run_id: int, conn: DB, images: Annotated[int | None, Query(ge=1, description="Only the first few images'; empty for all.")] = None) -> dict:
     """The run's results as annotations, per image and result label (?images= only the first
     few images'), with `legend`: the classes to draw them with (a project's run: the project's

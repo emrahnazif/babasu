@@ -172,21 +172,28 @@ ANSWER_SIZE = 8_000  # characters of an answer the agent gets; a longer one is c
 
 
 def _inline(schema, defs: dict):
-    """A JSON schema with its $refs put in place and its titles left out, as the agent reads it."""
+    """A JSON schema with its $refs put in place and its titles left out, as the agent reads it.
+    What stands beside a $ref (a field's own description) is kept over the definition's."""
     if isinstance(schema, dict):
         if "$ref" in schema:
-            return _inline(defs[schema["$ref"].split("/")[-1]], defs)
+            return _inline(defs[schema["$ref"].split("/")[-1]], defs) | _inline(
+                {k: v for k, v in schema.items() if k != "$ref"}, defs)
         return {k: _inline(v, defs) for k, v in schema.items() if k != "title"}
     if isinstance(schema, list):
         return [_inline(v, defs) for v in schema]
     return schema
 
 
+def _json(part: dict) -> dict | None:
+    """The JSON schema of a request body or a response."""
+    return part.get("content", {}).get("application/json", {}).get("schema")
+
+
 @cache
 def operations() -> list[dict]:
     """Every /api operation the agent may call (not those only the pages use: routes.UI_ONLY), from
-    the app's OpenAPI spec: its name ("PATCH /api/projects/{project_id}"), description, parameters
-    and body schema."""
+    the app's OpenAPI spec: its name ("PATCH /api/projects/{project_id}"), description, parameters,
+    body schema and, when it has a model (routes.Answer), the fields of its answer."""
     spec = views.openapi()
     defs = spec.get("components", {}).get("schemas", {})
     found = []
@@ -199,10 +206,61 @@ def operations() -> list[dict]:
                        **_inline({k: v for k, v in p["schema"].items() if k in ("type", "enum", "anyOf", "default")}, defs),
                        **({"description": p["description"]} if p.get("description") else {})}
                       for p in op.get("parameters", [])]
-            body = op.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema")
+            body = _json(op.get("requestBody", {}))
+            answer = _json(next((r for code, r in op.get("responses", {}).items() if code.startswith("2")), {}))
+            fields = _fields(_inline(answer, defs)) if answer else ""
             found.append({"operation": name, "description": op.get("description", ""), "parameters": params,
-                          **({"body": _inline(body, defs)} if body else {})})
+                          **({"body": _inline(body, defs)} if body else {}), **({"answer": fields} if fields else {})})
     return found
+
+
+def _kind(schema: dict) -> tuple[str, list[dict]]:
+    """A schema in a few words ("integer or null", "list of", "map of") and the objects (with
+    properties) it holds, whose fields go below it (more than one: the answer takes one of them)."""
+    if "anyOf" in schema:
+        options = [_kind(o) for o in schema["anyOf"] if o.get("type") != "null"]
+        words = " or ".join(dict.fromkeys(w for w, _ in options)) or "null"
+        nullable = len(options) < len(schema["anyOf"])
+        return words + (" or null" if nullable and options else ""), [i for _, inner in options for i in inner]
+    if "prefixItems" in schema:
+        return "[" + ", ".join(_kind(item)[0] for item in schema["prefixItems"]) + "]", []
+    if schema.get("type") == "array":
+        words, inner = _kind(schema.get("items", {}))
+        return f"list of {words}", inner
+    if "properties" in schema:
+        return "object", [schema]
+    if schema.get("type") == "object" and isinstance(schema.get("additionalProperties"), dict):
+        words, inner = _kind(schema["additionalProperties"])
+        return f"map of {words}", inner
+    if "enum" in schema:
+        return " | ".join(map(str, schema["enum"])), []
+    return schema.get("type", "any"), []
+
+
+def _fields(schema: dict) -> str:
+    """An answer's fields, one a line, each with its type and meaning; an object's fields indented
+    under it: what find_api shows so code knows what it gets. Empty for an answer without a model."""
+    words, inner = _kind(schema)
+    if not inner:
+        return ""
+    if words == "object":
+        return _objects(inner, 0)
+    return f"{words}{', each' if words.startswith(('list', 'map')) else ''}:\n" + _objects(inner, 1)
+
+
+def _objects(objects: list[dict], depth: int) -> str:
+    """The fields of one object, or of each of several it may be ("or:" between them)."""
+    parts = []
+    for schema in objects:
+        lines = []
+        for name, field in schema.get("properties", {}).items():
+            kind, sub = _kind(field)
+            meaning = field.get("description", "")
+            lines.append("  " * depth + f"{name} ({kind})" + (f": {meaning}" if meaning else ""))
+            if sub:
+                lines.append(_objects(sub, depth + 1))
+        parts.append("\n".join(lines))
+    return ("\n" + "  " * depth + "or:\n").join(parts)
 
 
 @cache
@@ -211,7 +269,9 @@ def _search() -> list[tuple[dict, str, re.Pattern]]:
     def answers(operation: str) -> re.Pattern:
         path = re.escape(operation.split(" ", 1)[1])
         return re.compile(re.sub(r"\\\{\w+\\\}", "[^/]+", path) + "$")  # /api/projects/{project_id} -> /api/projects/[^/]+
-    return [(o, json.dumps(o).lower(), answers(o["operation"])) for o in operations()]
+    def text(o: dict) -> str:  # what it does and takes; its answer's fields would match too much
+        return json.dumps({k: v for k, v in o.items() if k != "answer"}).lower()
+    return [(o, text(o), answers(o["operation"])) for o in operations()]
 
 
 @cache
@@ -229,7 +289,8 @@ class FindApiArgs(Args):
 
 
 @tool(
-    "The details of the app's API operations: what one does, its parameters and the JSON body it takes. Give the "
+    "The details of the app's API operations: what one does, its parameters, the JSON body it takes and the fields "
+    "of what it answers (what your code gets). Give the "
     "operation from the list in your instructions, or words to find up to three.",
     FindApiArgs,
 )

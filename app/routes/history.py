@@ -7,12 +7,26 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import Field
 
 from app import db, history
+from app.routes import Answer
 from app.templating import templates
 
 router = APIRouter()
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
+
+
+class ActionOut(Answer):
+    id: str = Field(description="The action's id (POST /api/history/{id}/undo).")
+    source: str = Field(description="What did it: request, job, agent or app.")
+    kind: str = Field(description="do, undo or redo.")
+    label: str = Field(description="What it was: the request, the job, the person's message to the agent.")
+    at: str = Field(description="When, UTC (ISO 8601).")
+    changed: str = Field(description="What it changed, in words.")
+    undoes: str | None = Field(description="An undo: the action it undid.")
+    undone_by: str | None = Field(description="The undo that undid it, if any.")
+    changed_since: bool = Field(description="A later action changed the same things: undo that one first.")
 
 
 @router.get("/history", response_class=HTMLResponse)
@@ -32,7 +46,7 @@ def undo_page(action_id: str, conn: DB):
     return RedirectResponse("/history", status_code=303)
 
 
-@router.get("/api/history")
+@router.get("/api/history", response_model=list[ActionOut])
 def api_history(conn: DB, limit: Annotated[int, Query(ge=1, le=500, description="How many, newest first.")] = 100) -> list[dict]:
     """What was done in the last 30 days, newest first: each action (one request, job or agent turn,
     named by its source and label: the request, the job, the person's message to the agent), its
@@ -42,7 +56,7 @@ def api_history(conn: DB, limit: Annotated[int, Query(ge=1, le=500, description=
     return history.actions(conn, limit)
 
 
-@router.post("/api/history/{action_id}/undo")
+@router.post("/api/history/{action_id}/undo", response_model=ActionOut)
 def api_undo(action_id: str, conn: DB) -> dict:
     """Undoes an action: the rows it wrote go back as they were, the files it deleted come back.
     The undo is an action too (undoing it does the action again). Returns it as /api/history shows

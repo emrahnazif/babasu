@@ -11,6 +11,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_valida
 
 from app import annotators, db, imports, jobs, projects, runs, segment, vision
 from app.filters import WHERE, Filter, FilterError, ObjectCondition, Range
+from app.routes import AnnotationOut, Answer, ClassOut, ToDownload
 from app.templating import query, templates
 
 router = APIRouter()
@@ -200,6 +201,111 @@ class ImageImport(BaseModel):
         if not paths:
             raise ValueError("give at least one file or folder")
         return paths
+
+
+# --- What the API answers ---
+
+
+class ClassCounted(ClassOut):
+    annotation_count: int = Field(description="How many objects of this class the project's images have.")
+
+
+class ProjectOut(Answer):
+    id: int = Field(description="The project's id.")
+    name: str
+    description: str
+    task: projects.Task = Field(description=TASK)
+    annotator: str | None = Field(description=FINDER)
+    root_id: int | None = Field(description="The project this is a version of; null for an original.")
+    frozen_at: str | None = Field(description="When it was frozen (a frozen project never changes); null if it isn't.")
+    created_at: str = Field(description="When it was made, UTC (ISO 8601).")
+    updated_at: str = Field(description="When it last changed, UTC (ISO 8601).")
+    classes: list[ClassOut] = Field(description="Its classes, in order.")
+
+
+class Counted(ProjectOut):
+    image_count: int = Field(description="How many images it has.")
+    labelled_count: int = Field(description="How many of them have at least one object.")
+
+
+class ProjectListed(Counted):
+    covers: list[str] = Field(description="Thumbnail URLs of its first few images.")
+
+
+class ImageOut(Answer):
+    media_id: int = Field(description="The image's id (the same in every project and run that has it).")
+    filename: str = Field(description="Its file name in this project.")
+    split: str | None = Field(description="train, val or test, if set; null if not.")
+    width: int = Field(description="In pixels.")
+    height: int = Field(description="In pixels.")
+    aspect: float = Field(description="width ÷ height.")
+    sha256: str = Field(description="Its content's hash (how the file is stored).")
+    ext: str = Field(description="Its file type, e.g. .jpg.")
+    url: str = Field(description="The full image.")
+    thumb_url: str = Field(description="A small version of it.")
+    annotations: list[AnnotationOut] = Field(description="Its objects (of the project's classes).")
+    matches: list[int] | None = Field(None, description="Only when the filter asks for objects (in brackets): the "
+                                      "positions in `annotations` of the objects it found.")
+
+
+class ProjectDetail(Counted):
+    classes: list[ClassCounted] = Field(description="Its classes, in order, each with its object count.")
+    filter: str = Field(description="The filter as applied (?where=, its text form).")
+    match_count: int = Field(description="How many images match the filter (all of them without one).")
+    page: int = Field(description="This page's number, from 1.")
+    pages: int = Field(description="How many pages the matching images make.")
+    images: list[ImageOut] = Field(description="This page of the matching images, by file name.")
+
+
+class ImageDetail(ImageOut):
+    project: ProjectOut = Field(description="The project it's in.")
+    filter: str = Field(description="The filter as applied (?where=), which previous and next follow.")
+    position: int = Field(description="Its place among the matching images, from 1.")
+    match_count: int = Field(description="How many images match the filter.")
+    previous_id: int | None = Field(description="The media_id of the matching image before it; null for the first.")
+    next_id: int | None = Field(description="The media_id of the matching image after it; null for the last.")
+
+
+class ClassCount(Answer):
+    class_: str = Field(alias="class", description="The class's name.")
+    objects: int = Field(description="How many objects of it.")
+
+
+class ObjectsPerImage(Answer):
+    objects: int = Field(description="A number of objects.")
+    images: int = Field(description="How many images have that many.")
+
+
+class Bin(Answer):
+    from_: float = Field(alias="from", description="Where the bin starts (included).")
+    to: float = Field(description="Where it ends.")
+    objects: int = Field(description="How many objects measure in it.")
+
+
+class Stats(Answer):
+    field: str = Field(description="What was measured (?field=).")
+    counts: list[ClassCount] | list[ObjectsPerImage] | None = Field(
+        None, description="class: objects per class, most first; objects: images per number of objects.")
+    objects: int | None = Field(None, description="w, h, area, aspect: how many objects were measured.")
+    bins: list[Bin] | None = Field(None, description="w, h, area, aspect: 20 equal bins from the smallest to the largest.")
+
+
+class Deletion(Answer):
+    images: int = Field(description="Images the project has (the files stay while another project or run uses them).")
+    annotations: int = Field(description="Their objects.")
+    runs: int = Field(description="The project's runs.")
+    jobs: int = Field(description="Its jobs queued or running; deleting is refused while there are any.")
+
+
+class AnnotateOverview(Answer):
+    annotator: str | None = Field(description="The project's annotator; null: none.")
+    images: int = Field(description="How many images match the filter.")
+    pending: dict[int, int] = Field(description="Per class id: how many of those images it hasn't been auto-annotated on.")
+    to_download: list[ToDownload] = Field(description="The annotator's models still to download (a run downloads them first).")
+
+
+class Created(Answer):
+    id: int = Field(description="The new project's id.")
 
 
 def _detail(conn: sqlite3.Connection, project_id: int, page: int, filter: Filter, page_size: int = projects.PAGE_SIZE) -> dict:
@@ -439,14 +545,14 @@ def import_images(project_id: int, request: Annotated[ImageImport, Form()], conn
 # --- API ---
 
 
-@router.get("/api/projects")
+@router.get("/api/projects", response_model=list[ProjectListed], response_model_exclude_unset=True)
 def api_project_list(conn: DB) -> list[dict]:
     """Every project, most recently changed first: id, name, type, how many images and how many of
     them labelled, and its classes."""
     return projects.list_all(conn)
 
 
-@router.post("/api/projects", status_code=201)
+@router.post("/api/projects", status_code=201, response_model=Created)
 def api_create_project(new: NewProject, conn: DB) -> dict:
     """Creates a project with its classes; it gets the annotator suggested for its type. Returns its id.
     422 with why if a class is given twice or a colour isn't one."""
@@ -456,7 +562,7 @@ def api_create_project(new: NewProject, conn: DB) -> dict:
         raise HTTPException(422, str(e)) from None
 
 
-@router.get("/api/projects/{project_id}")
+@router.get("/api/projects/{project_id}", response_model=ProjectDetail, response_model_exclude_unset=True)
 def api_project(project_id: int, conn: DB, where: Where = "",
                 name: Annotated[str | None, Query(description="Only images whose file name contains this.")] = None,
                 page: Page = 1,
@@ -467,7 +573,7 @@ def api_project(project_id: int, conn: DB, where: Where = "",
     return _detail(conn, project_id, page, _parse(where, name), images)
 
 
-@router.get("/api/projects/{project_id}/stats")
+@router.get("/api/projects/{project_id}/stats", response_model=Stats, response_model_exclude_unset=True)
 def api_stats(project_id: int, conn: DB, where: Where = "",
               field: str = Query(description="class: objects per class; w, h, area, aspect: a histogram of the "
                                  "objects (those the filter asks for in brackets, or all); objects: how many images "
@@ -496,13 +602,13 @@ class Duplicate(BaseModel):
     name: projects.Name | None = Field(None, description='Its name; empty: "<the project\'s name> copy".')
 
 
-@router.post("/api/projects/{project_id}/duplicate", status_code=201)
+@router.post("/api/projects/{project_id}/duplicate", status_code=201, response_model=Created)
 def api_duplicate_project(project_id: int, conn: DB, body: Duplicate | None = None) -> dict:
     """A new project with this one's classes, images and annotations (not its runs), named `name` or "<its name> copy"."""
     return {"id": _duplicate(conn, project_id, body.name if body else None)}
 
 
-@router.get("/api/projects/{project_id}/deletion")
+@router.get("/api/projects/{project_id}/deletion", response_model=Deletion)
 def api_deletion(project_id: int, conn: DB) -> dict:
     """What deleting the project would remove (images, annotations, runs), and how many of its jobs
     are queued or running (deleting is refused while they are)."""
@@ -517,7 +623,7 @@ def api_delete_project(project_id: int, conn: DB) -> None:
     _delete(conn, project_id)
 
 
-@router.get("/api/projects/{project_id}/images/{media_id}")
+@router.get("/api/projects/{project_id}/images/{media_id}", response_model=ImageDetail, response_model_exclude_unset=True)
 def api_image(project_id: int, media_id: int, conn: DB, where: Where = "") -> dict:
     """One image of the project: file name, size, its annotations (class, box, outline, points,
     score), and its previous and next among the images matching ?where=."""
@@ -656,7 +762,7 @@ def api_edit_classes(project_id: int, edits: ClassEdits, conn: DB) -> None:
         raise HTTPException(422, str(e)) from None
 
 
-@router.get("/api/projects/{project_id}/annotate")
+@router.get("/api/projects/{project_id}/annotate", response_model=AnnotateOverview)
 def api_auto_annotate_overview(project_id: int, conn: DB, where: Where = "") -> dict:
     """Before auto-annotating the images matching ?where=: how many match, per class how many
     still need it, and the annotator's models still to download."""
