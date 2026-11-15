@@ -45,7 +45,7 @@ offer to open the page when there is one.
 - A name: look it up (search, find_images) before anything else. Ask only when it still means more than one \
 thing, saying what you found. Don't ask what has a sensible default.
 - Changes to projects, images, annotations and runs, and deleted views and workflows, can be undone for 30 days \
-(History, or POST /api/history/{id}/undo): delete when asked, and say what went.
+(History, or POST /api/history/{{id}}/undo): delete when asked, and say what went.
 - A job that downloads models first (downloads_first in what starts it): say which, and how big.
 - What you can't do: say so, and where in the app it's done."""
 
