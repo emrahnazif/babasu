@@ -4,9 +4,11 @@
 {# An image with its annotations drawn on it. The image and its annotations share one coordinate
    system, the original image's pixels; `src` (the image or its thumbnail) is stretched over
    that same area, so annotations line up on either. When a filter asked for objects
-   (image.matches), the others are drawn faint. #}
-{% macro annotated(image, classes, src) %}
-  <svg viewBox="0 0 {{ image.width }} {{ image.height }}" role="img" aria-label="{{ image.filename }}">
+   (image.matches), the others are drawn faint. `label`: what the image is, for whoever can't see
+   it (e.g. its file name). `cover`: the image covers a box of another shape (e.g. a square), cut
+   at its sides, instead of fitting inside it. #}
+{% macro annotated(image, classes, src, label="", cover=false) %}
+  <svg viewBox="0 0 {{ image.width }} {{ image.height }}"{% if cover %} preserveAspectRatio="xMidYMid slice"{% endif %} role="img" aria-label="{{ label }}">
     <image href="{{ src }}" width="{{ image.width }}" height="{{ image.height }}"/>
     {% set keypoint_r = ([image.width, image.height] | max / 80) | round(1) %}
     {% for a in image.annotations %}

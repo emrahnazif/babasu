@@ -175,7 +175,7 @@ def image(item: dict, classes: list) -> Markup:
     """An image with its annotations drawn (an image from the API: width, height, annotations,
     thumb_url or url; a project image, or one result of /api/runs/{id}/annotations); classes: the
     project's, from /api/projects/{id}."""
-    return Markup(_annotated()(item | {"filename": item.get("filename", "")}, classes, item.get("thumb_url") or item.get("url")))
+    return Markup(_annotated()(item, classes, item.get("thumb_url") or item.get("url"), label=item.get("filename", "")))
 
 
 def images(items: list, classes: list, caption: str = "filename") -> Markup:

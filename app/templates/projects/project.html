@@ -163,7 +163,7 @@
       {% for image in project.images %}
         <a class="tile" href="/projects/{{ project.id }}/images/{{ image.media_id }}{{ query(params) }}"
            style="--ratio: {{ image.aspect }}">
-          {{ annotated(image, project.classes, image.thumb_url) }}
+          {{ annotated(image, project.classes, image.thumb_url, label=image.filename) }}
           {% if image.annotations %}<span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span>{% endif %}
         </a>
       {% endfor %}
@@ -255,7 +255,7 @@
           <div class="grid">
             {% for image in tried.results %}
               <figure class="thumb">
-                {{ annotated(image, project.classes, image.thumb_url) }}
+                {{ annotated(image, project.classes, image.thumb_url, label=image.filename) }}
                 <figcaption>{{ image.annotations | length | plural("object") }} · {{ image.filename }}</figcaption>
               </figure>
             {% endfor %}
