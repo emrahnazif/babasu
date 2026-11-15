@@ -6,7 +6,7 @@
 
 /* Blocks space themselves from what's above them (margin-top), so one that's first in its
    parent (at any depth, e.g. inside a refresh region) has nothing to space from. */
-:is(.grid, .justified, .stack, .fields, .actions):first-child { margin-top: 0; }
+:is(.grid, .gallery, .justified, .stack, .fields, .actions):first-child { margin-top: 0; }
 
 /* Centres its content on both axes, filling the main area. */
 .center {
@@ -115,6 +115,36 @@
 .grid.wide {
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
   align-items: stretch;  /* cards in a row share a height */
+}
+
+/* Images in a grid of --columns columns (style="--columns: 3"; 4 if not given): exactly that
+   many when there's room, fewer when a tile would be narrower than 8rem. Each a <figure>: a
+   square image (covering it) and a one-line caption. */
+.gallery {
+  --gap: var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fill,
+    minmax(max(8rem, (100% - (var(--columns, 4) - 1) * var(--gap)) / var(--columns, 4)), 1fr));
+  gap: var(--gap);
+  margin-top: var(--space-4);
+}
+
+.gallery > figure { display: grid; gap: var(--space-1); min-width: 0; margin: 0; }
+
+.gallery img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-bg);
+}
+
+.gallery figcaption {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /*
