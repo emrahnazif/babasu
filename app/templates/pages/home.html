@@ -4,9 +4,11 @@
    Models; its buttons do nothing). Images: the full one where tiles are wide (2 and 3 columns),
    the 256 px thumbnail where they're small. #}
 {% extends "base.html" %}
+{% from "partials/select.html" import select %}
+{% block scripts %}<script type="module" src="/static/js/class-list.js"></script>{% endblock %}
 {% block content %}
   <h1>Components</h1>
-  <p class="muted">A title, a description under it, an image gallery with as many columns as it's given, a table, parts side by side, a card holding any of them (its title, description and footer each optional), and a divider between parts. Then blocks after shadcn/ui, made of the same parts plus stats, items, progress bars and charts.</p>
+  <p class="muted">A title, a description under it, an image gallery with as many columns as it's given, a table, parts side by side, a card holding any of them (its title, description and footer each optional), and a divider between parts. Then blocks after shadcn/ui, made of the same parts plus stats, items, progress bars and charts. Then the parts of the app's own pages: cards with a cover, image tiles, a filter bar, thumbnails, drop zones, a form, dialogs, badges, empty states, History as a table and a link list.</p>
 
   <section>
     <h2>Gallery, 2 columns</h2>
@@ -412,6 +414,358 @@
           <path class="line" d="M0,31.3C10,31.3 10,27 20,27C30,27 30,34.2 40,34.2C50,34.2 50,25 60,25C70,25 70,30 80,30C90,30 90,23 100,23"/>
         </svg>
       </div>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Cards with a cover, as on Projects</h2>
+    <div class="grid wide">
+        <a class="card" href="/projects/14">
+        <div class="cover">
+        <img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp" alt="" loading="lazy"><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp" alt="" loading="lazy"><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp" alt="" loading="lazy"><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp" alt="" loading="lazy">
+        </div>
+        <header>
+        <h2 class="clip" title="person merged">person merged</h2>
+        <time class="muted" datetime="2026-11-15T00:34:06Z" title="Updated 2026-11-15T00:34:06Z">16h</time>
+        </header>
+        <p class="muted clip" title="All images of testo, personsg and test (projects with a person class)">All images of testo, personsg and test (projects with a person class)</p>
+        <p class="muted">
+        Segmentation · 5,084 images · 6 classes
+        · 1% labelled
+        </p>
+        </a>
+        <a class="card" href="/projects/6">
+        <div class="cover">
+        <img src="/media/9d/9dfa1a3a05a422547bbe857cc0c6deddf1dabd39e95f1e66c2e9c5df78fbd15f.thumb.webp" alt="" loading="lazy"><img src="/media/e5/e5f3e3fcbf9b7cf202d72ba4b7d8ad5bf079a9a479135a59ca6e220a3b10d7e9.thumb.webp" alt="" loading="lazy"><img src="/media/c8/c8f45b85c57c74402382b928ee700f9714e2146f304d5ddf59f4552f321e6223.thumb.webp" alt="" loading="lazy"><img src="/media/0e/0e8ef55b7d83d64f874bad17b8e6fe1ac6e12f0a1acd8c2df180077b46c7a4a2.thumb.webp" alt="" loading="lazy">
+        </div>
+        <header>
+        <h2 class="clip" title="pa">pa</h2>
+        <time class="muted" datetime="2026-11-14T10:40:11Z" title="Updated 2026-11-14T10:40:11Z">Yesterday</time>
+        </header>
+        <p class="muted">
+        Object detection · 39 images · 1 class
+        · 3% labelled
+        </p>
+        </a>
+        <a class="card" href="/projects/9">
+        <div class="cover">
+        <img src="/media/01/016c0d06fa81cdd90a9516c582b0627fc091ca00030db77a903f3db2b310e2ca.thumb.webp" alt="" loading="lazy"><img src="/media/a0/a0e9476784e5398887642f7c603fa755b7aa19c0b03b195047448c75a926eb7a.thumb.webp" alt="" loading="lazy"><img src="/media/42/420baef9b67e572036be48387c31d7223e618a74b79de5ecc2ac154ad1aa3b0a.thumb.webp" alt="" loading="lazy"><img src="/media/14/148d8ada1a044214d3346bab5128dea8a32509994efdd20dd73c442305545693.thumb.webp" alt="" loading="lazy">
+        </div>
+        <header>
+        <h2 class="clip" title="personsg">personsg</h2>
+        <time class="muted" datetime="2026-11-13T23:19:35Z" title="Updated 2026-11-13T23:19:35Z">Yesterday</time>
+        </header>
+        <p class="muted">
+        Segmentation · 24 images · 4 classes
+        · 79% labelled
+        </p>
+        </a>
+        <a class="card" href="/projects/new">
+          <div class="cover"><p class="muted">No images yet</p></div>
+          <header>
+            <h2 class="clip" title="street signs">street signs</h2>
+            <time class="muted" datetime="2026-11-15T16:00:00Z">Just now</time>
+          </header>
+          <p class="muted">Object detection · 0 images · 3 classes</p>
+        </a>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>A project's images: filter bar, image tiles, pages</h2>
+    <div class="actions start">
+      <button class="button secondary" type="button" popovertarget="demo-show">All images <span class="muted">5,084</span>{{ icon("chevron-up-down") }}</button>
+      <div id="demo-show" class="menu" popover>
+        <a class="menu__item" href="#" aria-current="page"><span class="menu__check">{{ icon("check") }}</span>All images<span class="menu__note">5,084</span></a>
+        <a class="menu__item" href="#"><span class="menu__check">{{ icon("check") }}</span>Labelled<span class="menu__note">60</span></a>
+        <a class="menu__item" href="#"><span class="menu__check">{{ icon("check") }}</span>Unlabelled<span class="menu__note">5,024</span></a>
+      </div>
+
+      <button class="button secondary" type="button" popovertarget="demo-filters" style="anchor-name: --demo-filter">{{ icon("funnel") }}Filter</button>
+      <div id="demo-filters" class="menu" popover role="search" style="position-anchor: --demo-filter">
+        <input class="menu__search" type="search" placeholder="Filter by…" aria-label="Filter by" autocomplete="off">
+        <button class="menu__item" type="button" popovertarget="demo-panel-class">{{ icon("tag") }}Class</button>
+        <button class="menu__item" type="button">{{ icon("arrows-pointing-out") }}Object size</button>
+        <button class="menu__item" type="button">{{ icon("arrows-right-left") }}Aspect</button>
+        <button class="menu__item" type="button">{{ icon("viewfinder-circle") }}Touching the edge</button>
+        <button class="menu__item" type="button">{{ icon("hashtag") }}Number of objects</button>
+      </div>
+      <div id="demo-panel-class" class="menu menu--panel" popover style="position-anchor: --demo-filter" aria-label="Class">
+        <div class="menu__head">
+          <button class="menu__item" type="button" popovertarget="demo-filters" aria-label="Back to filters" title="Back">{{ icon("chevron-left") }}</button>
+          Class
+        </div>
+        <form>
+        <div class="segmented" role="radiogroup" aria-label="Has or doesn't have">
+          <label class="segmented__item"><input type="radio" name="demo-negate" value="false" checked>Has</label>
+          <label class="segmented__item"><input type="radio" name="demo-negate" value="true">Doesn't have</label>
+        </div>
+        <div>
+          <label class="menu__item"><input type="checkbox" checked><span class="menu__swatch" style="--swatch-color: #e11d48"></span>person<span class="menu__note">258</span></label>
+          <label class="menu__item"><input type="checkbox"><span class="menu__swatch" style="--swatch-color: #2563eb"></span>animal<span class="menu__note">13</span></label>
+          <label class="menu__item"><input type="checkbox"><span class="menu__swatch" style="--swatch-color: #16a34a"></span>car<span class="menu__note">13</span></label>
+          <label class="menu__item"><input type="checkbox"><span class="menu__swatch" style="--swatch-color: #d97706"></span>van<span class="menu__note">1</span></label>
+          <label class="menu__item"><input type="checkbox"><span class="menu__swatch" style="--swatch-color: #9333ea"></span>zebra<span class="menu__note">6</span></label>
+          <label class="menu__item"><input type="checkbox"><span class="menu__swatch" style="--swatch-color: #0891b2"></span>cat<span class="menu__note">5</span></label>
+        </div>
+        <div class="actions"><button class="button" type="button" popovertarget="demo-panel-class" popovertargetaction="hide">Apply</button></div>
+        </form>
+      </div>
+
+      <span class="badge" style="--badge-color: #e11d48"><button type="button" popovertarget="demo-panel-class" title="Change">person</button><a href="#" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
+      <span class="badge plain">1–3 objects<a href="#" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
+      <p><span class="muted">47 of 5,084 images</span> · <a href="#">Clear</a></p>
+    </div>
+    <div class="justified">
+      <a class="tile" href="/projects/14/images/31" style="--ratio: 1.502"><svg viewBox="0 0 640 426" role="img" aria-label="000000000139.jpg"><image href="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp" width="640" height="426"/><g><polygon points="414.0,215.0 420.0,217.0 428.0,213.0 427.0,219.0 438.0,221.0 439.0,231.0 447.0,233.0 446.0,283.0 447.0,292.0 451.0,294.0 464.0,294.0 459.0,255.0 459.0,237.0 462.0,231.0 462.0,220.0 457.0,188.0 446.0,172.0 443.0,160.0 438.0,157.0 430.0,158.0 427.0,162.0 428.0,176.0 432.0,179.0 430.0,200.0 423.0,211.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g><g><polygon points="385.0,175.0 385.0,207.0 397.0,207.0 400.0,203.0 400.0,194.0 396.0,191.0 400.0,185.0 400.0,178.0 396.0,172.0 389.0,172.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
+      <a class="tile" href="/projects/14/images/32" style="--ratio: 0.916"><svg viewBox="0 0 586 640" role="img" aria-label="000000000285.jpg"><image href="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp" width="586" height="640"/></svg></a>
+      <a class="tile" href="/projects/14/images/33" style="--ratio: 1.325"><svg viewBox="0 0 640 483" role="img" aria-label="000000000632.jpg"><image href="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp" width="640" height="483"/></svg></a>
+      <a class="tile" href="/projects/14/images/34" style="--ratio: 0.75"><svg viewBox="0 0 375 500" role="img" aria-label="000000000724.jpg"><image href="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp" width="375" height="500"/><g><polygon points="123.0,281.0 123.0,304.0 132.0,306.0 135.0,310.0 139.0,310.0 145.0,300.0 144.0,290.0 128.0,286.0 125.0,280.0 " fill="#16a34a" fill-opacity="0.2" stroke="#16a34a" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
+      <a class="tile" href="/projects/14/images/36" style="--ratio: 1.506"><svg viewBox="0 0 640 425" role="img" aria-label="000000000785.jpg"><image href="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.thumb.webp" width="640" height="425"/><g><polygon points="281.0,183.0 283.0,193.0 291.0,196.0 292.0,194.0 305.0,192.0 309.0,187.0 335.0,182.0 342.0,177.0 351.0,176.0 365.0,166.0 372.0,167.0 378.0,188.0 384.0,198.0 388.0,220.0 384.0,223.0 376.0,240.0 357.0,266.0 356.0,276.0 365.0,300.0 384.0,336.0 384.0,342.0 375.0,348.0 371.0,356.0 365.0,359.0 365.0,363.0 370.0,366.0 410.0,364.0 420.0,361.0 422.0,356.0 424.0,356.0 424.0,349.0 417.0,331.0 415.0,315.0 397.0,285.0 400.0,277.0 411.0,268.0 417.0,299.0 427.0,312.0 448.0,361.0 447.0,366.0 434.0,379.0 429.0,381.0 429.0,384.0 435.0,389.0 448.0,388.0 454.0,385.0 476.0,385.0 495.0,379.0 489.0,349.0 479.0,333.0 471.0,313.0 455.0,297.0 450.0,285.0 451.0,260.0 449.0,246.0 455.0,212.0 454.0,199.0 448.0,183.0 456.0,183.0 460.0,180.0 463.0,174.0 463.0,166.0 459.0,163.0 457.0,152.0 442.0,140.0 429.0,115.0 420.0,106.0 398.0,94.0 396.0,86.0 391.0,82.0 392.0,69.0 386.0,51.0 377.0,44.0 364.0,46.0 354.0,63.0 353.0,79.0 357.0,82.0 357.0,88.0 352.0,97.0 351.0,104.0 347.0,107.0 345.0,119.0 348.0,119.0 351.0,126.0 342.0,143.0 335.0,152.0 324.0,159.0 310.0,164.0 303.0,172.0 294.0,174.0 287.0,171.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
+      <a class="tile" href="/projects/14/images/37" style="--ratio: 0.662"><svg viewBox="0 0 424 640" role="img" aria-label="000000000802.jpg"><image href="/media/d5/d5b79e7fa716f85ca86f46e5f518da9b6c5e26414925624d76e6476861aec495.thumb.webp" width="424" height="640"/></svg></a>
+      <a class="tile" href="/projects/14/images/44" style="--ratio: 1.25"><svg viewBox="0 0 640 512" role="img" aria-label="000000001425.jpg"><image href="/media/71/71a37c25cdf944cf0a88b66d00a66cf899a88bd55c7ac80fcf1c76329d617e6c.thumb.webp" width="640" height="512"/></svg></a>
+      <a class="tile" href="/projects/14/images/45" style="--ratio: 2.032"><svg viewBox="0 0 640 315" role="img" aria-label="000000001490.jpg"><image href="/media/a0/a044804a0b0186a1267acae34975932f14ede96c4a2b78fcee74e6c2fbd8414d.thumb.webp" width="640" height="315"/><g><polygon points="449.0,179.0 450.0,181.0 456.0,181.0 457.0,177.0 470.0,164.0 481.0,164.0 483.0,180.0 477.0,202.0 482.0,223.0 482.0,234.0 473.0,237.0 472.0,240.0 474.0,241.0 498.0,240.0 490.0,201.0 499.0,180.0 499.0,142.0 496.0,137.0 488.0,133.0 488.0,124.0 484.0,120.0 480.0,120.0 472.0,125.0 475.0,128.0 476.0,136.0 480.0,140.0 469.0,157.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
+      <a class="tile" href="/projects/14/images/46" style="--ratio: 1.333"><svg viewBox="0 0 320 240" role="img" aria-label="000000001503.jpg"><image href="/media/06/06c721f0a62bcb9fcb2d2d0cc0b9edd63092084a8773a18c4b5a7bd6fb4f095d.thumb.webp" width="320" height="240"/><g><polygon points="282.0,120.0 283.0,122.0 292.0,115.0 305.0,115.0 305.0,120.0 300.0,128.0 300.0,141.0 306.0,134.0 304.0,142.0 305.0,151.0 311.0,150.0 316.0,145.0 318.0,125.0 320.0,123.0 318.0,106.0 315.0,103.0 316.0,96.0 314.0,94.0 296.0,96.0 296.0,98.0 305.0,97.0 306.0,104.0 295.0,107.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g><g><polygon points="294.0,108.0 295.0,111.0 299.0,112.0 300.0,110.0 306.0,116.0 300.0,129.0 300.0,140.0 306.0,133.0 304.0,149.0 307.0,151.0 311.0,150.0 316.0,144.0 319.0,125.0 318.0,106.0 315.0,103.0 316.0,96.0 314.0,94.0 297.0,96.0 298.0,98.0 305.0,97.0 307.0,102.0 304.0,106.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
+      <a class="tile" href="/projects/14/images/49" style="--ratio: 1.333"><svg viewBox="0 0 640 480" role="img" aria-label="000000001675.jpg"><image href="/media/6b/6ba641627c08ef424b7dc3e6cee069aa0dd49615a31c54ae0de1ecd1fabd9dea.thumb.webp" width="640" height="480"/><g><polygon points="0.0,42.0 0.0,301.0 83.0,305.0 143.0,303.0 211.0,306.0 583.0,309.0 635.0,308.0 640.0,301.0 638.0,292.0 638.0,276.0 640.0,275.0 640.0,215.0 638.0,214.0 640.0,207.0 640.0,186.0 638.0,181.0 640.0,177.0 640.0,142.0 638.0,142.0 638.0,138.0 640.0,138.0 640.0,103.0 638.0,103.0 637.0,98.0 623.0,93.0 589.0,91.0 505.0,96.0 457.0,95.0 352.0,104.0 343.0,102.0 316.0,103.0 267.0,95.0 211.0,98.0 194.0,92.0 177.0,81.0 171.0,63.0 166.0,61.0 161.0,53.0 157.0,51.0 156.0,47.0 170.0,27.0 171.0,19.0 164.0,20.0 140.0,31.0 124.0,32.0 98.0,26.0 84.0,20.0 67.0,19.0 42.0,23.0 22.0,31.0 10.0,40.0 2.0,40.0 " fill="#2563eb" fill-opacity="0.2" stroke="#2563eb" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
+      <a class="tile" href="/projects/14/images/50" style="--ratio: 0.667"><svg viewBox="0 0 427 640" role="img" aria-label="000000001761.jpg"><image href="/media/c0/c06b1845c54bb886a8fb9f8a6e908b29ceb661ffda1ca8df9a27f123806de648.thumb.webp" width="427" height="640"/></svg></a>
+      <a class="tile" href="/projects/14/images/52" style="--ratio: 1.527"><svg viewBox="0 0 640 419" role="img" aria-label="000000001993.jpg"><image href="/media/03/039f3bfb862023bde7f835a36c32d8f59a3e66488863c2a47b7b746e78c44186.thumb.webp" width="640" height="419"/></svg></a>
+    </div>
+    <div class="actions">
+      <span class="muted">Page 1 of 51 · 5,084 images</span>
+      <a class="button secondary" href="#">Next</a>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Image thumbnails with captions, as in Try results</h2>
+    <div class="grid">
+      <figure class="thumb"><svg viewBox="0 0 640 426" role="img" aria-label="000000000139.jpg"><image href="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp" width="640" height="426"/><g><polygon points="414.0,215.0 420.0,217.0 428.0,213.0 427.0,219.0 438.0,221.0 439.0,231.0 447.0,233.0 446.0,283.0 447.0,292.0 451.0,294.0 464.0,294.0 459.0,255.0 459.0,237.0 462.0,231.0 462.0,220.0 457.0,188.0 446.0,172.0 443.0,160.0 438.0,157.0 430.0,158.0 427.0,162.0 428.0,176.0 432.0,179.0 430.0,200.0 423.0,211.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g><g><polygon points="385.0,175.0 385.0,207.0 397.0,207.0 400.0,203.0 400.0,194.0 396.0,191.0 400.0,185.0 400.0,178.0 396.0,172.0 389.0,172.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><figcaption>2 objects · 000000000139.jpg</figcaption></figure>
+      <figure class="thumb"><svg viewBox="0 0 586 640" role="img" aria-label="000000000285.jpg"><image href="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp" width="586" height="640"/></svg><figcaption>0 objects · 000000000285.jpg</figcaption></figure>
+      <figure class="thumb"><svg viewBox="0 0 640 483" role="img" aria-label="000000000632.jpg"><image href="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp" width="640" height="483"/></svg><figcaption>0 objects · 000000000632.jpg</figcaption></figure>
+      <figure class="thumb"><svg viewBox="0 0 375 500" role="img" aria-label="000000000724.jpg"><image href="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp" width="375" height="500"/><g><polygon points="123.0,281.0 123.0,304.0 132.0,306.0 135.0,310.0 139.0,310.0 145.0,300.0 144.0,290.0 128.0,286.0 125.0,280.0 " fill="#16a34a" fill-opacity="0.2" stroke="#16a34a" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><figcaption>1 object · 000000000724.jpg</figcaption></figure>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Drop zones: normal, and large when dropping is the page's main action</h2>
+    <div class="stack">
+      <div class="dropzone" id="demo-drop" data-drop-paths data-name="paths" data-accept=".jpg,.jpeg,.png,.webp" role="button" tabindex="0">
+        <p>Drop images or folders here, or click to choose images</p>
+        <ul></ul>
+      </div>
+      <div class="dropzone large" id="demo-drop-large" data-drop-paths data-name="paths" data-accept=".jpg,.jpeg,.png,.webp" role="button" tabindex="0">
+        <p>Drop images or folders here, or click to choose images</p>
+        <ul></ul>
+      </div>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>A form, as for a new project</h2>
+    <form>
+      <p class="error">A project named “person merged” already exists.</p>
+      <div class="fields">
+        <label class="field">
+          Name
+          <input name="name" maxlength="200" value="street signs">
+        </label>
+        <label class="field">
+          Description
+          <textarea name="description" rows="3" maxlength="2000"></textarea>
+        </label>
+        <label class="field">
+          Type
+          {{ select("demo-type", "task", [("detection", "Object detection"), ("segmentation", "Segmentation"), ("keypoints", "Keypoint detection"), (none, "Classification (later)")], "detection") }}
+        </label>
+        <label class="field">
+          Minimum score <span class="muted">0 keeps everything the auto-annotator finds</span>
+          <input type="number" name="min_score" min="0" max="1" step="0.05" value="0">
+        </label>
+        <fieldset class="field">
+          <legend>Object width <span class="muted">(px)</span></legend>
+          <div class="range">
+            <input type="number" name="w_min" step="any" min="0" placeholder="from" aria-label="Object width from">
+            <span class="muted">–</span>
+            <input type="number" name="w_max" step="any" min="0" placeholder="to" aria-label="Object width to">
+          </div>
+        </fieldset>
+        <fieldset class="field">
+          <legend>Objects</legend>
+          <div class="segmented" role="radiogroup" aria-label="Touching the edge">
+            <label class="segmented__item"><input type="radio" name="edge" value="true" checked>Touching the edge</label>
+            <label class="segmented__item"><input type="radio" name="edge" value="false">Not touching</label>
+          </div>
+        </fieldset>
+        <label><input type="checkbox" name="again" value="true"> Also images already done for a class</label>
+      </div>
+
+      <section>
+        <h2>Classes</h2>
+        <p class="muted">The prompt is what the auto-annotator looks for, e.g. "hole in the road surface" for a class named pothole.</p>
+        <table>
+          <thead><tr><th>Colour</th><th>Name</th><th>Prompt</th><th></th></tr></thead>
+          <tbody id="classes" data-palette='["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]'>
+            <tr>
+              <td><input type="hidden" name="class_id" value=""><input type="color" name="class_color" value="#e11d48" aria-label="Colour"></td>
+              <td><input name="class_name" value="stop sign" required maxlength="100" aria-label="Name"></td>
+              <td><input name="class_prompt" value="red octagonal stop sign" maxlength="500" placeholder="Same as the name" aria-label="Prompt"></td>
+              <td><button class="button secondary" type="button" data-remove-class>Remove</button></td>
+            </tr>
+            <tr>
+              <td><input type="hidden" name="class_id" value=""><input type="color" name="class_color" value="#2563eb" aria-label="Colour"></td>
+              <td><input name="class_name" value="speed limit" required maxlength="100" aria-label="Name"></td>
+              <td><input name="class_prompt" value="" maxlength="500" placeholder="Same as the name" aria-label="Prompt"></td>
+              <td><button class="button secondary" type="button" data-remove-class>Remove</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <template id="class-row">
+          <tr>
+            <td><input type="hidden" name="class_id" value=""><input type="color" name="class_color" value="#e11d48" aria-label="Colour"></td>
+            <td><input name="class_name" value="" required maxlength="100" aria-label="Name"></td>
+            <td><input name="class_prompt" value="" maxlength="500" placeholder="Same as the name" aria-label="Prompt"></td>
+            <td><button class="button secondary" type="button" data-remove-class>Remove</button></td>
+          </tr>
+        </template>
+        <div class="actions start"><button class="button secondary" type="button" data-add-class>Add class</button></div>
+      </section>
+
+      <div class="actions divided">
+        <button class="button secondary" type="button">Cancel</button>
+        <button class="button" type="button">Create</button>
+      </div>
+    </form>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Dialogs: one that asks before deleting, one with a form</h2>
+    <div class="actions start">
+      <button class="button destructive" type="button" popovertarget="demo-delete">Delete project…</button>
+      <button class="button secondary" type="button" popovertarget="demo-add">{{ icon("plus") }}Add images</button>
+    </div>
+    <div id="demo-delete" class="dialog" popover role="alertdialog" aria-labelledby="demo-delete-title" aria-describedby="demo-delete-text">
+      <h2 id="demo-delete-title">Delete person merged?</h2>
+      <div id="demo-delete-text">
+        <p>This removes:</p>
+        <ul>
+          <li>5,084 images and 296 annotations</li>
+          <li>its runs (auto-annotate, Try and workflow runs on its images) and their results</li>
+          <li>the image files no other project, run or report uses, from the workspace</li>
+        </ul>
+        <p class="muted">History can undo it for 30 days.</p>
+      </div>
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="demo-delete" popovertargetaction="hide" autofocus>Cancel</button>
+        <button class="button destructive" type="button" popovertarget="demo-delete" popovertargetaction="hide">Delete</button>
+      </div>
+    </div>
+    <div id="demo-add" class="dialog" popover aria-labelledby="demo-add-title">
+      <h2 id="demo-add-title">Add images</h2>
+      <p class="muted">{{ image_formats }} images. A folder brings its subfolders too. Images already in the project are skipped.</p>
+      <div class="fields">
+        <div class="dropzone" id="demo-add-drop" data-drop-paths data-name="paths" data-accept=".jpg,.jpeg,.png,.webp" role="button" tabindex="0">
+          <p>Drop images or folders here, or click to choose images</p>
+          <ul></ul>
+        </div>
+        <label class="field">
+          Or enter a path
+          <input name="paths" placeholder="/Volumes/NAS/datasets/coco/val2017">
+        </label>
+      </div>
+      <div class="actions">
+        <button class="button secondary" type="button" popovertarget="demo-add" popovertargetaction="hide">Cancel</button>
+        <button class="button" type="button" popovertarget="demo-add" popovertargetaction="hide">Import</button>
+      </div>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Badges: with a colour, plain, removable, with an icon</h2>
+    <p>
+      <span class="badge" style="--badge-color: #e11d48">person</span>
+      <span class="badge" style="--badge-color: #2563eb">animal</span>
+      <span class="badge" style="--badge-color: #16a34a">car</span>
+      <span class="badge plain">Built in</span>
+      <span class="badge plain">Apache-2.0</span>
+      <span class="badge" style="--badge-color: #9333ea">zebra<a href="#" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
+      <span class="badge plain">{{ icon("check-circle") }}Labelled</span>
+    </p>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Empty states: in a card, and on the page</h2>
+    <div class="columns">
+      <div class="card">
+        <div class="empty">
+          <span class="icon">{{ icon("photo") }}</span>
+          <h2>No images yet</h2>
+          <p class="muted">Add images to start annotating: drop files or folders, or enter a path.</p>
+          <button class="button" type="button" popovertarget="demo-add">{{ icon("plus") }}Add images</button>
+        </div>
+      </div>
+      <div class="empty">
+        <span class="icon">{{ icon("document-text") }}</span>
+        <h2>No views yet</h2>
+        <p class="muted">Ask the agent to build one.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Activity, as on History: a table, what changed under each line</h2>
+    <table>
+      <thead><tr><th>When</th><th>What</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="muted" title="2026-11-15T02:18:07Z">15h</td>
+          <td>Agent: go<br><span class="muted">4 images of reports added</span></td>
+          <td><button class="button secondary" type="button">Undo</button></td>
+        </tr>
+        <tr>
+          <td class="muted" title="2026-11-15T00:34:06Z">16h</td>
+          <td>PUT /api/projects/14/images/109/annotations<br><span class="muted">image in a project changed, project “person merged” changed</span></td>
+          <td class="muted" title="A later change touched the same things: undo that first.">Changed since</td>
+        </tr>
+        <tr>
+          <td class="muted" title="2026-11-15T00:33:58Z">16h</td>
+          <td>PUT /api/projects/14/images/109/annotations<br><span class="muted">image in a project changed, project “person merged” changed</span></td>
+          <td><span class="badge plain">Undone</span></td>
+        </tr>
+        <tr>
+          <td class="muted" title="2026-11-15T00:33:56Z">16h</td>
+          <td>Undo: PUT /api/projects/14/images/109/annotations<br><span class="muted">image in a project changed</span></td>
+          <td><button class="button secondary" type="button">Redo</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Link list, as on Studio</h2>
+    <div class="stack">
+      <a class="item" href="/studio/sam3"><span class="icon">{{ icon("play") }}</span><p>SAM 3<br><span class="muted">Finds and outlines every object matching each prompt.</span></p>{{ icon("chevron-right") }}</a>
+      <a class="item" href="/studio/grounding-dino"><span class="icon">{{ icon("play") }}</span><p>Grounding DINO<br><span class="muted">Finds each prompt's objects, as boxes.</span></p>{{ icon("chevron-right") }}</a>
+      <a class="item" href="/studio/grounding-dino-edgetam"><span class="icon">{{ icon("play") }}</span><p>Grounding DINO → EdgeTAM<br><span class="muted">Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one.</span></p>{{ icon("chevron-right") }}</a>
     </div>
   </section>
 {% endblock %}

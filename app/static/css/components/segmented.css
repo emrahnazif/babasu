@@ -43,7 +43,9 @@
   pointer-events: none;
 }
 
-.segmented__item:has(> input) { cursor: pointer; }
+/* The hidden radio sits in its item: positioned against the page instead, it would stretch the
+   page's own scroll wherever the control is far down a scrolling area. */
+.segmented__item:has(> input) { position: relative; cursor: pointer; }
 
 .segmented__item:has(> input:focus-visible) {
   outline: 2px solid var(--color-highlight);
