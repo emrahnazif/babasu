@@ -198,7 +198,7 @@
 
 /* Who wrote the turn (the model shows on hover). */
 .chat__by {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
 .chat__note--stopped { color: var(--color-text-muted); }

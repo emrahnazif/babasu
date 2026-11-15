@@ -98,8 +98,10 @@ td {
 
 tbody tr:last-child > td { border-bottom: 0; }
 
-/* A row's buttons (a cell holding buttons, button forms or button links): side by side at the right. */
+/* A row's buttons (a cell holding buttons, button forms or button links): side by side at the
+   right, the cell as wide as they are (the other cells share the rest). */
 td:has(> button, > form, > .button) {
+  width: 1px;
   text-align: right;
   white-space: nowrap;
 }

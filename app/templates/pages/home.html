@@ -1,11 +1,12 @@
 {# Home is, for now, the page where the components are designed in plain HTML:
-   each is checked to render well here before it becomes a Jinja component. The images are
-   from the workspace, hard-coded for now: the full image where tiles are wide (2 and 3 columns),
+   each is checked to render well here before it becomes a Jinja component. The images and rows
+   are from the workspace, hard-coded for now (the table's as on Workflows, the card's as on
+   Models; its buttons do nothing). Images: the full one where tiles are wide (2 and 3 columns),
    the 256 px thumbnail where they're small. #}
 {% extends "base.html" %}
 {% block content %}
   <h1>Components</h1>
-  <p class="muted">A title, a description under it, an image gallery with as many columns as it's given, and a divider between parts.</p>
+  <p class="muted">A title, a description under it, an image gallery with as many columns as it's given, a table, parts side by side, a card holding any of them (its title, description and footer each optional), and a divider between parts. Then blocks after shadcn/ui, made of the same parts plus stats, items, progress bars and charts.</p>
 
   <section>
     <h2>Gallery, 2 columns</h2>
@@ -64,6 +65,353 @@
       <figure><img src="/media/24/24bb77a31928404e45a0454b06f6a0bd54a8db103590c9d7917288a1e0269f05.thumb.webp" alt="" loading="lazy"><figcaption>000000001000.jpg</figcaption></figure>
       <figure><img src="/media/8e/8e85a2e71ee512fe748a3a3be9bb40b8591e8c501c0f3896efcb5be5999ec236.thumb.webp" alt="" loading="lazy"><figcaption>000000001268.jpg</figcaption></figure>
       <figure><img src="/media/34/34a98da7c11bc8811e6eec445145bb16f3d5f4338945ba116edcc1fe554d181b.thumb.webp" alt="" loading="lazy"><figcaption>000000001296.jpg</figcaption></figure>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Table</h2>
+    <table>
+      <thead><tr><th>Workflow</th><th>Models</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td>SAM 3 <span class="badge plain">Built in</span><br><span class="muted">Finds and outlines every object matching each prompt.</span></td>
+          <td class="muted">sam3 sam3</td>
+          <td><a class="button secondary" href="/workflows/sam3/edit">Edit</a> <a class="button" href="/studio/sam3">Use</a></td>
+        </tr>
+        <tr>
+          <td>Grounding DINO <span class="badge plain">Built in</span><br><span class="muted">Finds each prompt's objects, as boxes.</span></td>
+          <td class="muted">grounding_dino tiny</td>
+          <td><a class="button secondary" href="/workflows/grounding-dino/edit">Edit</a> <a class="button" href="/studio/grounding-dino">Use</a></td>
+        </tr>
+        <tr>
+          <td>Grounding DINO → EdgeTAM <span class="badge plain">Built in</span><br><span class="muted">Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one.</span></td>
+          <td class="muted">grounding_dino tiny, edgetam edgetam</td>
+          <td><a class="button secondary" href="/workflows/grounding-dino-edgetam/edit">Edit</a> <a class="button" href="/studio/grounding-dino-edgetam">Use</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Card</h2>
+    <div class="card">
+      <h2>depth_anything_v2</h2>
+      <p class="muted">Depth Anything V2 by TikTok &amp; HKU — monocular depth estimation. Relative base and large are CC-BY-NC-4.0; the rest are Apache 2.0.</p>
+      <table>
+        <thead><tr><th>Variant</th><th>Licence</th><th>Size</th><th>State</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td>small</td>
+            <td><span class="badge plain">Apache-2.0</span></td>
+            <td>99.2 MB</td>
+            <td>Downloaded</td>
+            <td><button class="button secondary" type="button">Load</button> <button class="button secondary" type="button">Remove</button></td>
+          </tr>
+          <tr>
+            <td>base</td>
+            <td><span class="badge plain">CC-BY-NC-4.0</span></td>
+            <td>390 MB</td>
+            <td class="muted">390 MB to download</td>
+            <td><button class="button secondary" type="button">Download</button></td>
+          </tr>
+          <tr>
+            <td>large</td>
+            <td><span class="badge plain">CC-BY-NC-4.0</span></td>
+            <td>1.34 GB</td>
+            <td class="muted">1.34 GB to download</td>
+            <td><button class="button secondary" type="button">Download</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Card, every part</h2>
+    <div class="card">
+      <h2>Person merged</h2>
+      <p class="muted">Six of the project's images, and the classes found most.</p>
+      <div class="gallery" style="--columns: 3">
+        <figure><img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.jpg" alt="" loading="lazy"><figcaption>000000000139.jpg</figcaption></figure>
+        <figure><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.jpg" alt="" loading="lazy"><figcaption>000000000285.jpg</figcaption></figure>
+        <figure><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.jpg" alt="" loading="lazy"><figcaption>000000000632.jpg</figcaption></figure>
+        <figure><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.jpg" alt="" loading="lazy"><figcaption>000000000724.jpg</figcaption></figure>
+        <figure><img src="/media/1d/1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33.jpg" alt="" loading="lazy"><figcaption>000000000776.jpg</figcaption></figure>
+        <figure><img src="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.jpg" alt="" loading="lazy"><figcaption>000000000785.jpg</figcaption></figure>
+      </div>
+      <hr>
+      <div class="columns" style="--columns: 2">
+        <table>
+          <thead><tr><th>Class</th><th>Objects</th><th>Images</th></tr></thead>
+          <tbody>
+            <tr><td>person</td><td>258</td><td>47</td></tr>
+            <tr><td>animal</td><td>13</td><td>6</td></tr>
+            <tr><td>car</td><td>13</td><td>5</td></tr>
+            <tr><td>zebra</td><td>6</td><td>3</td></tr>
+          </tbody>
+        </table>
+        <img src="/media/1c/1c67b783f78b18ddb5dd20aaba4d4aacaf98e5277051688a96da096afa9cdf1f.jpg" alt="" loading="lazy">
+      </div>
+      <footer>
+        <p class="muted">5,084 images</p>
+        <a class="button secondary" href="/projects/14">Open project</a>
+      </footer>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Card, no title, description or footer</h2>
+    <div class="card">
+      <div class="gallery" style="--columns: 3">
+        <figure><img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.jpg" alt="" loading="lazy"><figcaption>000000000139.jpg</figcaption></figure>
+        <figure><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.jpg" alt="" loading="lazy"><figcaption>000000000285.jpg</figcaption></figure>
+        <figure><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.jpg" alt="" loading="lazy"><figcaption>000000000632.jpg</figcaption></figure>
+        <figure><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.jpg" alt="" loading="lazy"><figcaption>000000000724.jpg</figcaption></figure>
+        <figure><img src="/media/1d/1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33.jpg" alt="" loading="lazy"><figcaption>000000000776.jpg</figcaption></figure>
+        <figure><img src="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.jpg" alt="" loading="lazy"><figcaption>000000000785.jpg</figcaption></figure>
+      </div>
+      <hr>
+      <div class="columns">
+        <table>
+          <thead><tr><th>Image</th><th>Size</th><th>Objects</th></tr></thead>
+          <tbody>
+            <tr><td>000000000139.jpg</td><td>640×426</td><td>2</td></tr>
+            <tr><td>000000000285.jpg</td><td>586×640</td><td>0</td></tr>
+            <tr><td>000000000632.jpg</td><td>640×483</td><td>0</td></tr>
+          </tbody>
+        </table>
+        <a class="button" href="/projects/14">Open project</a>
+      </div>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>Blocks, after shadcn/ui</h2>
+    <div class="columns">
+      <div class="card">
+        <header>
+          <h2>Contribution History</h2>
+          <p class="muted">Last 6 months of activity</p>
+        </header>
+        <div class="bars" style="--max: 1400">
+          <span style="--value: 800">Dec</span>
+          <span style="--value: 1100">Jan</span>
+          <span style="--value: 900">Feb</span>
+          <span style="--value: 1300">Mar</span>
+          <span style="--value: 750">Apr</span>
+          <span style="--value: 1400">May</span>
+        </div>
+        <div class="columns" style="--min: 10rem">
+          <div class="item"><div class="stat"><span class="muted">Upcoming</span><strong>May 25, 2024</strong><span class="muted">$1,000 scheduled</span></div></div>
+          <div class="item"><div class="stat"><span class="muted">Auto-Save Plan</span><strong>Accelerated</strong><span class="muted">Recurring weekly</span></div></div>
+        </div>
+        <footer><button class="button" type="button">View Full Report</button></footer>
+      </div>
+
+      <div class="card">
+        <header>
+          <h2>Savings Targets</h2>
+          <p class="muted">Active milestones for 2024</p>
+          <button class="button secondary" type="button">New Goal</button>
+        </header>
+        <div class="stack">
+          <div class="item">
+            <div class="stat">
+              <span class="muted">Retirement</span>
+              <strong>$420,000</strong>
+              <div class="progress" role="progressbar" style="--value: 0.65" aria-valuenow="65" aria-valuemax="100"></div>
+              <p class="row"><span class="muted">65% achieved</span><span>$273,000</span></p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="stat">
+              <span class="muted">Real Estate</span>
+              <strong>$85,000</strong>
+              <div class="progress" role="progressbar" style="--value: 0.32" aria-valuenow="32" aria-valuemax="100"></div>
+              <p class="row"><span class="muted">32% achieved</span><span>$27,200</span></p>
+            </div>
+          </div>
+        </div>
+        <footer><p class="muted">You have not met your targets for this year.</p></footer>
+      </div>
+
+      <div class="card">
+        <header>
+          <h2>Q2 Dividend Income</h2>
+          <p class="muted">Quarterly dividend payouts across your portfolio holdings.</p>
+          <button class="icon-button" type="button" aria-label="Close" title="Close">{{ icon("x-mark") }}</button>
+        </header>
+        <div class="stack">
+          <div class="item">
+            <p>Vanguard VIG<br><span class="muted">450 Shares</span></p>
+            <div class="bars tiny" style="--max: 652"><span style="--value: 380"></span><span style="--value: 420"></span><span style="--value: 390"></span><span style="--value: 652"></span></div>
+            <span>$1,842.10</span>
+          </div>
+          <div class="item">
+            <p>S&amp;P 500 VOO<br><span class="muted">112 Shares</span></p>
+            <div class="bars tiny" style="--max: 320"><span style="--value: 180"></span><span style="--value: 210"></span><span style="--value: 320"></span><span style="--value: 218"></span></div>
+            <span>$928.40</span>
+          </div>
+          <div class="item">
+            <p>Apple AAPL<br><span class="muted">85 Shares</span></p>
+            <div class="bars tiny" style="--max: 120"><span style="--value: 60"></span><span style="--value: 70"></span><span style="--value: 120"></span><span style="--value: 90"></span></div>
+            <span>$340.00</span>
+          </div>
+          <div class="item">
+            <p>Realty Income<br><span class="muted">320 Shares</span></p>
+            <div class="bars tiny" style="--max: 360"><span style="--value: 240"></span><span style="--value: 260"></span><span style="--value: 280"></span><span style="--value: 360"></span></div>
+            <span>$1,139.50</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header>
+          <h2>Dollar-Cost Averaging</h2>
+          <p class="muted">A strategy for building wealth over time.</p>
+        </header>
+        <p class="muted"><a href="#">Over time</a>, this smooths out the average cost of your investments. When prices drop, your fixed amount buys more shares. When prices rise, you buy fewer. The result is a lower average cost per share compared to lump-sum investing during volatile periods.</p>
+      </div>
+    </div>
+
+    <div class="columns" style="--columns: 1">
+      <div class="card">
+        <header>
+          <h2>Recent Transactions</h2>
+          <p class="muted">Your latest account activity.</p>
+          <button class="button secondary" type="button">View All</button>
+        </header>
+        <table>
+          <tbody>
+            <tr>
+              <td><span class="icon">{{ icon("sparkles") }}</span></td>
+              <td>Blue Bottle Coffee<br><span class="muted">Food &amp; Drink</span></td>
+              <td class="muted">Today, 10:24 AM</td>
+              <td class="number">-$6.50</td>
+              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
+            </tr>
+            <tr>
+              <td><span class="icon">{{ icon("tag") }}</span></td>
+              <td>Whole Foods Market<br><span class="muted">Groceries</span></td>
+              <td class="muted">Yesterday</td>
+              <td class="number">-$142.30</td>
+              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
+            </tr>
+            <tr>
+              <td><span class="icon">{{ icon("arrow-up") }}</span></td>
+              <td>Stripe Payout<br><span class="muted">Income</span></td>
+              <td class="muted">Oct 12</td>
+              <td class="number">+$4,200.00</td>
+              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
+            </tr>
+            <tr>
+              <td><span class="icon">{{ icon("arrows-right-left") }}</span></td>
+              <td>Uber Technologies<br><span class="muted">Transport</span></td>
+              <td class="muted">Oct 11</td>
+              <td class="number">-$24.10</td>
+              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
+            </tr>
+            <tr>
+              <td><span class="icon">{{ icon("play") }}</span></td>
+              <td>Netflix Subscription<br><span class="muted">Entertainment</span></td>
+              <td class="muted">Oct 10</td>
+              <td class="number">-$19.99</td>
+              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="columns">
+      <div class="card">
+        <header>
+          <p class="muted">Yearly Activity</p>
+          <span class="badge plain">+US$0.25 Daily Cash</span>
+        </header>
+        <div class="bars small" style="--max: 80">
+          <span style="--value: 40">J</span>
+          <span style="--value: 55">F</span>
+          <span style="--value: 35">M</span>
+          <span style="--value: 60">A</span>
+          <span style="--value: 45">M</span>
+          <span style="--value: 50">J</span>
+          <span style="--value: 65">J</span>
+          <span style="--value: 40">A</span>
+          <span style="--value: 55">S</span>
+          <span style="--value: 70">O</span>
+          <span style="--value: 45">N</span>
+          <span style="--value: 80">D</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <header>
+          <h2>Power Usage</h2>
+          <p class="muted">Whole Home</p>
+        </header>
+        <div class="bars" style="--max: 3.8">
+          <span style="--value: 1.2">6a</span>
+          <span style="--value: 2.8">8a</span>
+          <span style="--value: 3.1">10a</span>
+          <span style="--value: 2.4">12p</span>
+          <span style="--value: 3.4">2p</span>
+          <span style="--value: 2.9">4p</span>
+          <span style="--value: 3.8">6p</span>
+          <span style="--value: 3.2">8p</span>
+        </div>
+        <hr>
+        <div class="stats">
+          <div class="stat"><span class="muted">Currently Using</span><strong>3.4 kW</strong></div>
+          <div class="stat"><span class="muted">Solar Gen</span><strong>+1.2 kW</strong></div>
+        </div>
+        <footer>
+          <div class="stat">
+            <span class="muted">Battery Level</span>
+            <div class="row"><div class="progress" role="progressbar" style="--value: 0.85" aria-valuenow="85" aria-valuemax="100"></div><span>85%</span></div>
+          </div>
+        </footer>
+      </div>
+
+      <div class="card">
+        <header>
+          <h2>Upcoming Payments</h2>
+          <p class="muted">Scheduled for April.</p>
+        </header>
+        <div class="stack">
+          <div class="item"><p>Netflix Subscription<br><span class="muted">Apr 15, 2024</span></p><span class="badge plain">$19.99</span></div>
+          <div class="item"><p>Rent Payment<br><span class="muted">Apr 1, 2024</span></p><span class="badge plain">$2,400.00</span></div>
+          <div class="item"><p>Auto Insurance<br><span class="muted">Apr 22, 2024</span></p><span class="badge plain">$186.00</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header>
+          <h2>Stock Performance</h2>
+          <p class="muted">6-month price history.</p>
+        </header>
+        <label class="field">Ticker
+          <select>
+            <option>VOO</option><option>VIG</option><option>AAPL</option><option>MSFT</option><option>GOOGL</option><option>AMZN</option><option>TSLA</option>
+          </select>
+        </label>
+        <hr>
+        <svg class="area" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="VOO, January to June: 412 to 462">
+          <path d="M0,25H100M0,50H100M0,75H100"/>
+          <path class="fill" d="M0,31.3C10,31.3 10,27 20,27C30,27 30,34.2 40,34.2C50,34.2 50,25 60,25C70,25 70,30 80,30C90,30 90,23 100,23L100,100L0,100Z"/>
+          <path class="line" d="M0,31.3C10,31.3 10,27 20,27C30,27 30,34.2 40,34.2C50,34.2 50,25 60,25C70,25 70,30 80,30C90,30 90,23 100,23"/>
+        </svg>
+      </div>
     </div>
   </section>
 {% endblock %}
