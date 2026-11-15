@@ -122,7 +122,8 @@ COVER_SIZE = 4  # images shown on a project's card
 
 def list_all(conn: sqlite3.Connection) -> list[dict]:
     """Every project, most recently changed first, with its image count, how many of its images
-    are labelled (have an annotation) and the thumbnails of its first few images for its card."""
+    are labelled (have an annotation), how many classes it has and the thumbnails of its first few
+    images for its card."""
     rows = conn.execute(
         """SELECT project.*, count(project_media.media_id) AS image_count,
                   (SELECT json_group_array(sha256) FROM (
@@ -133,11 +134,13 @@ def list_all(conn: sqlite3.Connection) -> list[dict]:
         (COVER_SIZE,),
     ).fetchall()
     labelled = _labelled_counts(conn, rows)
-    return [
-        _project(row)
-        | {"covers": [media.thumb_url(sha) for sha in json.loads(row["covers"])], "labelled_count": labelled.get(row["id"], 0)}
-        for row in rows
-    ]
+    listed = []
+    for row in rows:
+        project = _project(row) | {"labelled_count": labelled.get(row["id"], 0),
+                                   "covers": [media.thumb_url(sha) for sha in json.loads(row["covers"])]}
+        project["class_count"] = len(project.pop("classes"))
+        listed.append(project)
+    return listed
 
 
 def _labelled(row: sqlite3.Row) -> tuple[str, list]:

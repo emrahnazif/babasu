@@ -220,6 +220,9 @@ class ProjectOut(Answer):
     frozen_at: str | None = Field(description="When it was frozen (a frozen project never changes); null if it isn't.")
     created_at: str = Field(description="When it was made, UTC (ISO 8601).")
     updated_at: str = Field(description="When it last changed, UTC (ISO 8601).")
+
+
+class ProjectWithClasses(ProjectOut):
     classes: list[ClassOut] = Field(description="Its classes, in order.")
 
 
@@ -229,6 +232,7 @@ class Counted(ProjectOut):
 
 
 class ProjectListed(Counted):
+    class_count: int = Field(description="How many classes it has.")
     covers: list[str] = Field(description="Thumbnail URLs of its first few images.")
 
 
@@ -258,7 +262,7 @@ class ProjectDetail(Counted):
 
 
 class ImageDetail(ImageOut):
-    project: ProjectOut = Field(description="The project it's in.")
+    project: ProjectWithClasses = Field(description="The project it's in.")
     filter: str = Field(description="The filter as applied (?where=), which previous and next follow.")
     position: int = Field(description="Its place among the matching images, from 1.")
     match_count: int = Field(description="How many images match the filter.")
@@ -547,8 +551,8 @@ def import_images(project_id: int, request: Annotated[ImageImport, Form()], conn
 
 @router.get("/api/projects", response_model=list[ProjectListed], response_model_exclude_unset=True)
 def api_project_list(conn: DB) -> list[dict]:
-    """Every project, most recently changed first: id, name, type, how many images and how many of
-    them labelled, and its classes."""
+    """Every project, most recently changed first: id, name, type, how many images, how many of them
+    labelled and how many classes, and thumbnails of its first images."""
     return projects.list_all(conn)
 
 

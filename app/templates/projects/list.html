@@ -1,30 +1,23 @@
 {% extends "base.html" %}
+{% import "components.html" as ui %}
 
 {% block actions %}
-  <a class="icon-button" href="/projects/new" aria-label="New project" title="New project">{{ icon("plus") }}</a>
+  {{ ui.button("New project", href="/projects/new", variant="icon", icon="plus") }}
 {% endblock %}
 
 {% block content %}
   {% if projects %}
-    <div class="grid wide">
+    {% call ui.grid(wide=true) %}
       {% for project in projects %}
-        <a class="card" href="/projects/{{ project.id }}">
-          <div class="cover">
-            {% for url in project.covers %}<img src="{{ url }}" alt="" loading="lazy">{% else %}<p class="muted">No images yet</p>{% endfor %}
-          </div>
-          <header>
-            <h2 class="clip" title="{{ project.name }}">{{ project.name }}</h2>
-            <time class="muted" datetime="{{ project.updated_at }}" title="Updated {{ project.updated_at }}">{{ project.updated_at | ago }}</time>
-          </header>
-          {% if project.description %}<p class="muted clip" title="{{ project.description }}">{{ project.description }}</p>{% endif %}
-          <p class="muted">
-            {{ tasks[project.task] }} · {{ project.image_count | plural("image") }} · {{ project.classes | length | plural("class") }}
-            {% if project.image_count %}· {{ (100 * project.labelled_count / project.image_count) | round | int }}% labelled{% endif %}
-          </p>
-        </a>
+        {% call ui.card(project.name, project.description, action=ui.time(project.updated_at),
+                        cover=project.covers or "No images yet", href="/projects/" ~ project.id) %}
+          {{ ui.text([tasks[project.task], project.image_count | plural("image"), project.class_count | plural("class"),
+                      ((100 * project.labelled_count / project.image_count) | round | int) ~ "% labelled" if project.image_count]
+                     | select | join(" · "), muted=true) }}
+        {% endcall %}
       {% endfor %}
-    </div>
+    {% endcall %}
   {% else %}
-    <p class="muted">No projects yet.</p>
+    {{ ui.empty("No projects yet", icon="photo", action=ui.button("New project", href="/projects/new", icon="plus")) }}
   {% endif %}
 {% endblock %}
