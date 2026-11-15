@@ -22,7 +22,11 @@ NAV = [
         {"label": "Studio", "href": "/studio"},
         {"label": "Models", "href": "/models"},
     ],
-    [{"label": "Data lake", "href": "/data-lake"}, {"label": "History", "href": "/history"}],
+    [
+        {"label": "Data lake", "href": "/data-lake"},
+        {"label": "History", "href": "/history"},
+        {"label": "Components", "href": "/components"},  # what views are built from, each drawn (for checking them)
+    ],
 ]
 
 # Works in dev and in PyInstaller builds (bundled modules get __file__ under _MEIPASS).

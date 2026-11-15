@@ -1,7 +1,6 @@
 {# /components: the components a view is built from (app/view_components.py): each with how to call it and
    its example, rendered as a view renders it. The agent reads the same as text (get_components). #}
 {% extends "base.html" %}
-{% set crumbs = [("Views", "/views"), ("Components", None)] %}
 {% block scripts %}<script type="module" src="{{ url_for('static', path='js/studio.js') }}"></script>{% endblock %}
 {% block content %}
   <h1>Components</h1>
