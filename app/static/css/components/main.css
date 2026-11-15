@@ -9,12 +9,13 @@
 :is(.grid, .gallery, .columns, .bars, .area, .justified, .stack, .fields, .actions):first-child { margin-top: 0; }
 
 /* A page with one thing to do (e.g. Home): its content in a column up to 44rem wide, in the
-   middle of the main area on both axes. */
+   middle of the main area on both axes, its text and rows of buttons centred too. */
 .center {
   min-height: 100%;
   display: grid;
   grid-template-columns: min(100%, 44rem);
   place-content: center;
+  text-align: center;
 }
 
 /* Secondary text. */
@@ -602,6 +603,8 @@ td:has(> .icon) { width: 1px; }  /* the cell as wide as the icon, not a share of
 .actions > p { margin-left: auto; font-size: var(--text-sm); }
 
 .actions.start { justify-content: flex-start; }
+
+.center .actions { justify-content: center; }  /* after the rules above, which it overrides */
 
 .actions.divided {
   padding-top: var(--space-4);
