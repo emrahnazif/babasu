@@ -1,4 +1,27 @@
 {% extends "base.html" %}
+{% import "components.html" as ui %}
+
+{# Where the app opens: the two ways in, by what someone wants (answers from images now, or a
+   dataset of their own), and examples that open a Studio page with images and a prompt filled in.
+   The examples' links are placeholders until Studio takes them. #}
+{% set examples = ["Count cars in a parking lot", "Find people on a street", "Count products on a shelf"] %}
+
 {% block content %}
-  <p class="muted">Home isn't built yet. Start from <a href="/projects">Projects</a>.</p>
+  {% call ui.center() %}
+    {{ ui.heading("Welcome to babasu", "Bring your images, describe the objects in words, and let models find them. "
+                  ~ "Everything runs on this computer, and your images never leave it.") }}
+    {% call ui.columns() %}
+      {% call ui.card("Find and count things", "Drop images in, say what to look for, and see what's found. Nothing to set up.") %}
+        {{ ui.actions([ui.button("Open Studio", href="/studio")]) }}
+      {% endcall %}
+      {% call ui.card("Build a dataset", "Bring your images, let a model annotate them, then review and fix what it found.") %}
+        {{ ui.actions([ui.button("New project", href="/projects/new")]) }}
+      {% endcall %}
+    {% endcall %}
+    {% call ui.section("Try an example") %}
+      {% call ui.actions(variant="start") %}
+        {% for example in examples %}{{ ui.button(example, href="/studio", variant="secondary") }}{% endfor %}
+      {% endcall %}
+    {% endcall %}
+  {% endcall %}
 {% endblock %}

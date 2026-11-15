@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    """Where the app opens. A placeholder until it's designed."""
+    """Where the app opens: the way into Studio, the way into making a project, and examples to try."""
     return templates.TemplateResponse(request, "pages/home.html")
 
 

@@ -8,11 +8,13 @@
    parent (at any depth, e.g. inside a refresh region) has nothing to space from. */
 :is(.grid, .gallery, .columns, .bars, .area, .justified, .stack, .fields, .actions):first-child { margin-top: 0; }
 
-/* Centres its content on both axes, filling the main area. */
+/* A page with one thing to do (e.g. Home): its content in a column up to 44rem wide, in the
+   middle of the main area on both axes. */
 .center {
   min-height: 100%;
   display: grid;
-  place-items: center;
+  grid-template-columns: min(100%, 44rem);
+  place-content: center;
 }
 
 /* Secondary text. */

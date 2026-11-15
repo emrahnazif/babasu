@@ -86,6 +86,14 @@
   </div>
 {%- endmacro %}
 
+{# A page with one thing to do (e.g. Home): what it holds in a column, in the middle of the main
+   area. #}
+{% macro center(children=none) -%}
+  <div class="center">
+    {{ caller() if caller else render(children) }}
+  </div>
+{%- endmacro %}
+
 {# One line: its first part fills it, the rest sit at its right at their own width (a note and its
    value, a bar and its percentage). #}
 {% macro row(children=none) -%}
@@ -473,7 +481,7 @@
 {# The macro each JSON type draws with. #}
 {% set _types = {
   "heading": heading, "section": section, "divider": divider, "text": text, "columns": columns,
-  "stack": stack, "grid": grid, "row": row, "card": card, "button": button, "actions": actions,
+  "stack": stack, "grid": grid, "center": center, "row": row, "card": card, "button": button, "actions": actions,
   "badge": badge, "time": time, "icon": icon, "table": table, "gallery": gallery, "tiles": tiles,
   "image": image, "progress": progress, "stat": stat, "stats": stats, "item": item, "bars": bars,
   "area": area, "empty": empty, "pagination": pagination, "form": form, "fields": fields, "input": input,
