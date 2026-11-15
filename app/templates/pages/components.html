@@ -1,487 +1,220 @@
-{# The components the app's pages are built from, designed here in plain HTML: each is checked to
-   render well here before it becomes a Jinja component. The images and rows
-   are from the workspace, hard-coded for now (the table's as on Workflows, the card's as on
-   Models; its buttons do nothing). Images: the full one where tiles are wide (2 and 3 columns),
-   the 256 px thumbnail where they're small. #}
+{# The components the app's pages are built from (components.html), each drawn, for designing and
+   checking them; what has no macro yet is plain HTML. The images and rows are from the
+   workspace, hard-coded for now (the table's as on Workflows, the card's as on Models; its
+   buttons do nothing). Images: the full one where tiles are wide (2 and 3 columns), the 256 px
+   thumbnail where they're small. #}
 {% extends "base.html" %}
-{% from "partials/select.html" import select %}
+{% import "components.html" as ui %}
 {% block scripts %}<script type="module" src="/static/js/class-list.js"></script>{% endblock %}
 {% block content %}
-  <h1>Components</h1>
-  <p class="muted">A title, a description under it, an image gallery with as many columns as it's given, a table, parts side by side, a card holding any of them (its title, description and footer each optional), and a divider between parts. Then blocks after shadcn/ui, made of the same parts plus stats, items, progress bars and charts. Then the parts of the app's own pages: cards with a cover, image tiles, a filter bar, thumbnails, drop zones, a form, dialogs, badges, empty states, History as a table and a link list.</p>
+  {# The images below, once: each full size, and its 256 px thumbnail. #}
+  {% set photos = [
+    {"src": "/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.jpg", "caption": "000000000139.jpg"},
+    {"src": "/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.jpg", "caption": "000000000285.jpg"},
+    {"src": "/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.jpg", "caption": "000000000632.jpg"},
+    {"src": "/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.jpg", "caption": "000000000724.jpg"},
+    {"src": "/media/1d/1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33.jpg", "caption": "000000000776.jpg"},
+    {"src": "/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.jpg", "caption": "000000000785.jpg"},
+    {"src": "/media/d5/d5b79e7fa716f85ca86f46e5f518da9b6c5e26414925624d76e6476861aec495.jpg", "caption": "000000000802.jpg"},
+    {"src": "/media/c2/c2aa138ee3a59b057a7ba6fc5a6a18e62af531aa7dab78a7bfd33c1cd7e55eb6.jpg", "caption": "000000000872.jpg"},
+    {"src": "/media/1c/1c67b783f78b18ddb5dd20aaba4d4aacaf98e5277051688a96da096afa9cdf1f.jpg", "caption": "000000000885.jpg"},
+    {"src": "/media/24/24bb77a31928404e45a0454b06f6a0bd54a8db103590c9d7917288a1e0269f05.jpg", "caption": "000000001000.jpg"},
+    {"src": "/media/8e/8e85a2e71ee512fe748a3a3be9bb40b8591e8c501c0f3896efcb5be5999ec236.jpg", "caption": "000000001268.jpg"},
+    {"src": "/media/34/34a98da7c11bc8811e6eec445145bb16f3d5f4338945ba116edcc1fe554d181b.jpg", "caption": "000000001296.jpg"},
+  ] %}
+  {% set ns = namespace(thumbs=[], found=[]) %}
+  {% for x in photos %}{% set ns.thumbs = ns.thumbs + [{"src": x.src | replace(".jpg", ".thumb.webp"), "caption": x.caption}] %}{% endfor %}
+  {% set thumbs = ns.thumbs %}
+  {% set drop = "Drop images or folders here, or click to choose images" %}
+  {# A project's images, as its image tiles show them; the first four are also the thumbnails, as Try results shows them. #}
+  {% set tiles = [
+    {"src": "/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp", "width": 640, "height": 426, "href": "/projects/14/images/31", "caption": "000000000139.jpg", "annotations": [{"class_id": 0, "segments": [[414, 215], [420, 217], [428, 213], [427, 219], [438, 221], [439, 231], [447, 233], [446, 283], [447, 292], [451, 294], [464, 294], [459, 255], [459, 237], [462, 231], [462, 220], [457, 188], [446, 172], [443, 160], [438, 157], [430, 158], [427, 162], [428, 176], [432, 179], [430, 200], [423, 211]]}, {"class_id": 0, "segments": [[385, 175], [385, 207], [397, 207], [400, 203], [400, 194], [396, 191], [400, 185], [400, 178], [396, 172], [389, 172]]}], "badge": {"text": "Labelled", "icon": "check-circle"}},
+    {"src": "/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp", "width": 586, "height": 640, "href": "/projects/14/images/32", "caption": "000000000285.jpg"},
+    {"src": "/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp", "width": 640, "height": 483, "href": "/projects/14/images/33", "caption": "000000000632.jpg"},
+    {"src": "/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp", "width": 375, "height": 500, "href": "/projects/14/images/34", "caption": "000000000724.jpg", "annotations": [{"class_id": 2, "segments": [[123, 281], [123, 304], [132, 306], [135, 310], [139, 310], [145, 300], [144, 290], [128, 286], [125, 280]]}], "badge": {"text": "Labelled", "icon": "check-circle"}},
+    {"src": "/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.thumb.webp", "width": 640, "height": 425, "href": "/projects/14/images/36", "caption": "000000000785.jpg", "annotations": [{"class_id": 0, "segments": [[281, 183], [283, 193], [291, 196], [292, 194], [305, 192], [309, 187], [335, 182], [342, 177], [351, 176], [365, 166], [372, 167], [378, 188], [384, 198], [388, 220], [384, 223], [376, 240], [357, 266], [356, 276], [365, 300], [384, 336], [384, 342], [375, 348], [371, 356], [365, 359], [365, 363], [370, 366], [410, 364], [420, 361], [422, 356], [424, 356], [424, 349], [417, 331], [415, 315], [397, 285], [400, 277], [411, 268], [417, 299], [427, 312], [448, 361], [447, 366], [434, 379], [429, 381], [429, 384], [435, 389], [448, 388], [454, 385], [476, 385], [495, 379], [489, 349], [479, 333], [471, 313], [455, 297], [450, 285], [451, 260], [449, 246], [455, 212], [454, 199], [448, 183], [456, 183], [460, 180], [463, 174], [463, 166], [459, 163], [457, 152], [442, 140], [429, 115], [420, 106], [398, 94], [396, 86], [391, 82], [392, 69], [386, 51], [377, 44], [364, 46], [354, 63], [353, 79], [357, 82], [357, 88], [352, 97], [351, 104], [347, 107], [345, 119], [348, 119], [351, 126], [342, 143], [335, 152], [324, 159], [310, 164], [303, 172], [294, 174], [287, 171]]}], "badge": {"text": "Labelled", "icon": "check-circle"}},
+    {"src": "/media/d5/d5b79e7fa716f85ca86f46e5f518da9b6c5e26414925624d76e6476861aec495.thumb.webp", "width": 424, "height": 640, "href": "/projects/14/images/37", "caption": "000000000802.jpg"},
+    {"src": "/media/71/71a37c25cdf944cf0a88b66d00a66cf899a88bd55c7ac80fcf1c76329d617e6c.thumb.webp", "width": 640, "height": 512, "href": "/projects/14/images/44", "caption": "000000001425.jpg"},
+    {"src": "/media/a0/a044804a0b0186a1267acae34975932f14ede96c4a2b78fcee74e6c2fbd8414d.thumb.webp", "width": 640, "height": 315, "href": "/projects/14/images/45", "caption": "000000001490.jpg", "annotations": [{"class_id": 0, "segments": [[449, 179], [450, 181], [456, 181], [457, 177], [470, 164], [481, 164], [483, 180], [477, 202], [482, 223], [482, 234], [473, 237], [472, 240], [474, 241], [498, 240], [490, 201], [499, 180], [499, 142], [496, 137], [488, 133], [488, 124], [484, 120], [480, 120], [472, 125], [475, 128], [476, 136], [480, 140], [469, 157]]}], "badge": {"text": "Labelled", "icon": "check-circle"}},
+    {"src": "/media/06/06c721f0a62bcb9fcb2d2d0cc0b9edd63092084a8773a18c4b5a7bd6fb4f095d.thumb.webp", "width": 320, "height": 240, "href": "/projects/14/images/46", "caption": "000000001503.jpg", "annotations": [{"class_id": 0, "segments": [[282, 120], [283, 122], [292, 115], [305, 115], [305, 120], [300, 128], [300, 141], [306, 134], [304, 142], [305, 151], [311, 150], [316, 145], [318, 125], [320, 123], [318, 106], [315, 103], [316, 96], [314, 94], [296, 96], [296, 98], [305, 97], [306, 104], [295, 107]]}, {"class_id": 0, "segments": [[294, 108], [295, 111], [299, 112], [300, 110], [306, 116], [300, 129], [300, 140], [306, 133], [304, 149], [307, 151], [311, 150], [316, 144], [319, 125], [318, 106], [315, 103], [316, 96], [314, 94], [297, 96], [298, 98], [305, 97], [307, 102], [304, 106]]}], "badge": {"text": "Labelled", "icon": "check-circle"}},
+    {"src": "/media/6b/6ba641627c08ef424b7dc3e6cee069aa0dd49615a31c54ae0de1ecd1fabd9dea.thumb.webp", "width": 640, "height": 480, "href": "/projects/14/images/49", "caption": "000000001675.jpg", "annotations": [{"class_id": 1, "segments": [[0, 42], [0, 301], [83, 305], [143, 303], [211, 306], [583, 309], [635, 308], [640, 301], [638, 292], [638, 276], [640, 275], [640, 215], [638, 214], [640, 207], [640, 186], [638, 181], [640, 177], [640, 142], [638, 142], [638, 138], [640, 138], [640, 103], [638, 103], [637, 98], [623, 93], [589, 91], [505, 96], [457, 95], [352, 104], [343, 102], [316, 103], [267, 95], [211, 98], [194, 92], [177, 81], [171, 63], [166, 61], [161, 53], [157, 51], [156, 47], [170, 27], [171, 19], [164, 20], [140, 31], [124, 32], [98, 26], [84, 20], [67, 19], [42, 23], [22, 31], [10, 40], [2, 40]]}], "badge": {"text": "Labelled", "icon": "check-circle"}},
+    {"src": "/media/c0/c06b1845c54bb886a8fb9f8a6e908b29ceb661ffda1ca8df9a27f123806de648.thumb.webp", "width": 427, "height": 640, "href": "/projects/14/images/50", "caption": "000000001761.jpg"},
+    {"src": "/media/03/039f3bfb862023bde7f835a36c32d8f59a3e66488863c2a47b7b746e78c44186.thumb.webp", "width": 640, "height": 419, "href": "/projects/14/images/52", "caption": "000000001993.jpg"},
+  ] %}
+  {% for t in tiles[:4] %}{% set ns.found = ns.found + [{"src": t.src, "width": t.width, "height": t.height, "annotations": t.annotations or [], "caption": (t.annotations or []) | length | plural("object") ~ " · " ~ t.caption}] %}{% endfor %}
+  {% set found = ns.found %}
+  {# A project's classes, for drawing its annotations. #}
+  {% set classes = [{"id": 0, "name": "person", "color": "#e11d48"}, {"id": 1, "name": "animal", "color": "#2563eb"}, {"id": 2, "name": "car", "color": "#16a34a"}, {"id": 3, "name": "van", "color": "#d97706"}, {"id": 4, "name": "zebra", "color": "#9333ea"}, {"id": 5, "name": "cat", "color": "#0891b2"}] %}
 
-  <section>
-    <h2>Gallery, 2 columns</h2>
-    <div class="gallery" style="--columns: 2">
-      <figure><img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.jpg" alt="" loading="lazy"><figcaption>000000000139.jpg</figcaption></figure>
-      <figure><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.jpg" alt="" loading="lazy"><figcaption>000000000285.jpg</figcaption></figure>
-      <figure><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.jpg" alt="" loading="lazy"><figcaption>000000000632.jpg</figcaption></figure>
-      <figure><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.jpg" alt="" loading="lazy"><figcaption>000000000724.jpg</figcaption></figure>
-    </div>
-  </section>
+  {{ ui.heading("Components", "A title, a description under it, an image gallery with as many columns as it's given, a table, parts side by side, a card holding any of them (its title, description and footer each optional), and a divider between parts. Then blocks after shadcn/ui, made of the same parts plus stats, items, progress bars and charts. Then the parts of the app's own pages: cards with a cover, image tiles, a filter bar, thumbnails, drop zones, a form, dialogs, badges, empty states, History as a table and a link list.") }}
 
-  <hr>
+  {% call ui.section("Gallery, 2 columns") %}
+    {{ ui.gallery(photos[:4], columns=2) }}
+  {% endcall %}
 
-  <section>
-    <h2>Gallery, 3 columns</h2>
-    <div class="gallery" style="--columns: 3">
-      <figure><img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.jpg" alt="" loading="lazy"><figcaption>000000000139.jpg</figcaption></figure>
-      <figure><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.jpg" alt="" loading="lazy"><figcaption>000000000285.jpg</figcaption></figure>
-      <figure><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.jpg" alt="" loading="lazy"><figcaption>000000000632.jpg</figcaption></figure>
-      <figure><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.jpg" alt="" loading="lazy"><figcaption>000000000724.jpg</figcaption></figure>
-      <figure><img src="/media/1d/1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33.jpg" alt="" loading="lazy"><figcaption>000000000776.jpg</figcaption></figure>
-      <figure><img src="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.jpg" alt="" loading="lazy"><figcaption>000000000785.jpg</figcaption></figure>
-    </div>
-  </section>
+  {{ ui.divider() }}
 
-  <hr>
+  {% call ui.section("Gallery, 3 columns") %}
+    {{ ui.gallery(photos[:6], columns=3) }}
+  {% endcall %}
 
-  <section>
-    <h2>Gallery, 4 columns</h2>
-    <div class="gallery" style="--columns: 4">
-      <figure><img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp" alt="" loading="lazy"><figcaption>000000000139.jpg</figcaption></figure>
-      <figure><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp" alt="" loading="lazy"><figcaption>000000000285.jpg</figcaption></figure>
-      <figure><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp" alt="" loading="lazy"><figcaption>000000000632.jpg</figcaption></figure>
-      <figure><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp" alt="" loading="lazy"><figcaption>000000000724.jpg</figcaption></figure>
-      <figure><img src="/media/1d/1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33.thumb.webp" alt="" loading="lazy"><figcaption>000000000776.jpg</figcaption></figure>
-      <figure><img src="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.thumb.webp" alt="" loading="lazy"><figcaption>000000000785.jpg</figcaption></figure>
-      <figure><img src="/media/d5/d5b79e7fa716f85ca86f46e5f518da9b6c5e26414925624d76e6476861aec495.thumb.webp" alt="" loading="lazy"><figcaption>000000000802.jpg</figcaption></figure>
-      <figure><img src="/media/c2/c2aa138ee3a59b057a7ba6fc5a6a18e62af531aa7dab78a7bfd33c1cd7e55eb6.thumb.webp" alt="" loading="lazy"><figcaption>000000000872.jpg</figcaption></figure>
-    </div>
-  </section>
+  {{ ui.divider() }}
 
-  <hr>
+  {% call ui.section("Gallery, 4 columns") %}
+    {{ ui.gallery(thumbs[:8], columns=4) }}
+  {% endcall %}
 
-  <section>
-    <h2>Gallery, 6 columns</h2>
-    <div class="gallery" style="--columns: 6">
-      <figure><img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp" alt="" loading="lazy"><figcaption>000000000139.jpg</figcaption></figure>
-      <figure><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp" alt="" loading="lazy"><figcaption>000000000285.jpg</figcaption></figure>
-      <figure><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp" alt="" loading="lazy"><figcaption>000000000632.jpg</figcaption></figure>
-      <figure><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp" alt="" loading="lazy"><figcaption>000000000724.jpg</figcaption></figure>
-      <figure><img src="/media/1d/1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33.thumb.webp" alt="" loading="lazy"><figcaption>000000000776.jpg</figcaption></figure>
-      <figure><img src="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.thumb.webp" alt="" loading="lazy"><figcaption>000000000785.jpg</figcaption></figure>
-      <figure><img src="/media/d5/d5b79e7fa716f85ca86f46e5f518da9b6c5e26414925624d76e6476861aec495.thumb.webp" alt="" loading="lazy"><figcaption>000000000802.jpg</figcaption></figure>
-      <figure><img src="/media/c2/c2aa138ee3a59b057a7ba6fc5a6a18e62af531aa7dab78a7bfd33c1cd7e55eb6.thumb.webp" alt="" loading="lazy"><figcaption>000000000872.jpg</figcaption></figure>
-      <figure><img src="/media/1c/1c67b783f78b18ddb5dd20aaba4d4aacaf98e5277051688a96da096afa9cdf1f.thumb.webp" alt="" loading="lazy"><figcaption>000000000885.jpg</figcaption></figure>
-      <figure><img src="/media/24/24bb77a31928404e45a0454b06f6a0bd54a8db103590c9d7917288a1e0269f05.thumb.webp" alt="" loading="lazy"><figcaption>000000001000.jpg</figcaption></figure>
-      <figure><img src="/media/8e/8e85a2e71ee512fe748a3a3be9bb40b8591e8c501c0f3896efcb5be5999ec236.thumb.webp" alt="" loading="lazy"><figcaption>000000001268.jpg</figcaption></figure>
-      <figure><img src="/media/34/34a98da7c11bc8811e6eec445145bb16f3d5f4338945ba116edcc1fe554d181b.thumb.webp" alt="" loading="lazy"><figcaption>000000001296.jpg</figcaption></figure>
-    </div>
-  </section>
+  {{ ui.divider() }}
 
-  <hr>
+  {% call ui.section("Gallery, 6 columns") %}
+    {{ ui.gallery(thumbs, columns=6) }}
+  {% endcall %}
 
-  <section>
-    <h2>Table</h2>
-    <table>
-      <thead><tr><th>Workflow</th><th>Models</th><th></th></tr></thead>
-      <tbody>
-        <tr>
-          <td>SAM 3 <span class="badge plain">Built in</span><br><span class="muted">Finds and outlines every object matching each prompt.</span></td>
-          <td class="muted">sam3 sam3</td>
-          <td><a class="button secondary" href="/workflows/sam3/edit">Edit</a> <a class="button" href="/studio/sam3">Use</a></td>
-        </tr>
-        <tr>
-          <td>Grounding DINO <span class="badge plain">Built in</span><br><span class="muted">Finds each prompt's objects, as boxes.</span></td>
-          <td class="muted">grounding_dino tiny</td>
-          <td><a class="button secondary" href="/workflows/grounding-dino/edit">Edit</a> <a class="button" href="/studio/grounding-dino">Use</a></td>
-        </tr>
-        <tr>
-          <td>Grounding DINO → EdgeTAM <span class="badge plain">Built in</span><br><span class="muted">Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one.</span></td>
-          <td class="muted">grounding_dino tiny, edgetam edgetam</td>
-          <td><a class="button secondary" href="/workflows/grounding-dino-edgetam/edit">Edit</a> <a class="button" href="/studio/grounding-dino-edgetam">Use</a></td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
+  {{ ui.divider() }}
 
-  <hr>
+  {% call ui.section("Table") %}
+    {{ ui.table(columns=["Workflow", "Models", ""], rows=[
+      [ui.text(["SAM 3", ui.badge("Built in")], note="Finds and outlines every object matching each prompt."), ui.text("sam3 sam3", muted=true),
+       [ui.button("Edit", href="/workflows/sam3/edit", variant="secondary"), ui.button("Use", href="/studio/sam3")]],
+      [ui.text(["Grounding DINO", ui.badge("Built in")], note="Finds each prompt's objects, as boxes."), ui.text("grounding_dino tiny", muted=true),
+       [ui.button("Edit", href="/workflows/grounding-dino/edit", variant="secondary"), ui.button("Use", href="/studio/grounding-dino")]],
+      [ui.text(["Grounding DINO → EdgeTAM", ui.badge("Built in")], note="Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one."), ui.text("grounding_dino tiny, edgetam edgetam", muted=true),
+       [ui.button("Edit", href="/workflows/grounding-dino-edgetam/edit", variant="secondary"), ui.button("Use", href="/studio/grounding-dino-edgetam")]],
+    ]) }}
+  {% endcall %}
 
-  <section>
-    <h2>Card</h2>
-    <div class="card">
-      <h2>depth_anything_v2</h2>
-      <p class="muted">Depth Anything V2 by TikTok &amp; HKU — monocular depth estimation. Relative base and large are CC-BY-NC-4.0; the rest are Apache 2.0.</p>
-      <table>
-        <thead><tr><th>Variant</th><th>Licence</th><th>Size</th><th>State</th><th></th></tr></thead>
-        <tbody>
-          <tr>
-            <td>small</td>
-            <td><span class="badge plain">Apache-2.0</span></td>
-            <td>99.2 MB</td>
-            <td>Downloaded</td>
-            <td><button class="button secondary" type="button">Load</button> <button class="button secondary" type="button">Remove</button></td>
-          </tr>
-          <tr>
-            <td>base</td>
-            <td><span class="badge plain">CC-BY-NC-4.0</span></td>
-            <td>390 MB</td>
-            <td class="muted">390 MB to download</td>
-            <td><button class="button secondary" type="button">Download</button></td>
-          </tr>
-          <tr>
-            <td>large</td>
-            <td><span class="badge plain">CC-BY-NC-4.0</span></td>
-            <td>1.34 GB</td>
-            <td class="muted">1.34 GB to download</td>
-            <td><button class="button secondary" type="button">Download</button></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
+  {{ ui.divider() }}
 
-  <hr>
+  {% call ui.section("Card") %}
+    {{ ui.card("depth_anything_v2", "Depth Anything V2 by TikTok & HKU — monocular depth estimation. Relative base and large are CC-BY-NC-4.0; the rest are Apache 2.0.", children=
+      ui.table(columns=["Variant", "Licence", "Size", "State", ""], rows=[
+        ["small", ui.badge("Apache-2.0"), "99.2 MB", "Downloaded", [ui.button("Load", variant="secondary"), ui.button("Remove", variant="secondary")]],
+        ["base", ui.badge("CC-BY-NC-4.0"), "390 MB", ui.text("390 MB to download", muted=true), ui.button("Download", variant="secondary")],
+        ["large", ui.badge("CC-BY-NC-4.0"), "1.34 GB", ui.text("1.34 GB to download", muted=true), ui.button("Download", variant="secondary")],
+      ])) }}
+  {% endcall %}
 
-  <section>
-    <h2>Card, every part</h2>
-    <div class="card">
-      <h2>Person merged</h2>
-      <p class="muted">Six of the project's images, and the classes found most.</p>
-      <div class="gallery" style="--columns: 3">
-        <figure><img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.jpg" alt="" loading="lazy"><figcaption>000000000139.jpg</figcaption></figure>
-        <figure><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.jpg" alt="" loading="lazy"><figcaption>000000000285.jpg</figcaption></figure>
-        <figure><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.jpg" alt="" loading="lazy"><figcaption>000000000632.jpg</figcaption></figure>
-        <figure><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.jpg" alt="" loading="lazy"><figcaption>000000000724.jpg</figcaption></figure>
-        <figure><img src="/media/1d/1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33.jpg" alt="" loading="lazy"><figcaption>000000000776.jpg</figcaption></figure>
-        <figure><img src="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.jpg" alt="" loading="lazy"><figcaption>000000000785.jpg</figcaption></figure>
-      </div>
-      <hr>
-      <div class="columns" style="--columns: 2">
-        <table>
-          <thead><tr><th>Class</th><th>Objects</th><th>Images</th></tr></thead>
-          <tbody>
-            <tr><td>person</td><td>258</td><td>47</td></tr>
-            <tr><td>animal</td><td>13</td><td>6</td></tr>
-            <tr><td>car</td><td>13</td><td>5</td></tr>
-            <tr><td>zebra</td><td>6</td><td>3</td></tr>
-          </tbody>
-        </table>
-        <img src="/media/1c/1c67b783f78b18ddb5dd20aaba4d4aacaf98e5277051688a96da096afa9cdf1f.jpg" alt="" loading="lazy">
-      </div>
-      <footer>
-        <p class="muted">5,084 images</p>
-        <a class="button secondary" href="/projects/14">Open project</a>
-      </footer>
-    </div>
-  </section>
+  {{ ui.divider() }}
 
-  <hr>
+  {% call ui.section("Card, every part") %}
+    {{ ui.card("Person merged", "Six of the project's images, and the classes found most.",
+               footer=[ui.text("5,084 images", muted=true), ui.button("Open project", href="/projects/14", variant="secondary")], children=[
+      ui.gallery(photos[:6], columns=3),
+      ui.divider(),
+      ui.columns(2, children=[
+        ui.table(columns=["Class", {"label": "Objects", "number": true}, {"label": "Images", "number": true}],
+                 rows=[["person", 258, 47], ["animal", 13, 6], ["car", 13, 5], ["zebra", 6, 3]]),
+        ui.image(photos[8].src),
+      ]),
+    ]) }}
+  {% endcall %}
 
-  <section>
-    <h2>Card, no title, description or footer</h2>
-    <div class="card">
-      <div class="gallery" style="--columns: 3">
-        <figure><img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.jpg" alt="" loading="lazy"><figcaption>000000000139.jpg</figcaption></figure>
-        <figure><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.jpg" alt="" loading="lazy"><figcaption>000000000285.jpg</figcaption></figure>
-        <figure><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.jpg" alt="" loading="lazy"><figcaption>000000000632.jpg</figcaption></figure>
-        <figure><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.jpg" alt="" loading="lazy"><figcaption>000000000724.jpg</figcaption></figure>
-        <figure><img src="/media/1d/1dd31e9059c491992be2f562624eb4093e17aee08b4f7baf5ff9ea24543b0a33.jpg" alt="" loading="lazy"><figcaption>000000000776.jpg</figcaption></figure>
-        <figure><img src="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.jpg" alt="" loading="lazy"><figcaption>000000000785.jpg</figcaption></figure>
-      </div>
-      <hr>
-      <div class="columns">
-        <table>
-          <thead><tr><th>Image</th><th>Size</th><th>Objects</th></tr></thead>
-          <tbody>
-            <tr><td>000000000139.jpg</td><td>640×426</td><td>2</td></tr>
-            <tr><td>000000000285.jpg</td><td>586×640</td><td>0</td></tr>
-            <tr><td>000000000632.jpg</td><td>640×483</td><td>0</td></tr>
-          </tbody>
-        </table>
-        <a class="button" href="/projects/14">Open project</a>
-      </div>
-    </div>
-  </section>
+  {{ ui.divider() }}
 
-  <hr>
+  {% call ui.section("Card, no title, description or footer") %}
+    {{ ui.card(children=[
+      ui.gallery(photos[:6], columns=3),
+      ui.divider(),
+      ui.columns(children=[
+        ui.table(columns=["Image", "Size", {"label": "Objects", "number": true}],
+                 rows=[["000000000139.jpg", "640×426", 2], ["000000000285.jpg", "586×640", 0], ["000000000632.jpg", "640×483", 0]]),
+        ui.button("Open project", href="/projects/14"),
+      ]),
+    ]) }}
+  {% endcall %}
 
-  <section>
-    <h2>Blocks, after shadcn/ui</h2>
-    <div class="columns">
-      <div class="card">
-        <header>
-          <h2>Contribution History</h2>
-          <p class="muted">Last 6 months of activity</p>
-        </header>
-        <div class="bars" style="--max: 1400">
-          <span style="--value: 800">Dec</span>
-          <span style="--value: 1100">Jan</span>
-          <span style="--value: 900">Feb</span>
-          <span style="--value: 1300">Mar</span>
-          <span style="--value: 750">Apr</span>
-          <span style="--value: 1400">May</span>
-        </div>
-        <div class="columns" style="--min: 10rem">
-          <div class="item"><div class="stat"><span class="muted">Upcoming</span><strong>May 25, 2024</strong><span class="muted">$1,000 scheduled</span></div></div>
-          <div class="item"><div class="stat"><span class="muted">Auto-Save Plan</span><strong>Accelerated</strong><span class="muted">Recurring weekly</span></div></div>
-        </div>
-        <footer><button class="button" type="button">View Full Report</button></footer>
-      </div>
+  {{ ui.divider() }}
 
-      <div class="card">
-        <header>
-          <h2>Savings Targets</h2>
-          <p class="muted">Active milestones for 2024</p>
-          <button class="button secondary" type="button">New Goal</button>
-        </header>
-        <div class="stack">
-          <div class="item">
-            <div class="stat">
-              <span class="muted">Retirement</span>
-              <strong>$420,000</strong>
-              <div class="progress" role="progressbar" style="--value: 0.65" aria-valuenow="65" aria-valuemax="100"></div>
-              <p class="row"><span class="muted">65% achieved</span><span>$273,000</span></p>
-            </div>
-          </div>
-          <div class="item">
-            <div class="stat">
-              <span class="muted">Real Estate</span>
-              <strong>$85,000</strong>
-              <div class="progress" role="progressbar" style="--value: 0.32" aria-valuenow="32" aria-valuemax="100"></div>
-              <p class="row"><span class="muted">32% achieved</span><span>$27,200</span></p>
-            </div>
-          </div>
-        </div>
-        <footer><p class="muted">You have not met your targets for this year.</p></footer>
-      </div>
+  {% call ui.section("Blocks, after shadcn/ui") %}
+    {% call ui.columns() %}
+      {{ ui.card("Contribution History", "Last 6 months of activity", footer=ui.button("View Full Report"), children=[
+        ui.bars([["Dec", 800], ["Jan", 1100], ["Feb", 900], ["Mar", 1300], ["Apr", 750], ["May", 1400]]),
+        ui.columns(min="10rem", children=[
+          ui.item(children=ui.stat("Upcoming", "May 25, 2024", "$1,000 scheduled")),
+          ui.item(children=ui.stat("Auto-Save Plan", "Accelerated", "Recurring weekly")),
+        ]),
+      ]) }}
 
-      <div class="card">
-        <header>
-          <h2>Q2 Dividend Income</h2>
-          <p class="muted">Quarterly dividend payouts across your portfolio holdings.</p>
-          <button class="icon-button" type="button" aria-label="Close" title="Close">{{ icon("x-mark") }}</button>
-        </header>
-        <div class="stack">
-          <div class="item">
-            <p>Vanguard VIG<br><span class="muted">450 Shares</span></p>
-            <div class="bars tiny" style="--max: 652"><span style="--value: 380"></span><span style="--value: 420"></span><span style="--value: 390"></span><span style="--value: 652"></span></div>
-            <span>$1,842.10</span>
-          </div>
-          <div class="item">
-            <p>S&amp;P 500 VOO<br><span class="muted">112 Shares</span></p>
-            <div class="bars tiny" style="--max: 320"><span style="--value: 180"></span><span style="--value: 210"></span><span style="--value: 320"></span><span style="--value: 218"></span></div>
-            <span>$928.40</span>
-          </div>
-          <div class="item">
-            <p>Apple AAPL<br><span class="muted">85 Shares</span></p>
-            <div class="bars tiny" style="--max: 120"><span style="--value: 60"></span><span style="--value: 70"></span><span style="--value: 120"></span><span style="--value: 90"></span></div>
-            <span>$340.00</span>
-          </div>
-          <div class="item">
-            <p>Realty Income<br><span class="muted">320 Shares</span></p>
-            <div class="bars tiny" style="--max: 360"><span style="--value: 240"></span><span style="--value: 260"></span><span style="--value: 280"></span><span style="--value: 360"></span></div>
-            <span>$1,139.50</span>
-          </div>
-        </div>
-      </div>
+      {{ ui.card("Savings Targets", "Active milestones for 2024", action=ui.button("New Goal", variant="secondary"),
+                 footer=ui.text("You have not met your targets for this year.", muted=true), children=ui.stack([
+        ui.item(children=ui.stat("Retirement", "$420,000", children=[ui.progress(0.65), ui.row([ui.text("65% achieved", muted=true), "$273,000"])])),
+        ui.item(children=ui.stat("Real Estate", "$85,000", children=[ui.progress(0.32), ui.row([ui.text("32% achieved", muted=true), "$27,200"])])),
+      ])) }}
 
-      <div class="card">
-        <header>
-          <h2>Dollar-Cost Averaging</h2>
-          <p class="muted">A strategy for building wealth over time.</p>
-        </header>
+      {{ ui.card("Q2 Dividend Income", "Quarterly dividend payouts across your portfolio holdings.",
+                 action=ui.button("Close", variant="icon", icon="x-mark"), children=ui.stack([
+        ui.item("Vanguard VIG", "450 Shares", children=[ui.bars([380, 420, 390, 652], size="tiny"), "$1,842.10"]),
+        ui.item("S&P 500 VOO", "112 Shares", children=[ui.bars([180, 210, 320, 218], size="tiny"), "$928.40"]),
+        ui.item("Apple AAPL", "85 Shares", children=[ui.bars([60, 70, 120, 90], size="tiny"), "$340.00"]),
+        ui.item("Realty Income", "320 Shares", children=[ui.bars([240, 260, 280, 360], size="tiny"), "$1,139.50"]),
+      ])) }}
+
+      {% call ui.card("Dollar-Cost Averaging", "A strategy for building wealth over time.") %}
         <p class="muted"><a href="#">Over time</a>, this smooths out the average cost of your investments. When prices drop, your fixed amount buys more shares. When prices rise, you buy fewer. The result is a lower average cost per share compared to lump-sum investing during volatile periods.</p>
-      </div>
-    </div>
+      {% endcall %}
+    {% endcall %}
 
-    <div class="columns" style="--columns: 1">
-      <div class="card">
-        <header>
-          <h2>Recent Transactions</h2>
-          <p class="muted">Your latest account activity.</p>
-          <button class="button secondary" type="button">View All</button>
-        </header>
-        <table>
-          <tbody>
-            <tr>
-              <td><span class="icon">{{ icon("sparkles") }}</span></td>
-              <td>Blue Bottle Coffee<br><span class="muted">Food &amp; Drink</span></td>
-              <td class="muted">Today, 10:24 AM</td>
-              <td class="number">-$6.50</td>
-              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
-            </tr>
-            <tr>
-              <td><span class="icon">{{ icon("tag") }}</span></td>
-              <td>Whole Foods Market<br><span class="muted">Groceries</span></td>
-              <td class="muted">Yesterday</td>
-              <td class="number">-$142.30</td>
-              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
-            </tr>
-            <tr>
-              <td><span class="icon">{{ icon("arrow-up") }}</span></td>
-              <td>Stripe Payout<br><span class="muted">Income</span></td>
-              <td class="muted">Oct 12</td>
-              <td class="number">+$4,200.00</td>
-              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
-            </tr>
-            <tr>
-              <td><span class="icon">{{ icon("arrows-right-left") }}</span></td>
-              <td>Uber Technologies<br><span class="muted">Transport</span></td>
-              <td class="muted">Oct 11</td>
-              <td class="number">-$24.10</td>
-              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
-            </tr>
-            <tr>
-              <td><span class="icon">{{ icon("play") }}</span></td>
-              <td>Netflix Subscription<br><span class="muted">Entertainment</span></td>
-              <td class="muted">Oct 10</td>
-              <td class="number">-$19.99</td>
-              <td><button class="icon-button" type="button" aria-label="More" title="More">{{ icon("ellipsis-horizontal") }}</button></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    {% set more = ui.button("More", variant="icon", icon="ellipsis-horizontal") %}
+    {{ ui.columns(1, children=ui.card("Recent Transactions", "Your latest account activity.", action=ui.button("View All", variant="secondary"), children=
+      ui.table(columns=["", "", "", {"number": true}, ""], rows=[
+        [ui.icon("sparkles"), ui.text("Blue Bottle Coffee", note="Food & Drink"), ui.text("Today, 10:24 AM", muted=true), "-$6.50", more],
+        [ui.icon("tag"), ui.text("Whole Foods Market", note="Groceries"), ui.text("Yesterday", muted=true), "-$142.30", more],
+        [ui.icon("arrow-up"), ui.text("Stripe Payout", note="Income"), ui.text("Oct 12", muted=true), "+$4,200.00", more],
+        [ui.icon("arrows-right-left"), ui.text("Uber Technologies", note="Transport"), ui.text("Oct 11", muted=true), "-$24.10", more],
+        [ui.icon("play"), ui.text("Netflix Subscription", note="Entertainment"), ui.text("Oct 10", muted=true), "-$19.99", more],
+      ]))) }}
 
-    <div class="columns">
-      <div class="card">
-        <header>
-          <p class="muted">Yearly Activity</p>
-          <span class="badge plain">+US$0.25 Daily Cash</span>
-        </header>
-        <div class="bars small" style="--max: 80">
-          <span style="--value: 40">J</span>
-          <span style="--value: 55">F</span>
-          <span style="--value: 35">M</span>
-          <span style="--value: 60">A</span>
-          <span style="--value: 45">M</span>
-          <span style="--value: 50">J</span>
-          <span style="--value: 65">J</span>
-          <span style="--value: 40">A</span>
-          <span style="--value: 55">S</span>
-          <span style="--value: 70">O</span>
-          <span style="--value: 45">N</span>
-          <span style="--value: 80">D</span>
-        </div>
-      </div>
+    {% call ui.columns() %}
+      {{ ui.card(description="Yearly Activity", action=ui.badge("+US$0.25 Daily Cash"), children=
+        ui.bars([["J", 40], ["F", 55], ["M", 35], ["A", 60], ["M", 45], ["J", 50], ["J", 65], ["A", 40], ["S", 55], ["O", 70], ["N", 45], ["D", 80]], size="small")) }}
 
-      <div class="card">
-        <header>
-          <h2>Power Usage</h2>
-          <p class="muted">Whole Home</p>
-        </header>
-        <div class="bars" style="--max: 3.8">
-          <span style="--value: 1.2">6a</span>
-          <span style="--value: 2.8">8a</span>
-          <span style="--value: 3.1">10a</span>
-          <span style="--value: 2.4">12p</span>
-          <span style="--value: 3.4">2p</span>
-          <span style="--value: 2.9">4p</span>
-          <span style="--value: 3.8">6p</span>
-          <span style="--value: 3.2">8p</span>
-        </div>
-        <hr>
-        <div class="stats">
-          <div class="stat"><span class="muted">Currently Using</span><strong>3.4 kW</strong></div>
-          <div class="stat"><span class="muted">Solar Gen</span><strong>+1.2 kW</strong></div>
-        </div>
-        <footer>
-          <div class="stat">
-            <span class="muted">Battery Level</span>
-            <div class="row"><div class="progress" role="progressbar" style="--value: 0.85" aria-valuenow="85" aria-valuemax="100"></div><span>85%</span></div>
-          </div>
-        </footer>
-      </div>
+      {{ ui.card("Power Usage", "Whole Home", footer=ui.stat("Battery Level", children=ui.row([ui.progress(0.85), "85%"])), children=[
+        ui.bars([["6a", 1.2], ["8a", 2.8], ["10a", 3.1], ["12p", 2.4], ["2p", 3.4], ["4p", 2.9], ["6p", 3.8], ["8p", 3.2]]),
+        ui.divider(),
+        ui.stats([ui.stat("Currently Using", "3.4 kW"), ui.stat("Solar Gen", "+1.2 kW")]),
+      ]) }}
 
-      <div class="card">
-        <header>
-          <h2>Upcoming Payments</h2>
-          <p class="muted">Scheduled for April.</p>
-        </header>
-        <div class="stack">
-          <div class="item"><p>Netflix Subscription<br><span class="muted">Apr 15, 2024</span></p><span class="badge plain">$19.99</span></div>
-          <div class="item"><p>Rent Payment<br><span class="muted">Apr 1, 2024</span></p><span class="badge plain">$2,400.00</span></div>
-          <div class="item"><p>Auto Insurance<br><span class="muted">Apr 22, 2024</span></p><span class="badge plain">$186.00</span></div>
-        </div>
-      </div>
+      {{ ui.card("Upcoming Payments", "Scheduled for April.", children=ui.stack([
+        ui.item("Netflix Subscription", "Apr 15, 2024", children=ui.badge("$19.99")),
+        ui.item("Rent Payment", "Apr 1, 2024", children=ui.badge("$2,400.00")),
+        ui.item("Auto Insurance", "Apr 22, 2024", children=ui.badge("$186.00")),
+      ])) }}
 
-      <div class="card">
-        <header>
-          <h2>Stock Performance</h2>
-          <p class="muted">6-month price history.</p>
-        </header>
-        <label class="field">Ticker
-          {{ select("demo-ticker", "ticker", [("VOO", "VOO"), ("VIG", "VIG"), ("AAPL", "AAPL"), ("MSFT", "MSFT"), ("GOOGL", "GOOGL"), ("AMZN", "AMZN"), ("TSLA", "TSLA")], "VOO") }}
-        </label>
-        <hr>
-        <svg class="area" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="VOO, January to June: 412 to 462">
-          <path d="M0,25H100M0,50H100M0,75H100"/>
-          <path class="fill" d="M0,31.3C10,31.3 10,27 20,27C30,27 30,34.2 40,34.2C50,34.2 50,25 60,25C70,25 70,30 80,30C90,30 90,23 100,23L100,100L0,100Z"/>
-          <path class="line" d="M0,31.3C10,31.3 10,27 20,27C30,27 30,34.2 40,34.2C50,34.2 50,25 60,25C70,25 70,30 80,30C90,30 90,23 100,23"/>
-        </svg>
-      </div>
-    </div>
-  </section>
+      {% call ui.card("Stock Performance", "6-month price history.") %}
+        {{ ui.select("ticker", "Ticker", [("VOO", "VOO"), ("VIG", "VIG"), ("AAPL", "AAPL"), ("MSFT", "MSFT"), ("GOOGL", "GOOGL"), ("AMZN", "AMZN"), ("TSLA", "TSLA")], "VOO", id="demo-ticker") }}
+        {{ ui.divider() }}
+        {{ ui.area([412, 438, 395, 450, 420, 462], label="VOO, January to June: 412 to 462") }}
+      {% endcall %}
+    {% endcall %}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>Cards with a cover, as on Projects</h2>
-    <div class="grid wide">
-        <a class="card" href="/projects/14">
-        <div class="cover">
-        <img src="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp" alt="" loading="lazy"><img src="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp" alt="" loading="lazy"><img src="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp" alt="" loading="lazy"><img src="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp" alt="" loading="lazy">
-        </div>
-        <header>
-        <h2 class="clip" title="person merged">person merged</h2>
-        <time class="muted" datetime="2026-11-15T00:34:06Z" title="Updated 2026-11-15T00:34:06Z">16h</time>
-        </header>
-        <p class="muted clip" title="All images of testo, personsg and test (projects with a person class)">All images of testo, personsg and test (projects with a person class)</p>
-        <p class="muted">
-        Segmentation · 5,084 images · 6 classes
-        · 1% labelled
-        </p>
-        </a>
-        <a class="card" href="/projects/6">
-        <div class="cover">
-        <img src="/media/9d/9dfa1a3a05a422547bbe857cc0c6deddf1dabd39e95f1e66c2e9c5df78fbd15f.thumb.webp" alt="" loading="lazy"><img src="/media/e5/e5f3e3fcbf9b7cf202d72ba4b7d8ad5bf079a9a479135a59ca6e220a3b10d7e9.thumb.webp" alt="" loading="lazy"><img src="/media/c8/c8f45b85c57c74402382b928ee700f9714e2146f304d5ddf59f4552f321e6223.thumb.webp" alt="" loading="lazy"><img src="/media/0e/0e8ef55b7d83d64f874bad17b8e6fe1ac6e12f0a1acd8c2df180077b46c7a4a2.thumb.webp" alt="" loading="lazy">
-        </div>
-        <header>
-        <h2 class="clip" title="pa">pa</h2>
-        <time class="muted" datetime="2026-11-14T10:40:11Z" title="Updated 2026-11-14T10:40:11Z">Yesterday</time>
-        </header>
-        <p class="muted">
-        Object detection · 39 images · 1 class
-        · 3% labelled
-        </p>
-        </a>
-        <a class="card" href="/projects/9">
-        <div class="cover">
-        <img src="/media/01/016c0d06fa81cdd90a9516c582b0627fc091ca00030db77a903f3db2b310e2ca.thumb.webp" alt="" loading="lazy"><img src="/media/a0/a0e9476784e5398887642f7c603fa755b7aa19c0b03b195047448c75a926eb7a.thumb.webp" alt="" loading="lazy"><img src="/media/42/420baef9b67e572036be48387c31d7223e618a74b79de5ecc2ac154ad1aa3b0a.thumb.webp" alt="" loading="lazy"><img src="/media/14/148d8ada1a044214d3346bab5128dea8a32509994efdd20dd73c442305545693.thumb.webp" alt="" loading="lazy">
-        </div>
-        <header>
-        <h2 class="clip" title="personsg">personsg</h2>
-        <time class="muted" datetime="2026-11-13T23:19:35Z" title="Updated 2026-11-13T23:19:35Z">Yesterday</time>
-        </header>
-        <p class="muted">
-        Segmentation · 24 images · 4 classes
-        · 79% labelled
-        </p>
-        </a>
-        <a class="card" href="/projects/new">
-          <div class="cover"><p class="muted">No images yet</p></div>
-          <header>
-            <h2 class="clip" title="street signs">street signs</h2>
-            <time class="muted" datetime="2026-11-15T16:00:00Z">Just now</time>
-          </header>
-          <p class="muted">Object detection · 0 images · 3 classes</p>
-        </a>
-    </div>
-  </section>
+  {% call ui.section("Cards with a cover, as on Projects") %}
+    {% call ui.grid(wide=true) %}
+      {{ ui.card("person merged", action=ui.time("2026-11-15T00:34:06Z"), href="/projects/14",
+              cover=thumbs[:4] | map(attribute="src") | list,
+              children=[ui.text("All images of testo, personsg and test (projects with a person class)", muted=true), ui.text("Segmentation · 5,084 images · 6 classes · 1% labelled", muted=true)]) }}
+      {{ ui.card("pa", action=ui.time("2026-11-14T10:40:11Z"), href="/projects/6",
+              cover=["/media/9d/9dfa1a3a05a422547bbe857cc0c6deddf1dabd39e95f1e66c2e9c5df78fbd15f.thumb.webp", "/media/e5/e5f3e3fcbf9b7cf202d72ba4b7d8ad5bf079a9a479135a59ca6e220a3b10d7e9.thumb.webp", "/media/c8/c8f45b85c57c74402382b928ee700f9714e2146f304d5ddf59f4552f321e6223.thumb.webp", "/media/0e/0e8ef55b7d83d64f874bad17b8e6fe1ac6e12f0a1acd8c2df180077b46c7a4a2.thumb.webp"],
+              children=[ui.text("Object detection · 39 images · 1 class · 3% labelled", muted=true)]) }}
+      {{ ui.card("personsg", action=ui.time("2026-11-13T23:19:35Z"), href="/projects/9",
+              cover=["/media/01/016c0d06fa81cdd90a9516c582b0627fc091ca00030db77a903f3db2b310e2ca.thumb.webp", "/media/a0/a0e9476784e5398887642f7c603fa755b7aa19c0b03b195047448c75a926eb7a.thumb.webp", "/media/42/420baef9b67e572036be48387c31d7223e618a74b79de5ecc2ac154ad1aa3b0a.thumb.webp", "/media/14/148d8ada1a044214d3346bab5128dea8a32509994efdd20dd73c442305545693.thumb.webp"],
+              children=[ui.text("Segmentation · 24 images · 4 classes · 79% labelled", muted=true)]) }}
+      {{ ui.card("street signs", action=ui.time("2026-11-15T16:00:00Z"), href="/projects/new",
+              cover="No images yet",
+              children=[ui.text("Object detection · 0 images · 3 classes", muted=true)]) }}
+    {% endcall %}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>A project's images: filter bar, image tiles, pages</h2>
-    <div class="actions start">
+  {% call ui.section("A project's images: filter bar, image tiles, pages") %}
+    {% call ui.actions(variant="start") %}
       <button class="button secondary" type="button" popovertarget="demo-show">All images <span class="muted">5,084</span>{{ icon("chevron-up-down") }}</button>
-      <div id="demo-show" class="menu" popover>
-        <a class="menu__item" href="#" aria-current="page"><span class="menu__check">{{ icon("check") }}</span>All images<span class="menu__note">5,084</span></a>
-        <a class="menu__item" href="#"><span class="menu__check">{{ icon("check") }}</span>Labelled<span class="menu__note">60</span></a>
-        <a class="menu__item" href="#"><span class="menu__check">{{ icon("check") }}</span>Unlabelled<span class="menu__note">5,024</span></a>
-      </div>
+      {{ ui.menu("demo-show", [{"label": "All images", "href": "#", "note": 5084, "current": true},
+                             {"label": "Labelled", "href": "#", "note": 60, "current": false},
+                             {"label": "Unlabelled", "href": "#", "note": 5024, "current": false}]) }}
 
       <button class="button secondary" type="button" popovertarget="demo-filters" style="anchor-name: --demo-filter">{{ icon("funnel") }}Filter</button>
       <div id="demo-filters" class="menu" popover role="search" style="position-anchor: --demo-filter">
@@ -515,101 +248,41 @@
       </div>
 
       <span class="badge" style="--badge-color: #e11d48"><button type="button" popovertarget="demo-panel-class" title="Change">person</button><a href="#" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
-      <span class="badge plain">1–3 objects<a href="#" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
+      {{ ui.badge("1–3 objects", remove="#") }}
       <p><span class="muted">47 of 5,084 images</span> · <a href="#">Clear</a></p>
-    </div>
-    <div class="justified">
-      <a class="tile" href="/projects/14/images/31" style="--ratio: 1.502"><svg viewBox="0 0 640 426" role="img" aria-label="000000000139.jpg"><image href="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp" width="640" height="426"/><g><polygon points="414.0,215.0 420.0,217.0 428.0,213.0 427.0,219.0 438.0,221.0 439.0,231.0 447.0,233.0 446.0,283.0 447.0,292.0 451.0,294.0 464.0,294.0 459.0,255.0 459.0,237.0 462.0,231.0 462.0,220.0 457.0,188.0 446.0,172.0 443.0,160.0 438.0,157.0 430.0,158.0 427.0,162.0 428.0,176.0 432.0,179.0 430.0,200.0 423.0,211.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g><g><polygon points="385.0,175.0 385.0,207.0 397.0,207.0 400.0,203.0 400.0,194.0 396.0,191.0 400.0,185.0 400.0,178.0 396.0,172.0 389.0,172.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
-      <a class="tile" href="/projects/14/images/32" style="--ratio: 0.916"><svg viewBox="0 0 586 640" role="img" aria-label="000000000285.jpg"><image href="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp" width="586" height="640"/></svg></a>
-      <a class="tile" href="/projects/14/images/33" style="--ratio: 1.325"><svg viewBox="0 0 640 483" role="img" aria-label="000000000632.jpg"><image href="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp" width="640" height="483"/></svg></a>
-      <a class="tile" href="/projects/14/images/34" style="--ratio: 0.75"><svg viewBox="0 0 375 500" role="img" aria-label="000000000724.jpg"><image href="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp" width="375" height="500"/><g><polygon points="123.0,281.0 123.0,304.0 132.0,306.0 135.0,310.0 139.0,310.0 145.0,300.0 144.0,290.0 128.0,286.0 125.0,280.0 " fill="#16a34a" fill-opacity="0.2" stroke="#16a34a" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
-      <a class="tile" href="/projects/14/images/36" style="--ratio: 1.506"><svg viewBox="0 0 640 425" role="img" aria-label="000000000785.jpg"><image href="/media/83/83981537a7baeafbeb9c8cb67b3484dc26433f574b3685d021fa537e277e4726.thumb.webp" width="640" height="425"/><g><polygon points="281.0,183.0 283.0,193.0 291.0,196.0 292.0,194.0 305.0,192.0 309.0,187.0 335.0,182.0 342.0,177.0 351.0,176.0 365.0,166.0 372.0,167.0 378.0,188.0 384.0,198.0 388.0,220.0 384.0,223.0 376.0,240.0 357.0,266.0 356.0,276.0 365.0,300.0 384.0,336.0 384.0,342.0 375.0,348.0 371.0,356.0 365.0,359.0 365.0,363.0 370.0,366.0 410.0,364.0 420.0,361.0 422.0,356.0 424.0,356.0 424.0,349.0 417.0,331.0 415.0,315.0 397.0,285.0 400.0,277.0 411.0,268.0 417.0,299.0 427.0,312.0 448.0,361.0 447.0,366.0 434.0,379.0 429.0,381.0 429.0,384.0 435.0,389.0 448.0,388.0 454.0,385.0 476.0,385.0 495.0,379.0 489.0,349.0 479.0,333.0 471.0,313.0 455.0,297.0 450.0,285.0 451.0,260.0 449.0,246.0 455.0,212.0 454.0,199.0 448.0,183.0 456.0,183.0 460.0,180.0 463.0,174.0 463.0,166.0 459.0,163.0 457.0,152.0 442.0,140.0 429.0,115.0 420.0,106.0 398.0,94.0 396.0,86.0 391.0,82.0 392.0,69.0 386.0,51.0 377.0,44.0 364.0,46.0 354.0,63.0 353.0,79.0 357.0,82.0 357.0,88.0 352.0,97.0 351.0,104.0 347.0,107.0 345.0,119.0 348.0,119.0 351.0,126.0 342.0,143.0 335.0,152.0 324.0,159.0 310.0,164.0 303.0,172.0 294.0,174.0 287.0,171.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
-      <a class="tile" href="/projects/14/images/37" style="--ratio: 0.662"><svg viewBox="0 0 424 640" role="img" aria-label="000000000802.jpg"><image href="/media/d5/d5b79e7fa716f85ca86f46e5f518da9b6c5e26414925624d76e6476861aec495.thumb.webp" width="424" height="640"/></svg></a>
-      <a class="tile" href="/projects/14/images/44" style="--ratio: 1.25"><svg viewBox="0 0 640 512" role="img" aria-label="000000001425.jpg"><image href="/media/71/71a37c25cdf944cf0a88b66d00a66cf899a88bd55c7ac80fcf1c76329d617e6c.thumb.webp" width="640" height="512"/></svg></a>
-      <a class="tile" href="/projects/14/images/45" style="--ratio: 2.032"><svg viewBox="0 0 640 315" role="img" aria-label="000000001490.jpg"><image href="/media/a0/a044804a0b0186a1267acae34975932f14ede96c4a2b78fcee74e6c2fbd8414d.thumb.webp" width="640" height="315"/><g><polygon points="449.0,179.0 450.0,181.0 456.0,181.0 457.0,177.0 470.0,164.0 481.0,164.0 483.0,180.0 477.0,202.0 482.0,223.0 482.0,234.0 473.0,237.0 472.0,240.0 474.0,241.0 498.0,240.0 490.0,201.0 499.0,180.0 499.0,142.0 496.0,137.0 488.0,133.0 488.0,124.0 484.0,120.0 480.0,120.0 472.0,125.0 475.0,128.0 476.0,136.0 480.0,140.0 469.0,157.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
-      <a class="tile" href="/projects/14/images/46" style="--ratio: 1.333"><svg viewBox="0 0 320 240" role="img" aria-label="000000001503.jpg"><image href="/media/06/06c721f0a62bcb9fcb2d2d0cc0b9edd63092084a8773a18c4b5a7bd6fb4f095d.thumb.webp" width="320" height="240"/><g><polygon points="282.0,120.0 283.0,122.0 292.0,115.0 305.0,115.0 305.0,120.0 300.0,128.0 300.0,141.0 306.0,134.0 304.0,142.0 305.0,151.0 311.0,150.0 316.0,145.0 318.0,125.0 320.0,123.0 318.0,106.0 315.0,103.0 316.0,96.0 314.0,94.0 296.0,96.0 296.0,98.0 305.0,97.0 306.0,104.0 295.0,107.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g><g><polygon points="294.0,108.0 295.0,111.0 299.0,112.0 300.0,110.0 306.0,116.0 300.0,129.0 300.0,140.0 306.0,133.0 304.0,149.0 307.0,151.0 311.0,150.0 316.0,144.0 319.0,125.0 318.0,106.0 315.0,103.0 316.0,96.0 314.0,94.0 297.0,96.0 298.0,98.0 305.0,97.0 307.0,102.0 304.0,106.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
-      <a class="tile" href="/projects/14/images/49" style="--ratio: 1.333"><svg viewBox="0 0 640 480" role="img" aria-label="000000001675.jpg"><image href="/media/6b/6ba641627c08ef424b7dc3e6cee069aa0dd49615a31c54ae0de1ecd1fabd9dea.thumb.webp" width="640" height="480"/><g><polygon points="0.0,42.0 0.0,301.0 83.0,305.0 143.0,303.0 211.0,306.0 583.0,309.0 635.0,308.0 640.0,301.0 638.0,292.0 638.0,276.0 640.0,275.0 640.0,215.0 638.0,214.0 640.0,207.0 640.0,186.0 638.0,181.0 640.0,177.0 640.0,142.0 638.0,142.0 638.0,138.0 640.0,138.0 640.0,103.0 638.0,103.0 637.0,98.0 623.0,93.0 589.0,91.0 505.0,96.0 457.0,95.0 352.0,104.0 343.0,102.0 316.0,103.0 267.0,95.0 211.0,98.0 194.0,92.0 177.0,81.0 171.0,63.0 166.0,61.0 161.0,53.0 157.0,51.0 156.0,47.0 170.0,27.0 171.0,19.0 164.0,20.0 140.0,31.0 124.0,32.0 98.0,26.0 84.0,20.0 67.0,19.0 42.0,23.0 22.0,31.0 10.0,40.0 2.0,40.0 " fill="#2563eb" fill-opacity="0.2" stroke="#2563eb" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span></a>
-      <a class="tile" href="/projects/14/images/50" style="--ratio: 0.667"><svg viewBox="0 0 427 640" role="img" aria-label="000000001761.jpg"><image href="/media/c0/c06b1845c54bb886a8fb9f8a6e908b29ceb661ffda1ca8df9a27f123806de648.thumb.webp" width="427" height="640"/></svg></a>
-      <a class="tile" href="/projects/14/images/52" style="--ratio: 1.527"><svg viewBox="0 0 640 419" role="img" aria-label="000000001993.jpg"><image href="/media/03/039f3bfb862023bde7f835a36c32d8f59a3e66488863c2a47b7b746e78c44186.thumb.webp" width="640" height="419"/></svg></a>
-    </div>
-    <div class="actions">
-      <span class="muted">Page 1 of 51 · 5,084 images</span>
-      <a class="button secondary" href="#">Next</a>
-    </div>
-  </section>
+    {% endcall %}
+    {{ ui.tiles(tiles, classes=classes) }}
+    {{ ui.pagination(1, 51, next="#", note="5,084 images") }}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>Image thumbnails with captions, as in Try results</h2>
-    <div class="grid">
-      <figure class="thumb"><svg viewBox="0 0 640 426" role="img" aria-label="000000000139.jpg"><image href="/media/ff/ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d.thumb.webp" width="640" height="426"/><g><polygon points="414.0,215.0 420.0,217.0 428.0,213.0 427.0,219.0 438.0,221.0 439.0,231.0 447.0,233.0 446.0,283.0 447.0,292.0 451.0,294.0 464.0,294.0 459.0,255.0 459.0,237.0 462.0,231.0 462.0,220.0 457.0,188.0 446.0,172.0 443.0,160.0 438.0,157.0 430.0,158.0 427.0,162.0 428.0,176.0 432.0,179.0 430.0,200.0 423.0,211.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g><g><polygon points="385.0,175.0 385.0,207.0 397.0,207.0 400.0,203.0 400.0,194.0 396.0,191.0 400.0,185.0 400.0,178.0 396.0,172.0 389.0,172.0 " fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><figcaption>2 objects · 000000000139.jpg</figcaption></figure>
-      <figure class="thumb"><svg viewBox="0 0 586 640" role="img" aria-label="000000000285.jpg"><image href="/media/f3/f3a2974ce3686332609124c70e3e6a2e3aca43fccf1cd1bd7c5c03820977f57d.thumb.webp" width="586" height="640"/></svg><figcaption>0 objects · 000000000285.jpg</figcaption></figure>
-      <figure class="thumb"><svg viewBox="0 0 640 483" role="img" aria-label="000000000632.jpg"><image href="/media/a4/a4cd7f45ac1ce27eaafb254b23af7c0b18a064be08870ceaaf03b2147f2ce550.thumb.webp" width="640" height="483"/></svg><figcaption>0 objects · 000000000632.jpg</figcaption></figure>
-      <figure class="thumb"><svg viewBox="0 0 375 500" role="img" aria-label="000000000724.jpg"><image href="/media/5c/5c0e559c75d3969c8e3e297b61f61063f78045c9d4802b526ba616361f3823fd.thumb.webp" width="375" height="500"/><g><polygon points="123.0,281.0 123.0,304.0 132.0,306.0 135.0,310.0 139.0,310.0 145.0,300.0 144.0,290.0 128.0,286.0 125.0,280.0 " fill="#16a34a" fill-opacity="0.2" stroke="#16a34a" stroke-width="2" vector-effect="non-scaling-stroke"/></g></svg><figcaption>1 object · 000000000724.jpg</figcaption></figure>
-    </div>
-  </section>
+  {% call ui.section("Image thumbnails with captions, as in Try results") %}
+    {{ ui.gallery(found, classes=classes) }}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>Drop zones: normal, and large when dropping is the page's main action</h2>
-    <div class="stack">
-      <div class="dropzone" id="demo-drop" data-drop-paths data-name="paths" data-accept=".jpg,.jpeg,.png,.webp" role="button" tabindex="0">
-        <p>Drop images or folders here, or click to choose images</p>
-        <ul></ul>
-      </div>
-      <div class="dropzone large" id="demo-drop-large" data-drop-paths data-name="paths" data-accept=".jpg,.jpeg,.png,.webp" role="button" tabindex="0">
-        <p>Drop images or folders here, or click to choose images</p>
-        <ul></ul>
-      </div>
-    </div>
-  </section>
+  {% call ui.section("Drop zones: normal, and large when dropping is the page's main action") %}
+    {{ ui.stack([ui.dropzone("demo-drop", "paths", drop, accept=image_suffixes),
+                 ui.dropzone("demo-drop-large", "paths", drop, accept=image_suffixes, large=true)]) }}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>A form, as for a new project</h2>
-    <form>
-      <p class="error">A project named “person merged” already exists.</p>
-      <div class="fields">
-        <label class="field">
-          Name
-          <input name="name" maxlength="200" value="street signs">
-        </label>
-        <label class="field">
-          Description
-          <textarea name="description" rows="3" maxlength="2000"></textarea>
-        </label>
-        <label class="field">
-          Type
-          {{ select("demo-type", "task", [("detection", "Object detection"), ("segmentation", "Segmentation"), ("keypoints", "Keypoint detection"), (none, "Classification (later)")], "detection") }}
-        </label>
-        <label class="field">
-          Minimum score <span class="muted">0 keeps everything the auto-annotator finds</span>
-          <input type="number" name="min_score" min="0" max="1" step="0.05" value="0">
-        </label>
-        <fieldset class="field">
-          <legend>Object width <span class="muted">(px)</span></legend>
-          <div class="range">
-            <input type="number" name="w_min" step="any" min="0" placeholder="from" aria-label="Object width from">
-            <span class="muted">–</span>
-            <input type="number" name="w_max" step="any" min="0" placeholder="to" aria-label="Object width to">
-          </div>
-        </fieldset>
-        <fieldset class="field">
-          <legend>Objects</legend>
-          <div class="segmented" role="radiogroup" aria-label="Touching the edge">
-            <label class="segmented__item"><input type="radio" name="edge" value="true" checked>Touching the edge</label>
-            <label class="segmented__item"><input type="radio" name="edge" value="false">Not touching</label>
-          </div>
-        </fieldset>
-        <label><input type="checkbox" name="again" value="true"> Also images already done for a class</label>
-      </div>
+  {% call ui.section("A form, as for a new project") %}
+    {% call ui.form(error="A project named “person merged” already exists.") %}
+      {{ ui.fields([
+        ui.input("name", "Name", value="street signs", maxlength=200),
+        ui.textarea("description", "Description", maxlength=2000),
+        ui.select("task", "Type", [("detection", "Object detection"), ("segmentation", "Segmentation"), ("keypoints", "Keypoint detection"), (none, "Classification (later)")], "detection", id="demo-type"),
+        ui.input("min_score", "Minimum score", type="number", note="0 keeps everything the auto-annotator finds", min=0, max=1, step=0.05, value=0),
+        ui.range("Object width", ["w_min", "w_max"], note="(px)", min=0),
+        ui.segmented("edge", "Objects", [("true", "Touching the edge"), ("false", "Not touching")], "true"),
+        ui.checkbox("again", "Also images already done for a class"),
+      ]) }}
 
-      <section>
-        <h2>Classes</h2>
-        <p class="muted">The prompt is what the auto-annotator looks for, e.g. "hole in the road surface" for a class named pothole.</p>
+      {% call ui.section("Classes", 'The prompt is what the auto-annotator looks for, e.g. "hole in the road surface" for a class named pothole.') %}
         <table>
           <thead><tr><th>Colour</th><th>Name</th><th>Prompt</th><th></th></tr></thead>
           <tbody id="classes" data-palette='["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]'>
@@ -636,134 +309,72 @@
           </tr>
         </template>
         <div class="actions start"><button class="button secondary" type="button" data-add-class>Add class</button></div>
-      </section>
+      {% endcall %}
 
-      <div class="actions divided">
-        <button class="button secondary" type="button">Cancel</button>
-        <button class="button" type="button">Create</button>
-      </div>
-    </form>
-  </section>
+      {{ ui.actions([ui.button("Cancel", variant="secondary"), ui.button("Create")], variant="divided") }}
+    {% endcall %}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>Dialogs: one that asks before deleting, one with a form</h2>
-    <div class="actions start">
-      <button class="button destructive" type="button" popovertarget="demo-delete">Delete project…</button>
-      <button class="button secondary" type="button" popovertarget="demo-add">{{ icon("plus") }}Add images</button>
-    </div>
-    <div id="demo-delete" class="dialog" popover role="alertdialog" aria-labelledby="demo-delete-title" aria-describedby="demo-delete-text">
-      <h2 id="demo-delete-title">Delete person merged?</h2>
-      <div id="demo-delete-text">
-        <p>This removes:</p>
-        <ul>
-          <li>5,084 images and 296 annotations</li>
-          <li>its runs (auto-annotate, Try and workflow runs on its images) and their results</li>
-          <li>the image files no other project, run or report uses, from the workspace</li>
-        </ul>
-        <p class="muted">History can undo it for 30 days.</p>
-      </div>
-      <div class="actions">
-        <button class="button secondary" type="button" popovertarget="demo-delete" popovertargetaction="hide" autofocus>Cancel</button>
-        <button class="button destructive" type="button" popovertarget="demo-delete" popovertargetaction="hide">Delete</button>
-      </div>
-    </div>
-    <div id="demo-add" class="dialog" popover aria-labelledby="demo-add-title">
-      <h2 id="demo-add-title">Add images</h2>
-      <p class="muted">{{ image_formats }} images. A folder brings its subfolders too. Images already in the project are skipped.</p>
-      <div class="fields">
-        <div class="dropzone" id="demo-add-drop" data-drop-paths data-name="paths" data-accept=".jpg,.jpeg,.png,.webp" role="button" tabindex="0">
-          <p>Drop images or folders here, or click to choose images</p>
-          <ul></ul>
-        </div>
-        <label class="field">
-          Or enter a path
-          <input name="paths" placeholder="/Volumes/NAS/datasets/coco/val2017">
-        </label>
-      </div>
-      <div class="actions">
-        <button class="button secondary" type="button" popovertarget="demo-add" popovertargetaction="hide">Cancel</button>
-        <button class="button" type="button" popovertarget="demo-add" popovertargetaction="hide">Import</button>
-      </div>
-    </div>
-  </section>
+  {% call ui.section("Dialogs: one that asks before deleting, one with a form") %}
+    {{ ui.actions([ui.button("Delete project…", variant="destructive", popover="demo-delete"),
+                ui.button("Add images", variant="secondary", icon="plus", popover="demo-add")], variant="start") }}
+    {% call ui.dialog("demo-delete", "Delete person merged?", actions=ui.button("Delete", variant="destructive", close="demo-delete"), alert=true) %}
+      <p>This removes:</p>
+      <ul>
+        <li>5,084 images and 296 annotations</li>
+        <li>its runs (auto-annotate, Try and workflow runs on its images) and their results</li>
+        <li>the image files no other project, run or report uses, from the workspace</li>
+      </ul>
+      <p class="muted">History can undo it for 30 days.</p>
+    {% endcall %}
+    {{ ui.dialog("demo-add", "Add images", description=image_formats ~ " images. A folder brings its subfolders too. Images already in the project are skipped.",
+                 actions=ui.button("Import", close="demo-add"), children=ui.fields([
+      ui.dropzone("demo-add-drop", "paths", drop, accept=image_suffixes),
+      ui.input("paths", "Or enter a path", placeholder="/Volumes/NAS/datasets/coco/val2017"),
+    ])) }}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>Badges: with a colour, plain, removable, with an icon</h2>
-    <p>
-      <span class="badge" style="--badge-color: #e11d48">person</span>
-      <span class="badge" style="--badge-color: #2563eb">animal</span>
-      <span class="badge" style="--badge-color: #16a34a">car</span>
-      <span class="badge plain">Built in</span>
-      <span class="badge plain">Apache-2.0</span>
-      <span class="badge" style="--badge-color: #9333ea">zebra<a href="#" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
-      <span class="badge plain">{{ icon("check-circle") }}Labelled</span>
-    </p>
-  </section>
+  {% call ui.section("Badges: with a colour, plain, removable, with an icon") %}
+    {{ ui.text([ui.badge("person", color="#e11d48"), ui.badge("animal", color="#2563eb"), ui.badge("car", color="#16a34a"),
+                ui.badge("Built in"), ui.badge("Apache-2.0"), ui.badge("zebra", color="#9333ea", remove="#"),
+                ui.badge("Labelled", icon="check-circle")]) }}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>Empty states: in a card, and on the page</h2>
-    <div class="columns">
-      <div class="card">
-        <div class="empty">
-          <span class="icon">{{ icon("photo") }}</span>
-          <h2>No images yet</h2>
-          <p class="muted">Add images to start annotating: drop files or folders, or enter a path.</p>
-          <button class="button" type="button" popovertarget="demo-add">{{ icon("plus") }}Add images</button>
-        </div>
-      </div>
-      <div class="empty">
-        <span class="icon">{{ icon("document-text") }}</span>
-        <h2>No views yet</h2>
-        <p class="muted">Ask the agent to build one.</p>
-      </div>
-    </div>
-  </section>
+  {% call ui.section("Empty states: in a card, and on the page") %}
+    {{ ui.columns(children=[
+      ui.card(children=ui.empty("No images yet", "Add images to start annotating: drop files or folders, or enter a path.", icon="photo",
+                                action=ui.button("Add images", icon="plus", popover="demo-add"))),
+      ui.empty("No views yet", "Ask the agent to build one.", icon="document-text"),
+    ]) }}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>Activity, as on History: a table, what changed under each line</h2>
-    <table>
-      <thead><tr><th>When</th><th>What</th><th></th></tr></thead>
-      <tbody>
-        <tr>
-          <td class="muted" title="2026-11-15T02:18:07Z">15h</td>
-          <td>Agent: go<br><span class="muted">4 images of reports added</span></td>
-          <td><button class="button secondary" type="button">Undo</button></td>
-        </tr>
-        <tr>
-          <td class="muted" title="2026-11-15T00:34:06Z">16h</td>
-          <td>PUT /api/projects/14/images/109/annotations<br><span class="muted">image in a project changed, project “person merged” changed</span></td>
-          <td class="muted" title="A later change touched the same things: undo that first.">Changed since</td>
-        </tr>
-        <tr>
-          <td class="muted" title="2026-11-15T00:33:58Z">16h</td>
-          <td>PUT /api/projects/14/images/109/annotations<br><span class="muted">image in a project changed, project “person merged” changed</span></td>
-          <td><span class="badge plain">Undone</span></td>
-        </tr>
-        <tr>
-          <td class="muted" title="2026-11-15T00:33:56Z">16h</td>
-          <td>Undo: PUT /api/projects/14/images/109/annotations<br><span class="muted">image in a project changed</span></td>
-          <td><button class="button secondary" type="button">Redo</button></td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
+  {% call ui.section("Activity, as on History: a table, what changed under each line") %}
+    {{ ui.table(columns=["When", "What", ""], rows=[
+      [ui.time("2026-11-15T02:18:07Z"), ui.text("Agent: go", note="4 images of reports added"), ui.button("Undo", variant="secondary")],
+      [ui.time("2026-11-15T00:34:06Z"), ui.text("PUT /api/projects/14/images/109/annotations", note="image in a project changed, project “person merged” changed"),
+       ui.text("Changed since", muted=true)],
+      [ui.time("2026-11-15T00:33:58Z"), ui.text("PUT /api/projects/14/images/109/annotations", note="image in a project changed, project “person merged” changed"),
+       ui.badge("Undone")],
+      [ui.time("2026-11-15T00:33:56Z"), ui.text("Undo: PUT /api/projects/14/images/109/annotations", note="image in a project changed"),
+       ui.button("Redo", variant="secondary")],
+    ]) }}
+  {% endcall %}
 
-  <hr>
+  {{ ui.divider() }}
 
-  <section>
-    <h2>Link list, as on Studio</h2>
-    <div class="stack">
-      <a class="item" href="/studio/sam3"><span class="icon">{{ icon("play") }}</span><p>SAM 3<br><span class="muted">Finds and outlines every object matching each prompt.</span></p>{{ icon("chevron-right") }}</a>
-      <a class="item" href="/studio/grounding-dino"><span class="icon">{{ icon("play") }}</span><p>Grounding DINO<br><span class="muted">Finds each prompt's objects, as boxes.</span></p>{{ icon("chevron-right") }}</a>
-      <a class="item" href="/studio/grounding-dino-edgetam"><span class="icon">{{ icon("play") }}</span><p>Grounding DINO → EdgeTAM<br><span class="muted">Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one.</span></p>{{ icon("chevron-right") }}</a>
-    </div>
-  </section>
+  {% call ui.section("Link list, as on Studio") %}
+    {{ ui.stack([
+      ui.item("SAM 3", "Finds and outlines every object matching each prompt.", icon="play", href="/studio/sam3"),
+      ui.item("Grounding DINO", "Finds each prompt's objects, as boxes.", icon="play", href="/studio/grounding-dino"),
+      ui.item("Grounding DINO → EdgeTAM", "Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one.", icon="play", href="/studio/grounding-dino-edgetam"),
+    ]) }}
+  {% endcall %}
 {% endblock %}
