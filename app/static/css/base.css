@@ -8,6 +8,21 @@ body {
   line-height: var(--leading-normal);
   color: var(--color-text);
   background: var(--color-bg);
+  /* As in a native app, text can't be selected and the pointer stays an arrow over it; code, what
+     you type and what's marked .selectable can be. (-webkit-: the macOS window's WebKit needs it.) */
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+pre,
+code,
+input,
+textarea,
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: auto;
 }
 
 h1, h2, h3 {

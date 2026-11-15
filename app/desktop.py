@@ -90,6 +90,7 @@ def main() -> None:
         height=config.WINDOW_SIZE[1],
         min_size=config.WINDOW_MIN_SIZE,
         js_api=DesktopApi(),
+        text_select=True,  # what can be selected is set by our CSS (base.css), not for the whole page
     )
     window.events.loaded += _connect_drop_zones
     if sys.platform == "darwin":
