@@ -162,6 +162,18 @@
 .chat__tool[data-status="error"] .chat__tool-icon svg:last-of-type { display: block; }
 .chat__tool[data-status="error"] { color: var(--color-destructive); }
 
+/* What a running tool prints, following its last line; and its progress bar. */
+.chat__output {  /* a <pre>: base.css gives it its border and font */
+  max-height: 10rem;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.chat__progress { margin-block: var(--space-1); }
+
 .chat__spinner {
   width: 0.75rem;
   height: 0.75rem;

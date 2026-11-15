@@ -1,5 +1,7 @@
 """Code mode: Python the agent writes, for what no single API call does (going through many images,
-filtering, combining projects), run in a child process.
+filtering, combining projects), run in a child process: one per conversation, kept between runs,
+so what one run leaves in variables the next can use (the agent works in steps: do, look, decide,
+go on, on the same data). What it prints reaches the chat as it's printed.
 
 The code's one way in is `api`, the app's API. Its calls go back over a pipe to the app, which
 makes them in the agent's turn, so they're checked as the pages' are and recorded in History as
@@ -14,11 +16,16 @@ imports this module, so it imports nothing of the app's at the top.
 """
 
 import contextlib
+import importlib
 import io
 import multiprocessing
+import os
+import sys
+import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from pathlib import Path
 from urllib.parse import urlencode
 
 TIMEOUT = 60  # seconds a run may take unless the agent gives more
@@ -73,51 +80,173 @@ class Api:
             page += 1
 
 
-def _child(code: str, pipe) -> None:
-    """In the child: run the code with `api` and `Refused`, and send back what it printed and,
-    if it failed, the error with the line of the code it was on (its number and text)."""
-    printed = io.StringIO()
-    error = None
-    try:
-        with contextlib.redirect_stdout(printed):
-            exec(compile(code, "<code>", "exec"), {"api": Api(pipe), "Refused": Refused, "__name__": "__main__"})
-    except Exception as e:
-        lines = [f.lineno for f in traceback.extract_tb(e.__traceback__) if f.filename == "<code>"]
-        where = f"line {lines[-1]} ({code.splitlines()[lines[-1] - 1].strip()}): " if lines else ""
-        error = where + "".join(traceback.format_exception_only(e)).strip()
-    pipe.send(("done", printed.getvalue(), error))
+class _Printed(io.TextIOBase):
+    """The child's stdout: each line printed goes to the app as it's printed (the chat shows it)."""
+
+    def __init__(self, pipe):
+        self._pipe = pipe
+        self._line = ""
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, text: str) -> int:
+        self._line += text
+        if "\n" in self._line:
+            done, self._line = self._line.rsplit("\n", 1)
+            self._pipe.send(("print", done + "\n"))
+        return len(text)
+
+    def flush(self) -> None:
+        if self._line:
+            self._pipe.send(("print", self._line))
+            self._line = ""
 
 
-def run(code: str, call: Call, timeout: int = TIMEOUT) -> dict:
-    """Run the code in a child process, making its API calls with `call` (here, in this thread),
-    for at most `timeout` seconds. Returns {output: what it printed (cut when long), error: why it
-    stopped, or None}."""
-    context = multiprocessing.get_context("spawn")
-    here, there = context.Pipe()
-    process = context.Process(target=_child, args=(code, there), daemon=True)
-    started = time.monotonic()
-    process.start()
-    there.close()  # the child's end is the child's: once it ends, reading here sees that at once
-    try:
+def _child(pipe, folder: str) -> None:
+    """In the child: work in the conversation's folder (its files open by relative paths, its .py
+    files import), and run each piece of code the app sends, all in one namespace, so what one run
+    leaves in variables the next can use. Sends what's printed as it's printed, then ("done",
+    error): None, or the error with the line it was on (its file, number and text)."""
+    os.chdir(folder)
+    sys.path.insert(0, folder)
+    sys.dont_write_bytecode = True  # no __pycache__ among the agent's files
+    inside = os.path.join(folder, "")
+    printed = _Printed(pipe)
+    shown = [-1]  # the last percentage sent in this run: a loop of any length sends at most ~100
+
+    def progress(done: int, total: int) -> None:
+        """Shows how far a long loop is, as a bar in the chat."""
+        percent = int(100 * done / total) if total else 0
+        if percent != shown[0]:
+            shown[0] = percent
+            pipe.send(("progress", done, total))
+
+    api = Api(pipe)
+    names = {"api": api, "Refused": Refused, "progress": progress, "__name__": "__main__"}
+    while True:
+        code, name = pipe.recv()  # name: CODE, or the file it was read from
+        shown[0], error = -1, None
+        # The folder's modules import again, as they are now: an edit to one takes effect (objects
+        # made before keep their old classes).
+        for key, module in list(sys.modules.items()):
+            if (getattr(module, "__file__", None) or "").startswith(inside):
+                del sys.modules[key]
+        importlib.invalidate_caches()  # a module written since the last run is found
+        label = "" if name == CODE else f"{name} "
+        if name == CODE:
+            names.pop("__file__", None)
+        else:
+            names["__file__"] = name
+        try:
+            with contextlib.redirect_stdout(printed):
+                exec(compile(code, name, "exec"), names)
+        except Exception as e:
+            lines = [f.lineno for f in traceback.extract_tb(e.__traceback__) if f.filename == name]
+            where = f"{label}line {lines[-1]} ({code.splitlines()[lines[-1] - 1].strip()}): " if lines else ""
+            error = where + "".join(traceback.format_exception_only(e)).strip()
+        printed.flush()
+        pipe.send(("done", error))
+
+
+CODE = "<code>"  # what a snippet's tracebacks call it
+
+
+class Session:
+    """One conversation's code process: started at its first run, kept while it's used, so its
+    variables last from one run to the next. A run that times out or crashes ends it."""
+
+    def __init__(self, folder: Path) -> None:
+        context = multiprocessing.get_context("spawn")
+        self._pipe, there = context.Pipe()
+        self._process = context.Process(target=_child, args=(there, str(folder)), daemon=True)
+        self._process.start()
+        there.close()  # the child's end is the child's: once it ends, reading here sees that at once
+        self.used = time.monotonic()
+
+    @property
+    def alive(self) -> bool:
+        return self._process.is_alive()
+
+    def close(self) -> None:
+        if self._process.is_alive():
+            self._process.kill()
+        self._process.join()
+
+    def run(self, code: str, call: Call, timeout: int = TIMEOUT, name: str = CODE) -> Iterator[dict]:
+        """Run the code (read from the file `name`, if it was), making its API calls with `call` (here, in this thread), for at most
+        `timeout` seconds. Yields what it shows as it comes, {"type": "output", "text"} (as much
+        as the agent gets) and {"type": "progress", "done", "total"}; returns {output: what it
+        printed (cut when long), error: why it stopped, or None}."""
+        self.used = started = time.monotonic()
+        self._pipe.send((code, name))
+        kept, size = [], 0  # what's printed, up to OUTPUT_SIZE; how much in all
         while True:
             left = timeout - (time.monotonic() - started)
-            if left <= 0 or not here.poll(left):
-                return {"output": "", "error": f"Stopped after {timeout} s; give it more time (seconds) or do less."}
+            if left <= 0 or not self._pipe.poll(left):
+                self.close()
+                return _result(kept, size, f"Stopped after {timeout} s; give it more time (seconds) or do less. {GONE}")
             try:
-                message = here.recv()
+                message = self._pipe.recv()
             except EOFError:
-                return {"output": "", "error": "The code's process ended without finishing (it crashed or was killed)."}
+                self.close()
+                return _result(kept, size, f"The code's process ended without finishing (it crashed or was killed). {GONE}")
             if message[0] == "done":
-                _, output, error = message
-                if len(output) > OUTPUT_SIZE:
-                    output = output[:OUTPUT_SIZE] + f"\n… cut: {len(output):,} characters printed in all"
-                return {"output": output, "error": error}
-            _, method, path, body = message
-            try:
-                here.send((True, call(method, path, body)))
-            except Refused as e:
-                here.send((False, str(e)))
-    finally:
-        if process.is_alive():
-            process.kill()
-        process.join()
+                return _result(kept, size, message[1])
+            if message[0] == "print":
+                text = message[1][:max(OUTPUT_SIZE - size, 0)]
+                size += len(message[1])
+                if text:
+                    kept.append(text)
+                    yield {"type": "output", "text": text}
+            elif message[0] == "progress":
+                yield {"type": "progress", "done": message[1], "total": message[2]}
+            else:
+                _, method, path, body = message
+                try:
+                    self._pipe.send((True, call(method, path, body)))
+                except Refused as e:
+                    self._pipe.send((False, str(e)))
+
+
+GONE = "Its variables are gone: the next run starts a new process."
+
+
+def _result(kept: list[str], size: int, error: str | None) -> dict:
+    text = "".join(kept)
+    if size > OUTPUT_SIZE:
+        text += f"\n… cut: {size:,} characters printed in all"
+    return {"output": text, "error": error}
+
+
+# Each conversation's code process, by its folder. One that hasn't run code for IDLE seconds is
+# ended when the next run anywhere starts; at most SESSIONS live at once (the oldest goes).
+IDLE = 30 * 60
+SESSIONS = 4
+_sessions: dict[Path, Session] = {}  # by the conversation's folder
+_lock = threading.Lock()
+
+
+def session(folder: Path) -> Session:
+    """The code process working in a conversation's folder, started if it has none or its last
+    one ended."""
+    with _lock:
+        now = time.monotonic()
+        for other, found in list(_sessions.items()):
+            if not found.alive or (other != folder and now - found.used > IDLE):
+                found.close()
+                del _sessions[other]
+        if folder not in _sessions:
+            while len(_sessions) >= SESSIONS:
+                oldest = min(_sessions, key=lambda k: _sessions[k].used)
+                _sessions.pop(oldest).close()
+            _sessions[folder] = Session(folder)
+        return _sessions[folder]
+
+
+def close_all() -> None:
+    """At shutdown (the server's lifespan): end every code process."""
+    with _lock:
+        for found in _sessions.values():
+            found.close()
+        _sessions.clear()

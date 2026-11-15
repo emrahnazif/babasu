@@ -12,21 +12,32 @@ reloads then instead (unless one opens).
 """
 
 import difflib
+import inspect
 import json
 import re
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import cache
+from pathlib import Path
 from typing import Any, Literal, get_args
 from urllib.parse import urlencode
 
 from mozo.workflow import catalogue
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app import code as code_mode  # `code` is run_code's argument
-from app import config, filters, jobs, projects, runs, views
+from app import config, filters, jobs, projects, runs, settings, views
 from app.filters import Filter
 from app.routes import UI_ONLY
 
@@ -126,8 +137,24 @@ def schemas() -> list[dict]:
     ]
 
 
-def call(conn: sqlite3.Connection, name: str, arguments: str) -> str:
-    """Run a tool with the model's JSON arguments; the result as JSON text. Raises ToolError."""
+# The conversation whose turn is calling tools: run_code keeps one code process per conversation.
+_conversation: ContextVar[int | None] = ContextVar("conversation", default=None)
+
+
+@contextmanager
+def turn_of(conversation_id: int) -> Iterator[None]:
+    """Tools called inside this are a turn of this conversation (agent.run_turn)."""
+    token = _conversation.set(conversation_id)
+    try:
+        yield
+    finally:
+        _conversation.reset(token)
+
+
+def call(conn: sqlite3.Connection, name: str, arguments: str) -> Iterator[dict]:
+    """Run a tool with the model's JSON arguments. Yields what it shows while it works (a tool
+    that's a generator: {"type": "output", "text"}, {"type": "progress", "done", "total"});
+    returns the result as JSON text. Raises ToolError."""
     if name not in TOOLS:
         raise ToolError(f"There is no tool named {name!r}.")
     found = TOOLS[name]
@@ -136,7 +163,10 @@ def call(conn: sqlite3.Connection, name: str, arguments: str) -> str:
     except ValidationError as exc:
         problems = "; ".join(_problem(found.args, e) for e in exc.errors(include_url=False))
         raise ToolError(f"Invalid arguments for {name}: {problems}") from None
-    return json.dumps(found.func(conn, args), ensure_ascii=False)
+    result = found.func(conn, args)
+    if inspect.isgenerator(result):
+        result = yield from result
+    return json.dumps(result, ensure_ascii=False)
 
 
 def writes(name: str, arguments: str) -> bool:
@@ -359,26 +389,131 @@ def _for_code(method: str, path: str, body) -> object:
     return response.json() if response.content else None
 
 
+# --- The conversation's folder: the agent's code, results and drafts ---
+
+READ_SIZE = 8_000  # characters of a file read_file gives at once; the rest in parts
+LISTED = 300  # files list_files names at most
+
+
+def folder() -> Path:
+    """The working folder of the conversation whose turn this is (made when first used)."""
+    conversation_id = _conversation.get()
+    if conversation_id is None:
+        raise ToolError("There's no conversation here, so no folder.")
+    found = config.CONVERSATIONS_DIR / str(conversation_id)
+    found.mkdir(parents=True, exist_ok=True)
+    return found.resolve()
+
+
+def _path(relative: str, kind: Literal["file", "folder"] | None = None) -> Path:
+    """A path in the folder (a file or folder that's there, if `kind` says so); ToolError for one
+    outside it (absolute, .., a link out) or not there."""
+    root = folder()
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root):
+        raise ToolError(f"{relative}: outside your folder; paths are relative to it, e.g. results/misses.json")
+    if kind == "file" and not path.is_file() or kind == "folder" and not path.is_dir():
+        raise ToolError(f"{relative}: no such {kind}")
+    return path
+
+
+class PathArgs(Args):
+    path: str = Field(".", description="A path in your folder, e.g. steps; . for the folder itself.")
+
+
+@tool(f"The files in your folder (or a folder in it), with their sizes in bytes (at most {LISTED}). Your folder is "
+      "this chat's: your scripts, the results they save, your drafts. run_code works in it.", PathArgs)
+def list_files(conn: sqlite3.Connection, args: PathArgs) -> dict:
+    root = folder()
+    files = [p for p in _path(args.path, "folder").rglob("*") if p.is_file()]
+    listed = [{"path": str(p.relative_to(root)), "size": p.stat().st_size} for p in sorted(files)[:LISTED]]
+    return {"files": listed} | ({"more": len(files) - LISTED} if len(files) > LISTED else {})
+
+
+class ReadArgs(Args):
+    path: str = Field(description="A file in your folder.")
+    offset: int = Field(0, ge=0, description="Where to start, in characters (for the next part of a big file).")
+
+
+@tool(f"Read a file of your folder, {READ_SIZE:,} characters at a time (a bigger one says where the next part "
+      "starts). For data, read what you need in code instead: a file is for you to check, not to copy from.",
+      ReadArgs)
+def read_file(conn: sqlite3.Connection, args: ReadArgs) -> dict:
+    path = _path(args.path, "file")
+    with path.open(errors="replace") as f:
+        f.read(args.offset)
+        part = f.read(READ_SIZE + 1)
+    if len(part) <= READ_SIZE:
+        return {"text": part}
+    return {"text": part[:READ_SIZE], "next": args.offset + READ_SIZE, "bytes": path.stat().st_size}
+
+
+class WriteArgs(Args):
+    path: str = Field(description="A file in your folder, e.g. steps/compare.py (folders are made as needed).")
+    content: str = Field(description="All of the file.")
+
+
+@tool("Write a file in your folder (all of it; a file that's there is replaced): a script to run with run_code, "
+      "notes, a draft. Results your code makes, it saves itself. Your folder is your working copy: undoing a turn "
+      "doesn't change its files.", WriteArgs)
+def write_file(conn: sqlite3.Connection, args: WriteArgs) -> dict:
+    path = _path(args.path)
+    settings.write_file(path, args.content)
+    return {"written": args.path, "size": path.stat().st_size}
+
+
+class EditArgs(Args):
+    path: str = Field(description="A file in your folder.")
+    old: str = Field(min_length=1, description="Text in the file to replace, exactly as it is there, once.")
+    new: str = Field(description="What replaces it.")
+
+
+@tool("Change part of a file in your folder: `old`, which must be in it exactly once, becomes `new`.", EditArgs)
+def edit_file(conn: sqlite3.Connection, args: EditArgs) -> dict:
+    path = _path(args.path, "file")
+    text = path.read_text()
+    count = text.count(args.old)
+    if count != 1:
+        raise ToolError(f"{args.path}: `old` is there {count} times; it must be there exactly once (give more around it)")
+    settings.write_file(path, text.replace(args.old, args.new))
+    return {"edited": args.path}
+
+
 class CodeArgs(Args):
-    code: str = Field(description="Python to run. `api` is the app's API: api.get(path), api.post(path, body), "
-                      "api.put, api.patch, api.delete: the JSON answer back; a refusal raises Refused with the "
-                      "reason. api.images(project_id, where='') goes through a project's images: each has media_id, "
-                      "filename and annotations (objects: class_id, bbox [x, y, w, h], …); write an image's objects "
-                      "back with api.put(f'/api/projects/{id}/images/{media_id}/annotations', objects). Class ids "
-                      "and names: api.get(f'/api/projects/{id}?images=0')['classes']. print() what you need to see "
-                      "or report. pixelflow and numpy are there.")
+    code: str | None = Field(None, description="Python to run. `api` is the app's API: api.get(path), api.post(path, body), "
+                             "api.put, api.patch, api.delete: the JSON answer back; a refusal raises Refused with the "
+                             "reason. api.images(project_id, where='') goes through a project's images: each has "
+                             "media_id, filename and annotations (objects: class_id, bbox [x, y, w, h], …); write an "
+                             "image's objects back with api.put(f'/api/projects/{id}/images/{media_id}/annotations', "
+                             "objects). Class ids and names: api.get(f'/api/projects/{id}?images=0')['classes']. "
+                             "print() what you need to see or report (and the checks: counts read, matched, left "
+                             "out); progress(done, total) shows a bar while a long loop runs. pixelflow and numpy "
+                             "are there.")
+    file: str | None = Field(None, description="Instead of code: a .py file of your folder to run.")
     seconds: int = Field(code_mode.TIMEOUT, ge=1, le=600, description="How long it may take at most, in seconds.")
+
+    @model_validator(mode="after")
+    def _one(self):
+        if (self.code is None) == (self.file is None):
+            raise ValueError("give code or file (one of them)")
+        return self
 
 
 @tool(
     "Run Python for what one API call can't do: going through many images or projects, filtering objects, "
-    "changing many at once, combining projects. Read read_docs code first (the client, paging, examples). Its "
-    "changes go through the API, so they're checked, and undone with your turn. Returns what it printed.",
+    "changing many at once, combining projects, measuring, comparing. Read read_docs code first (the client, "
+    "paging, examples). It runs in your folder (files open by relative paths, its .py files import), in one "
+    "process kept for this chat: variables stay for the next run, and files stay for good. Work in steps: save "
+    "what a step finds (a json file), look at it, decide, go on with it instead of copying it. Its changes go "
+    "through the API, so they're checked, and undone with your turn (files in your folder stay as they are). "
+    "Returns what it printed.",
     CodeArgs,
     writes=True,
 )
-def run_code(conn: sqlite3.Connection, args: CodeArgs) -> dict:
-    result = code_mode.run(args.code, _for_code, args.seconds)
+def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
+    code, name = (_path(args.file, "file").read_text(), args.file) if args.file else (args.code, code_mode.CODE)
+    session = code_mode.session(folder())
+    result = yield from session.run(code, _for_code, args.seconds, name)
     if result["error"]:
         raise ToolError(result["error"] + (f"\nPrinted before it:\n{result['output']}" if result["output"] else ""))
     return {"output": result["output"]}

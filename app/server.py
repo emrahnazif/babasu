@@ -9,7 +9,7 @@ from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from mozo.workflow.api import workflow_router
 
-from app import agent, config, db, history, jobs, segment, views, vision
+from app import agent, code, config, db, history, jobs, segment, views, vision
 from app.filters import FilterError
 from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI):
     jobs.run_workers()
     yield
     agent.stop_all()
+    code.close_all()
     jobs.shutdown()
     vision.unload_all()
 

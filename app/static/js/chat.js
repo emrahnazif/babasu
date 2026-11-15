@@ -38,6 +38,7 @@ if (chat) {
     let frame = 0; // a render of that part waiting for the next frame
     let byLine = null; // who answers; added under everything else when the turn ends
     const tools = new Map();
+    let running = {}; // what the running tool shows under it: { output, bar }
 
     function clearStatus() {
       status?.remove();
@@ -71,8 +72,21 @@ if (chat) {
           tools.set(id, element);
         }
         element.dataset.status = state;
+        running = {};
         // After a tool and between rounds, show that the agent is still working.
         if (state !== "running") status = append(turn, clone("chat-status"));
+      },
+      // What the running tool prints (appended, following its end) and how far it is.
+      output({ text }) {
+        running.output ??= append(turn, clone("chat-output"));
+        running.output.textContent += text;
+        running.output.scrollTop = running.output.scrollHeight;
+      },
+      progress({ done, total }) {
+        running.bar ??= append(turn, clone("chat-progress"));
+        const value = total ? Math.min(done / total, 1) : 0;
+        running.bar.style.setProperty("--value", value);
+        running.bar.setAttribute("aria-valuenow", Math.round(value * 100));
       },
       by(agent, model) {
         const line = clone("chat-by");
@@ -128,6 +142,8 @@ if (chat) {
           if (event.type === "agent") turn.by(event.agent, event.model);
           else if (event.type === "text") turn.text(event.delta);
           else if (event.type === "tool") turn.tool(event);
+          else if (event.type === "output") turn.output(event);
+          else if (event.type === "progress") turn.progress(event);
           else if (event.type === "open") open = event.url;
           else if (event.type === "changed") changed = true;
           else if (event.type === "done") (turn.end("done"), (ended = true));

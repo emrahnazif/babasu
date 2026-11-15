@@ -80,6 +80,9 @@
   <template id="chat-agent"><div class="chat__message chat__message--agent" data-status="streaming"></div></template>
   <template id="chat-text">{{ text_part("") }}</template>
   <template id="chat-tool">{{ tool_part("", "running") }}</template>
+  {# While a tool runs (run_code): what it prints, and how far it is (progress(done, total)). #}
+  <template id="chat-output"><pre class="chat__output"></pre></template>
+  <template id="chat-progress"><div class="progress chat__progress" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"></div></template>
   <template id="chat-status">{{ note("status", "Thinking…") }}</template>
   <template id="chat-error">{{ note("error", "") }}</template>
   <template id="chat-stopped">{{ note("stopped", "Stopped") }}</template>

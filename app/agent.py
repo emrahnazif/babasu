@@ -54,6 +54,11 @@ class Busy(Exception):
     """A message sent while the conversation's agent is still answering the last one."""
 
 
+# Events that follow one of their kind (and index) are merged into it: text joined (by this key);
+# progress replaced (only the latest counts).
+_MERGED = {"text": "delta", "output": "text", "progress": None}
+
+
 class Turn:
     """One turn in progress (or just ended): the events it has sent, who follows it, its stop flag."""
 
@@ -68,9 +73,11 @@ class Turn:
         with _lock:
             if event is None:
                 self.ended = True
-            elif event["type"] == "text" and self.events and self.events[-1]["type"] == "text":
-                # Kept as one text event, so a page that follows later replays it at once.
-                self.events[-1] = {"type": "text", "delta": self.events[-1]["delta"] + event["delta"]}
+            elif (event["type"] in _MERGED and self.events and self.events[-1]["type"] == event["type"]
+                  and self.events[-1].get("index") == event.get("index")):
+                # Kept as one event, so a page that follows later replays it at once.
+                key = _MERGED[event["type"]]
+                self.events[-1] = event | ({key: self.events[-1][key] + event[key]} if key else {})
             else:
                 self.events.append(event)
             for loop, queue in self.followers:
@@ -381,6 +388,8 @@ def run_turn(
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
+      {"type": "output", "text": "..."}                     what the running tool prints (run_code)
+      {"type": "progress", "done": 3, "total": 10}          how far the running tool is
       {"type": "open", "url": "/projects/3?where=car"}      a page to show once the reply is done
       {"type": "changed"}                                   a tool changed what pages show: once the
                                                             reply is done, reload (unless one opens)
@@ -388,7 +397,7 @@ def run_turn(
     Once `stop` is set, the turn ends at its next step (a streamed chunk or a tool) and saves the
     reply so far as stopped. What the turn changes is one action in the history, named by the message.
     """
-    with closing(db.connect()) as conn, db.action("agent", text):
+    with closing(db.connect()) as conn, db.action("agent", text), agent_tools.turn_of(conversation_id):
         with conn:
             conn.execute(
                 "INSERT INTO message (conversation_id, role, content, page, page_title) VALUES (?, 'user', ?, ?, ?)",
@@ -487,7 +496,8 @@ def run_turn(
                         return
                     yield {"type": "tool", "id": call["id"], "name": call["name"], "status": "running"}
                     try:
-                        result, status, error = agent_tools.call(conn, call["name"], call["arguments"]), "done", None
+                        # What it shows while it works (run_code's output), then its result.
+                        result, status, error = (yield from agent_tools.call(conn, call["name"], call["arguments"])), "done", None
                     except Exception as exc:  # the model sees the error and can correct itself
                         error = str(exc)
                         result, status = json.dumps({"error": error}), "error"
