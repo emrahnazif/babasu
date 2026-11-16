@@ -1,5 +1,6 @@
 """Settings pages. Forms post, then redirect back (to where the user came from, or to the same
-section with what happened). Models and agents have the same actions as JSON in routes/agents.py."""
+section with what happened); where back is goes in the address (?next=), on the pages and in what
+they post. Models and agents have the same actions as JSON in routes/agents.py."""
 
 from typing import Annotated, get_args
 from urllib.parse import urlencode
@@ -11,7 +12,7 @@ from pydantic import ValidationError
 from app import agent, agents, config, settings
 from app.agents import AgentForm, ModelForm
 from app.routes import message, safe_next
-from app.templating import templates
+from app.templating import query, templates
 
 router = APIRouter(prefix="/settings")
 
@@ -32,8 +33,11 @@ def _back(section: dict, next: str | None, action=None, **query) -> RedirectResp
 
 
 def _page(request: Request, template: str, section: dict, next: str | None, **context):
+    """A settings page. `back`: the ?next= query its links and forms carry, so every post comes back
+    knowing where to return."""
+    next = safe_next(next)
     return templates.TemplateResponse(
-        request, template, {"sections": SECTIONS, "section": section, "next": safe_next(next), **context}
+        request, template, {"sections": SECTIONS, "section": section, "next": next, "back": query({"next": next}), **context}
     )
 
 
@@ -44,10 +48,7 @@ def general(request: Request, next: str | None = None):
 
 
 @router.post("/general")
-def save_general(
-    theme: Annotated[settings.Theme, Form()],
-    next: Annotated[str | None, Form()] = None,
-):
+def save_general(theme: Annotated[settings.Theme, Form()], next: str | None = None):
     settings.update(theme=theme)
     return RedirectResponse(safe_next(next), status_code=303)
 
@@ -58,27 +59,27 @@ def save_general(
 @router.get("/models", response_class=HTMLResponse)
 def models_page(request: Request, next: str | None = None, error: str | None = None,
                 tested: str | None = None, test: str | None = None, ok: bool = False):
-    return _page(request, "settings/models.html", MODELS, next, models=settings.get().models, error=error,
+    return _page(request, "settings/models.html", MODELS, next, models=[agents.shown_model(m) for m in settings.get().models], error=error,
                  test={"model": tested, "message": test, "ok": ok} if tested else None)
 
 
 @router.post("/models")
-def add_model(form: Annotated[ModelForm, Form()], next: Annotated[str | None, Form()] = None):
+def add_model(form: Annotated[ModelForm, Form()], next: str | None = None):
     return _back(MODELS, next, lambda: agents.add_model(form))
 
 
 @router.post("/models/{model_id}")
-def edit_model(model_id: str, form: Annotated[ModelForm, Form()], next: Annotated[str | None, Form()] = None):
+def edit_model(model_id: str, form: Annotated[ModelForm, Form()], next: str | None = None):
     return _back(MODELS, next, lambda: agents.update_model(model_id, form))
 
 
 @router.post("/models/{model_id}/delete")
-def delete_model(model_id: str, next: Annotated[str | None, Form()] = None):
+def delete_model(model_id: str, next: str | None = None):
     return _back(MODELS, next, lambda: agents.delete_model(model_id))
 
 
 @router.post("/models/{model_id}/test")
-def test_model(model_id: str, next: Annotated[str | None, Form()] = None):
+def test_model(model_id: str, next: str | None = None):
     model = settings.find_model(model_id)
     if model is None:
         return _back(MODELS, next, error="There is no such model.")
@@ -92,27 +93,27 @@ def test_model(model_id: str, next: Annotated[str | None, Form()] = None):
 @router.get("/agents", response_class=HTMLResponse)
 def agents_page(request: Request, next: str | None = None, error: str | None = None):
     s = settings.get()
-    return _page(request, "settings/agents.html", AGENTS, next, agents=s.agents, models=s.models,
-                 model_names={m.id: m.name for m in s.models}, default_agent=s.default_agent, error=error)
+    return _page(request, "settings/agents.html", AGENTS, next, agents=[agents.shown_agent(a, s.default_agent) for a in s.agents],
+                 models=s.models, model_names={m.id: m.name for m in s.models}, error=error)
 
 
 @router.post("/agents")
-def add_agent(form: Annotated[AgentForm, Form()], next: Annotated[str | None, Form()] = None):
+def add_agent(form: Annotated[AgentForm, Form()], next: str | None = None):
     return _back(AGENTS, next, lambda: agents.add_agent(form))
 
 
 @router.post("/agents/{agent_id}")
-def edit_agent(agent_id: str, form: Annotated[AgentForm, Form()], next: Annotated[str | None, Form()] = None):
+def edit_agent(agent_id: str, form: Annotated[AgentForm, Form()], next: str | None = None):
     return _back(AGENTS, next, lambda: agents.update_agent(agent_id, form))
 
 
 @router.post("/agents/{agent_id}/delete")
-def delete_agent(agent_id: str, next: Annotated[str | None, Form()] = None):
+def delete_agent(agent_id: str, next: str | None = None):
     return _back(AGENTS, next, lambda: agents.delete_agent(agent_id))
 
 
 @router.post("/agents/{agent_id}/default")
-def default_agent(agent_id: str, next: Annotated[str | None, Form()] = None):
+def default_agent(agent_id: str, next: str | None = None):
     return _back(AGENTS, next, lambda: agents.set_default(agent_id))
 
 

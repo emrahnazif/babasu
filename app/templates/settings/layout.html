@@ -3,10 +3,11 @@
   sections instead of the agent; the main area shows the current section's
   form with Cancel and Save. A section template extends this and fills
   {% block fields %}. The route passes `sections`, the current `section`
-  and a validated `next`. Save posts the form; the server saves and
-  redirects to `next`.
+  and a validated `next`. Save posts the form to this page's address (with
+  its ?next=); the server saves and redirects to `next`.
 #}
 {% extends "base.html" %}
+{% import "components.html" as ui %}
 
 {# The sidebar is this page's menu, so it never collapses here. #}
 {% set sidebar_collapsible = false %}
@@ -18,23 +19,15 @@
     <h2 class="sidebar__title">Settings</h2>
     <nav class="sidebar__menu">
       {% for item in sections %}
-        <a href="{{ item.href }}?next={{ next | urlencode }}"{% if item.href == section.href %} aria-current="page"{% endif %}>{{ item.label }}</a>
+        <a href="{{ item.href ~ back }}"{% if item.href == section.href %} aria-current="page"{% endif %}>{{ item.label }}</a>
       {% endfor %}
     </nav>
   </div>
 {% endblock %}
 
 {% block content %}
-  <form method="post">
-    <input type="hidden" name="next" value="{{ next }}">
-
-    <div class="fields">
-      {% block fields %}{% endblock %}
-    </div>
-
-    <div class="actions divided">
-      <a class="button secondary" href="{{ next }}">Cancel</a>
-      <button class="button" type="submit">Save</button>
-    </div>
-  </form>
+  {% call ui.form() %}
+    {% call ui.fields() %}{% block fields %}{% endblock %}{% endcall %}
+    {{ ui.actions([ui.button("Cancel", href=next, variant="secondary"), ui.button("Save", submit=true)], variant="divided") }}
+  {% endcall %}
 {% endblock %}

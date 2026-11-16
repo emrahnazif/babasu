@@ -1,15 +1,6 @@
 {% extends "settings/layout.html" %}
-{% from "partials/select.html" import select %}
 
 {% block fields %}
-  <label class="field">
-    Theme
-    {{ select("theme-select", "theme", themes, current.theme) }}
-  </label>
-
-  <div class="field">
-    Workspace folder
-    <code>{{ data_dir }}</code>
-    <p class="muted">Where {{ app_name }} keeps your settings, and later your datasets and models.</p>
-  </div>
+  {{ ui.select("theme", "Theme", themes, current.theme, id="theme-select") }}
+  {{ ui.text(["Workspace folder:", ui.code(data_dir)], note="Where " ~ app_name ~ " keeps your settings, and later your datasets and models.") }}
 {% endblock %}

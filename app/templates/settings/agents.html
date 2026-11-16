@@ -1,74 +1,41 @@
 {% extends "settings/layout.html" %}
-{% from "partials/select.html" import select %}
 {# Agents: who answers in the chat. A name, the model it runs on, and its instructions. #}
 
 {% macro agent_dialog(id, title, action, a=none) %}
-  <div id="{{ id }}" class="dialog" popover aria-labelledby="{{ id }}-title">
-    <form method="post" action="{{ action }}">
-      <h2 id="{{ id }}-title">{{ title }}</h2>
-      <div class="fields">
-        <label class="field">
-          Name
-          <input name="name" required value="{{ a.name if a else '' }}" placeholder="Assistant">
-        </label>
-        <label class="field">
-          Model
-          {{ select(id ~ "-model", "model_id", models | options("id", "name"), a.model_id if a else none) }}
-        </label>
-        <label class="field">
-          Instructions
-          <textarea name="instructions" rows="6" placeholder="Its role and rules, e.g. Answer from the app's real data.">{{ a.instructions if a else '' }}</textarea>
-          <span class="muted">Every agent is also told what {{ app_name }} is.</span>
-        </label>
-        <input type="hidden" name="next" value="{{ next }}">
-      </div>
-      <div class="actions">
-        <button class="button secondary" type="button" popovertarget="{{ id }}" popovertargetaction="hide">Cancel</button>
-        <button class="button" type="submit">Save</button>
-      </div>
-    </form>
-  </div>
+  {{ ui.dialog(id, title, form=action ~ back, actions=ui.button("Save", submit=true), children=ui.fields([
+    ui.input("name", "Name", a.name if a, required=true, placeholder="Assistant"),
+    ui.select("model_id", "Model", models | options("id", "name"), a.model_id if a, id=id ~ "-model"),
+    ui.textarea("instructions", "Instructions", a.instructions if a, rows=6, note="Every agent is also told what " ~ app_name ~ " is.",
+                placeholder="Its role and rules, e.g. Answer from the app's real data."),
+  ])) }}
 {% endmacro %}
 
 {% block actions %}
-  {% if models %}
-    <button class="icon-button" type="button" popovertarget="add-agent" aria-label="Add agent" title="Add agent">{{ icon("plus") }}</button>
-  {% endif %}
+  {% if models %}{{ ui.button("Add agent", variant="icon", icon="plus", popover="add-agent") }}{% endif %}
 {% endblock %}
 
 {% block content %}
-  <p class="muted">Who answers in the chat. Pick one under the message box; new chats start with the default agent.</p>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {{ ui.text("Who answers in the chat. Pick one under the message box; new chats start with the default agent.", muted=true) }}
+  {% if error %}{{ ui.text(error, error=true) }}{% endif %}
 
   {% if models %}
     {{ agent_dialog("add-agent", "Add agent", "/settings/agents") }}
   {% else %}
-    <p class="muted">An agent runs on a model: <a href="/settings/models?next={{ next | urlencode }}">add a model</a> first.</p>
+    {{ ui.text(["An agent runs on a model:", ui.link("add a model", "/settings/models" ~ back), "first."], muted=true) }}
   {% endif %}
 
   {% if agents %}
-    <div class="stack">
+    {% call ui.stack() %}
       {% for a in agents %}
-        <div class="card">
-          <h2>{{ a.name }} {% if a.id == default_agent %}<span class="badge">Default</span>{% endif %}</h2>
-          <p class="muted">{{ model_names[a.model_id] }}</p>
-          {% if a.instructions %}<p class="muted">{{ a.instructions | truncate(90) }}</p>{% endif %}
-          <div class="actions">
-            {% if a.id != default_agent %}
-              <form method="post" action="/settings/agents/{{ a.id }}/default">
-                <input type="hidden" name="next" value="{{ next }}">
-                <button class="button secondary" type="submit">Make default</button>
-              </form>
-            {% endif %}
-            <button class="button secondary" type="button" popovertarget="edit-agent-{{ a.id }}">Edit</button>
-            <form method="post" action="/settings/agents/{{ a.id }}/delete">
-              <input type="hidden" name="next" value="{{ next }}">
-              <button class="button secondary" type="submit">Delete</button>
-            </form>
-          </div>
-          {{ agent_dialog("edit-agent-" ~ a.id, "Edit agent", "/settings/agents/" ~ a.id, a) }}
-        </div>
+        {% set at = "/settings/agents/" ~ a.id %}
+        {{ ui.card(a.name, model_names[a.model_id], action=ui.badge("Default") if a.default, children=[
+          ui.text(a.instructions, muted=true) if a.instructions,
+          ui.actions([ui.button("Make default", post=at ~ "/default" ~ back, variant="secondary") if not a.default,
+                      ui.button("Edit", popover="edit-agent-" ~ a.id, variant="secondary"),
+                      ui.button("Delete", post=at ~ "/delete" ~ back, variant="secondary")]),
+          agent_dialog("edit-agent-" ~ a.id, "Edit agent", at, a),
+        ]) }}
       {% endfor %}
-    </div>
+    {% endcall %}
   {% endif %}
 {% endblock %}
