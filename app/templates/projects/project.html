@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% import "components.html" as ui %}
-{% from "projects/annotated.html" import annotated %}
 {% from "projects/macros.html" import downloads, no_classes %}
 {% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
@@ -244,7 +243,7 @@
           <div class="grid">
             {% for image in tried.results %}
               <figure class="thumb">
-                {{ annotated(image, project.classes, image.thumb_url, label=image.filename) }}
+                {{ ui.annotated(image, project.classes, image.thumb_url, label=image.filename) }}
                 <figcaption>{{ image.annotations | length | plural("object") }} · {{ image.filename }}</figcaption>
               </figure>
             {% endfor %}
