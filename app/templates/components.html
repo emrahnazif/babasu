@@ -190,6 +190,15 @@
 {# An icon (its name, from static/icons) in a muted square, e.g. at the start of a table row. #}
 {% macro icon(name) %}<span class="icon">{{ _icon(name) }}</span>{% endmacro %}
 
+{# A link in a line of text: ["An agent runs on a model:", {"type": "link", "label": "add one",
+   "href": "/settings/models"}]. #}
+{% macro link(label, href) %}<a href="{{ href }}">{{ label }}</a>{% endmacro %}
+
+{# Code or a path, in a line of text; `block`: a box of its own, its lines kept (a log). #}
+{% macro code(text, block=false) -%}
+  {%- if block %}<pre>{{ text }}</pre>{% else %}<code>{{ text }}</code>{% endif -%}
+{%- endmacro %}
+
 {# --- Data --- #}
 
 {# A table. `columns`: the header's labels; a column of numbers as {"label": "Objects", "number":
@@ -378,20 +387,29 @@
 {% macro _label(label, note) %}{{ label }}{% if note %} <span class="muted">{{ note }}</span>{% endif %}{% endmacro %}
 
 {# A field to type in, with its label. type: text if not given, number, search, color…; the rest
-   are the field's own (min, max and step for a number). #}
-{% macro input(name, label, value=none, type=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false) -%}
+   are the field's own (min, max and step for a number). `suggestions`: values offered as it's
+   typed, as (value, label) pairs, e.g. servers by name; their list's id is the field's `id`
+   (from the name if not given) and "-suggestions". #}
+{% macro input(name, label, value=none, type=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false, autocomplete=none, id=none, suggestions=none) -%}
+  {%- set list = (id or "input-" ~ name) ~ "-suggestions" if suggestions -%}
   <label class="field">
     {{ _label(label, note) }}
-    <input{{ {"type": type, "name": name, "value": value, "placeholder": placeholder, "min": min, "max": max, "step": step,
-              "maxlength": maxlength, "required": "required" if required else none} | xmlattr }}>
+    <input{{ {"type": type, "id": id, "name": name, "value": value, "placeholder": placeholder, "min": min, "max": max, "step": step,
+              "maxlength": maxlength, "required": "required" if required else none, "autocomplete": autocomplete, "list": list} | xmlattr }}>
+    {%- if suggestions %}
+    <datalist id="{{ list }}">{% for value, label in suggestions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</datalist>
+    {%- endif %}
   </label>
 {%- endmacro %}
 
+{# A value the form sends that nobody types (e.g. which item it's about). #}
+{% macro hidden(name, value) %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endmacro %}
+
 {# A field for a few lines of text, with its label. #}
-{% macro textarea(name, label, value=none, note=none, rows=3, maxlength=none) -%}
+{% macro textarea(name, label, value=none, note=none, placeholder=none, rows=3, maxlength=none) -%}
   <label class="field">
     {{ _label(label, note) }}
-    <textarea{{ {"name": name, "rows": rows, "maxlength": maxlength} | xmlattr }}>{{ value if value is not none }}</textarea>
+    <textarea{{ {"name": name, "rows": rows, "placeholder": placeholder, "maxlength": maxlength} | xmlattr }}>{{ value if value is not none }}</textarea>
   </label>
 {%- endmacro %}
 
@@ -500,10 +518,10 @@
 {% set _types = {
   "heading": heading, "section": section, "divider": divider, "text": text, "columns": columns,
   "stack": stack, "grid": grid, "center": center, "region": region, "row": row, "card": card,
-  "button": button, "actions": actions, "badge": badge, "time": time, "icon": icon, "table": table,
-  "gallery": gallery, "tiles": tiles, "image": image, "progress": progress, "stat": stat,
-  "stats": stats, "item": item, "bars": bars, "area": area, "empty": empty,
-  "pagination": pagination, "form": form, "fields": fields, "input": input, "textarea": textarea,
-  "select": select, "segmented": segmented, "range": range, "checkbox": checkbox,
-  "dropzone": dropzone, "dialog": dialog, "menu": menu,
+  "button": button, "actions": actions, "badge": badge, "time": time, "icon": icon, "link": link,
+  "code": code, "table": table, "gallery": gallery, "tiles": tiles, "image": image,
+  "progress": progress, "stat": stat, "stats": stats, "item": item, "bars": bars, "area": area,
+  "empty": empty, "pagination": pagination, "form": form, "fields": fields, "input": input,
+  "hidden": hidden, "textarea": textarea, "select": select, "segmented": segmented, "range": range,
+  "checkbox": checkbox, "dropzone": dropzone, "dialog": dialog, "menu": menu,
 } %}
