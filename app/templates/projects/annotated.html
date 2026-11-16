@@ -4,7 +4,7 @@
 {# An image with its annotations drawn on it. The image and its annotations share one coordinate
    system, the original image's pixels; `src` (the image or its thumbnail) is stretched over
    that same area, so annotations line up on either. When a filter asked for objects
-   (image.matches), the others are drawn faint. `label`: what the image is, for whoever can't see
+   (image.matches; none or missing: it didn't), the others are drawn faint. `label`: what the image is, for whoever can't see
    it (e.g. its file name). `cover`: the image covers a box of another shape (e.g. a square), cut
    at its sides, instead of fitting inside it. #}
 {% macro annotated(image, classes, src, label="", cover=false) %}
@@ -13,7 +13,7 @@
     {% set keypoint_r = ([image.width, image.height] | max / 80) | round(1) %}
     {% for a in image.annotations %}
       {% set color = (classes | selectattr("id", "equalto", a.class_id) | first).color %}
-      {% if image.matches is defined and loop.index0 not in image.matches %}<g opacity="0.25">{% else %}<g>{% endif %}
+      {% if image.matches is defined and image.matches is not none and loop.index0 not in image.matches %}<g opacity="0.25">{% else %}<g>{% endif %}
       {# An object with a polygon shows the polygon; its box would only repeat the outline. #}
       {% if a.segments %}
         <polygon points="{% for x, y in a.segments %}{{ x }},{{ y }} {% endfor %}"
