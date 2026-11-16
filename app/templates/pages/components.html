@@ -80,6 +80,7 @@
        [ui.button("Edit", href="/workflows/grounding-dino/edit", variant="secondary"), ui.button("Use", href="/studio/grounding-dino")]],
       [ui.text(["Grounding DINO → EdgeTAM", ui.badge("Built in")], note="Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one."), ui.text("grounding_dino tiny, edgetam edgetam", muted=true),
        [ui.button("Edit", href="/workflows/grounding-dino-edgetam/edit", variant="secondary"), ui.button("Use", href="/studio/grounding-dino-edgetam")]],
+      [[ui.text("my-detector"), ui.text("Doesn't load: no node type named 'detect'", error=true)], "", ui.button("Edit", variant="secondary")],
     ]) }}
   {% endcall %}
 

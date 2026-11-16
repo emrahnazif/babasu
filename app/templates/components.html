@@ -15,7 +15,8 @@
 {% set _icon = icon %}  {# the app's icon(), the bare SVG; `icon` here is the component, or a macro's argument #}
 
 {# Anything a component holds: a component as JSON, a list of them (spaced like words, so buttons
-   in a line don't touch), or text (escaped, unless it's HTML a macro made). #}
+   in a line don't touch; parts not given, e.g. `x if y` when y is false, are left out), or text
+   (escaped, unless it's HTML a macro made). #}
 {% macro render(content) -%}
   {%- if content is string -%}
     {{ content }}
@@ -24,7 +25,7 @@
   {%- elif content is mapping -%}
     {{ _types[content.type](**dict(content.items() | rejectattr("0", "equalto", "type"))) }}
   {%- elif content is iterable -%}
-    {%- for part in content %}{{ render(part) }}{{ " " if not loop.last else "" }}{% endfor -%}
+    {%- for part in content if part is number or part %}{{ render(part) }}{{ " " if not loop.last else "" }}{% endfor -%}
   {%- endif -%}
 {%- endmacro %}
 
@@ -51,9 +52,11 @@
 {% macro divider() %}<hr>{% endmacro %}
 
 {# A paragraph; `note` is a quieter line under it (a name, then what it is). Either can hold
-   components too, in the line: ["SAM 3", {"type": "badge", "text": "Built in"}]. #}
-{% macro text(text, note=none, muted=false) -%}
-  <p{% if muted %} class="muted"{% endif %}>{{ render(text) }}{% if note %}<br><span class="muted">{{ render(note) }}</span>{% endif %}</p>
+   components too, in the line: ["SAM 3", {"type": "badge", "text": "Built in"}]. `muted`: the
+   paragraph is quieter too; `error`: it reports a failure. #}
+{% macro text(text, note=none, muted=false, error=false) -%}
+  <p{{ {"class": "error" if error else "muted" if muted} | xmlattr }}>{{ render(text) }}
+    {%- if note %}<br><span class="muted">{{ render(note) }}</span>{% endif %}</p>
 {%- endmacro %}
 
 {# --columns / --min for a grid that has them (columns, gallery), when given. #}
@@ -90,6 +93,15 @@
    area. #}
 {% macro center(children=none) -%}
   <div class="center">
+    {{ caller() if caller else render(children) }}
+  </div>
+{%- endmacro %}
+
+{# A part of the page reloaded from the server when something happens elsewhere
+   (js/refresh-region.js): `on`, the events that reload it, e.g. "job-ended"; `when`, only when the
+   event's detail matches, e.g. "projectId=3". Its `id` finds it in the fresh page. #}
+{% macro region(id, on, when=none, children=none) -%}
+  <div{{ {"id": id, "data-refresh-on": on, "data-refresh-if": when} | xmlattr }}>
     {{ caller() if caller else render(children) }}
   </div>
 {%- endmacro %}
@@ -133,8 +145,12 @@
 {# A button; with `href`, a link that looks like one. variant: secondary, destructive, or icon (only
    its icon shows; the label is its tooltip). `icon`: an icon's name (static/icons), before the
    label. What it does, else nothing yet: `popover`, open the dialog or menu with that id;
-   `close`, close it; `submit`, send its form. #}
-{% macro button(label, href=none, variant=none, icon=none, popover=none, close=none, submit=false) -%}
+   `close`, close it; `submit`, send its form; `post`, send a form of its own to that address
+   (`background`: without leaving the page, as form() does), e.g. Undo. #}
+{% macro button(label, href=none, variant=none, icon=none, popover=none, close=none, submit=false, post=none, background=false) -%}
+  {%- if post -%}
+    {{ form(post, background=background, children=button(label, variant=variant, icon=icon, submit=true)) }}
+  {%- else -%}
   {%- set only_icon = variant == "icon" -%}
   {%- set class = "icon-button" if only_icon else "button" ~ (" " ~ variant if variant else "") -%}
   {%- set inside %}{% if icon %}{{ _icon(icon) }}{% endif %}{% if not only_icon %}{{ label }}{% endif %}{% endset -%}
@@ -144,6 +160,7 @@
   {%- else -%}
     <button class="{{ class }}" type="{{ 'submit' if submit else 'button' }}"
       {{- {"popovertarget": popover or close, "popovertargetaction": "hide" if close else none} | xmlattr }}{{ named }}>{{ inside }}</button>
+  {%- endif -%}
   {%- endif -%}
 {%- endmacro %}
 
@@ -339,9 +356,10 @@
 
 {# A form: its fields, and its buttons (one with submit=true sends it), in what it holds; it posts
    to `action` (this page's address if not given). `error`: why the last try didn't go through, at
-   its top. #}
-{% macro form(action=none, method="post", error=none, children=none) -%}
-  <form{{ {"method": method, "action": action} | xmlattr }}>
+   its top. `background`: sent without leaving the page (e.g. to start a job), a failure said in a
+   toast (js/background-form.js). #}
+{% macro form(action=none, method="post", error=none, background=false, children=none) -%}
+  <form{{ {"method": method, "action": action} | xmlattr }}{% if background %} data-background-form{% endif %}>
     {%- if error %}
     <p class="error">{{ error }}</p>
     {%- endif %}
@@ -481,10 +499,11 @@
 {# The macro each JSON type draws with. #}
 {% set _types = {
   "heading": heading, "section": section, "divider": divider, "text": text, "columns": columns,
-  "stack": stack, "grid": grid, "center": center, "row": row, "card": card, "button": button, "actions": actions,
-  "badge": badge, "time": time, "icon": icon, "table": table, "gallery": gallery, "tiles": tiles,
-  "image": image, "progress": progress, "stat": stat, "stats": stats, "item": item, "bars": bars,
-  "area": area, "empty": empty, "pagination": pagination, "form": form, "fields": fields, "input": input,
-  "textarea": textarea, "select": select, "segmented": segmented, "range": range, "checkbox": checkbox,
+  "stack": stack, "grid": grid, "center": center, "region": region, "row": row, "card": card,
+  "button": button, "actions": actions, "badge": badge, "time": time, "icon": icon, "table": table,
+  "gallery": gallery, "tiles": tiles, "image": image, "progress": progress, "stat": stat,
+  "stats": stats, "item": item, "bars": bars, "area": area, "empty": empty,
+  "pagination": pagination, "form": form, "fields": fields, "input": input, "textarea": textarea,
+  "select": select, "segmented": segmented, "range": range, "checkbox": checkbox,
   "dropzone": dropzone, "dialog": dialog, "menu": menu,
 } %}
