@@ -386,15 +386,16 @@
 {# A field's label, its `note` (a hint) after it, quieter. #}
 {% macro _label(label, note) %}{{ label }}{% if note %} <span class="muted">{{ note }}</span>{% endif %}{% endmacro %}
 
-{# A field to type in, with its label. type: text if not given, number, search, color…; the rest
-   are the field's own (min, max and step for a number). `suggestions`: values offered as it's
+{# A field to type in, with its label. `kind`: text if not given, number, password, search, color…
+   (HTML's type, which JSON can't name here: "type" is the component's); the rest are the field's
+   own (min, max and step for a number). `suggestions`: values offered as it's
    typed, as (value, label) pairs, e.g. servers by name; their list's id is the field's `id`
    (from the name if not given) and "-suggestions". #}
-{% macro input(name, label, value=none, type=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false, autocomplete=none, id=none, suggestions=none) -%}
+{% macro input(name, label, value=none, kind=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false, autocomplete=none, id=none, suggestions=none) -%}
   {%- set list = (id or "input-" ~ name) ~ "-suggestions" if suggestions -%}
   <label class="field">
     {{ _label(label, note) }}
-    <input{{ {"type": type, "id": id, "name": name, "value": value, "placeholder": placeholder, "min": min, "max": max, "step": step,
+    <input{{ {"type": kind, "id": id, "name": name, "value": value, "placeholder": placeholder, "min": min, "max": max, "step": step,
               "maxlength": maxlength, "required": "required" if required else none, "autocomplete": autocomplete, "list": list} | xmlattr }}>
     {%- if suggestions %}
     <datalist id="{{ list }}">{% for value, label in suggestions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</datalist>
