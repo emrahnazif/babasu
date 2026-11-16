@@ -1,23 +1,17 @@
 {# The views the agent wrote, newest change first. #}
 {% extends "base.html" %}
+{% import "components.html" as ui %}
 {% set crumbs = [("Views", None)] %}
 {% block content %}
-  <p class="muted">Pages agents wrote.</p>
+  {{ ui.text("Pages agents wrote.", muted=true) }}
   {% if views %}
-    <table>
-      <thead><tr><th>View</th><th>Kind</th><th>Versions</th><th>Changed</th></tr></thead>
-      <tbody>
-        {% for v in views %}
-          <tr>
-            <td><a href="{{ v.url }}">{{ v.title }}</a></td>
-            <td>{{ v.kind | capitalize }}{% if v.workflow %} · {{ v.workflow }}{% endif %}</td>
-            <td>{{ v.version }}</td>
-            <td class="muted">{{ v.updated_at | ago }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% set table = namespace(rows=[]) %}
+    {% for v in views %}
+      {% set table.rows = table.rows + [[ui.link(v.title, "/views/" ~ v.id), [v.kind | capitalize, "· " ~ v.workflow if v.workflow],
+                                         v.version, ui.time(v.updated_at)]] %}
+    {% endfor %}
+    {{ ui.table(columns=["View", "Kind", {"label": "Versions", "number": true}, "Changed"], rows=table.rows) }}
   {% else %}
-    <p class="muted">No views yet. Ask the agent to build one.</p>
+    {{ ui.empty("No views yet", "Ask the agent to build one.", icon="document-text") }}
   {% endif %}
 {% endblock %}

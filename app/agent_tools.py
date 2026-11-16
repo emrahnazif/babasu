@@ -426,7 +426,7 @@ def search(conn: sqlite3.Connection, args: SearchArgs) -> dict:
         "image_count": found["image_count"],
         "workflows": [{"id": w["id"], "name": w["name"], "page": f"/workflows/{w['id']}/edit"}
                       for w in runs.workflows() if text in w["id"] or text in (w["name"] or "").lower()],
-        "views": [{"id": v["id"], "title": v["title"], "page": v["url"]}
+        "views": [{"id": v["id"], "title": v["title"], "page": f"/views/{v['id']}"}
                   for v in views.list_all() if text in v["id"] or text in v["title"].lower()],
     }
 
@@ -519,7 +519,7 @@ def _view(view_id: str, version: int | None = None) -> dict:
 
 
 def _opened(view: dict) -> dict:
-    return {"open": view["url"], "id": view["id"], "version": view["version"]}
+    return {"open": f"/views/{view['id']}", "id": view["id"], "version": view["version"]}
 
 
 @tool(

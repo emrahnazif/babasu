@@ -68,10 +68,10 @@ def _when(path: Path) -> str:
 
 
 def _entry(view_id: str, folder: Path, versions: list[int]) -> dict:
-    """A view as lists show it: its own fields (view.json), its newest version, when that was
-    written, its page."""
+    """A view as lists show it: its own fields (view.json), its newest version and when that was
+    written."""
     return {"id": view_id} | json.loads((folder / "view.json").read_text()) | {
-        "version": versions[-1], "updated_at": _when(folder / f"{versions[-1]}.html"), "url": f"/views/{view_id}"}
+        "version": versions[-1], "updated_at": _when(folder / f"{versions[-1]}.html")}
 
 
 def studio_for(workflow_id: str) -> dict | None:
@@ -92,7 +92,7 @@ def studio(workflow_id: str, name: str) -> dict:
 
 
 def list_all() -> list[dict]:
-    """Every view: id, title, kind, workflow, its newest version and its page; newest change first."""
+    """Every view: id, title, kind, workflow, its newest version and when it was written; newest change first."""
     if not config.VIEWS_DIR.is_dir():
         return []
     found = [(f, _versions(f)) for f in config.VIEWS_DIR.iterdir()]

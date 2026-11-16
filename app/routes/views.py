@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from app import settings, views
+from app.routes import Answer
 from app.templating import templates
 
 router = APIRouter()
@@ -28,6 +29,27 @@ class Restore(BaseModel):
     """Which version to make the newest again."""
 
     version: int = Field(description="A version number, from GET /api/views/{view_id}/versions.")
+
+
+class ViewListed(Answer):
+    id: str = Field(description="The view's id; its page is /views/{id}.")
+    title: str
+    kind: views.Kind = Field(description="report: kept as it was when written; studio: a live page for one workflow.")
+    workflow: str | None = Field(description="A studio page's workflow (GET /api/workflows); null for a report.")
+    version: int = Field(description="Its newest version.")
+    updated_at: str = Field(description="When its newest version was written, UTC (ISO 8601).")
+
+
+class ViewDetail(ViewListed):
+    shown: int = Field(description="The version this template is (the newest unless ?version= asked for another).")
+    template: str = Field(description="The page: a Jinja template.")
+    answers: dict | None = Field(description="A report: the API answers it recorded when written, by path; null otherwise.")
+
+
+class ViewVersion(Answer):
+    version: int
+    written_at: str = Field(description="UTC (ISO 8601).")
+    size: int = Field(description="Its template's size, in bytes.")
 
 
 def _found(found):
@@ -62,33 +84,33 @@ def view_page(request: Request, view_id: str, version: int | None = None):
 # --- API ---
 
 
-@router.get("/api/views")
+@router.get("/api/views", response_model=list[ViewListed])
 def api_views() -> list[dict]:
-    """Every view: id, title, kind, workflow, newest version, page."""
+    """Every view, newest change first: id, title, kind, workflow, newest version and when it was written."""
     return views.list_all()
 
 
-@router.get("/api/views/{view_id}")
+@router.get("/api/views/{view_id}", response_model=ViewDetail)
 def api_view(view_id: str, version: Annotated[int | None, Query(description="An older version; empty for the newest.")] = None) -> dict:
     """The view with its template (the newest version, or ?version=), and for a report the API
     answers it recorded."""
     return _found(views.get(view_id, version))
 
 
-@router.put("/api/views/{view_id}")
+@router.put("/api/views/{view_id}", response_model=ViewDetail)
 def api_write_view(view_id: str, write: ViewWrite) -> dict:
     """Adds a version (making the view if it's new). 422 if the template doesn't render, with the
     line and why."""
     return views.save(view_id, write.template, write.title, write.kind, write.workflow)
 
 
-@router.get("/api/views/{view_id}/versions")
+@router.get("/api/views/{view_id}/versions", response_model=list[ViewVersion])
 def api_view_versions(view_id: str) -> list[dict]:
     """The view's versions, newest first."""
     return _found(views.history(view_id))
 
 
-@router.post("/api/views/{view_id}/restore")
+@router.post("/api/views/{view_id}/restore", response_model=ViewDetail)
 def api_restore_view(view_id: str, restore: Restore) -> dict:
     """Makes an older version the newest again (as a new version)."""
     return _found(views.restore(view_id, restore.version))
