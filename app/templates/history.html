@@ -1,35 +1,26 @@
 {# What was done to the workspace in the last 30 days, newest first: each request, job and agent
    turn with what it changed, and Undo (undoing an undo does it again). #}
 {% extends "base.html" %}
+{% import "components.html" as ui %}
 
 {% block content %}
-  <p class="muted">What was done in the last {{ days }} days, by you, the agent and jobs. Undo the latest change to something first; older entries are forgotten.</p>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {{ ui.text("What was done in the last " ~ days ~ " days, by you, the agent and jobs. Undo the latest change to something first; older entries are forgotten.", muted=true) }}
+  {% if error %}{{ ui.text(error, error=true) }}{% endif %}
   {% if done %}
-    <table>
-      <thead><tr><th>When</th><th>What</th><th>Changed</th><th></th></tr></thead>
-      <tbody>
-        {% for a in done %}
-          <tr>
-            <td class="muted" title="{{ a.at }}">{{ a.at | ago }}</td>
-            <td>{% if a.source == "agent" %}Agent: {% endif %}{{ a.label }}</td>
-            <td class="muted">{{ a.changed }}</td>
-            <td>
-              {% if a.undone_by %}
-                <span class="badge plain">Undone</span>
-              {% elif a.changed_since %}
-                <span class="muted" title="A later change touched the same things: undo that first.">Changed since</span>
-              {% else %}
-                <form method="post" action="/history/{{ a.id }}/undo">
-                  <button class="button secondary" type="submit">{{ "Redo" if a.kind == "undo" else "Undo" }}</button>
-                </form>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% set table = namespace(rows=[]) %}
+    {% for a in done %}
+      {% if a.undone_by %}
+        {% set undo = ui.badge("Undone") %}
+      {% elif a.changed_since %}
+        {% set undo = ui.text("Changed since", muted=true) %}
+      {% else %}
+        {% set undo = ui.button("Redo" if a.kind == "undo" else "Undo", post="/history/" ~ a.id ~ "/undo", variant="secondary") %}
+      {% endif %}
+      {% set what = ["Agent:" if a.source == "agent", a.kind | capitalize ~ ":" if a.kind != "do", a.label] %}
+      {% set table.rows = table.rows + [[ui.time(a.at), ui.text(what, note=a.changed), undo]] %}
+    {% endfor %}
+    {{ ui.table(columns=["When", "What", ""], rows=table.rows) }}
   {% else %}
-    <p class="muted">Nothing yet.</p>
+    {{ ui.empty("Nothing done yet") }}
   {% endif %}
 {% endblock %}

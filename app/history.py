@@ -65,7 +65,6 @@ _NAMES = {"project": ("project", "projects"), "project_media": ("image in a proj
           "view_media": ("image of a report", "images of reports"), "file": ("file", "files")}
 _DONE = {"insert": "added", "update": "changed", "delete": "deleted", "trash": "moved to the trash",
          "untrash": "back from the trash"}
-_KIND_LABEL = {"do": "", "undo": "Undo: ", "redo": "Redo: "}
 
 # The undo that undid action `a`, unless that undo was undone in turn.
 _UNDONE_BY = """(SELECT u.id FROM action u WHERE u.undoes = a.id
@@ -91,7 +90,7 @@ def actions(conn: sqlite3.Connection, limit: int = 100, action_id: str | None = 
     found = []
     for r in rows:
         kind = "do" if r["depth"] == 0 else "undo" if r["depth"] % 2 else "redo"
-        found.append({"id": r["id"], "source": r["source"], "kind": kind, "label": _KIND_LABEL[kind] + r["label"],
+        found.append({"id": r["id"], "source": r["source"], "kind": kind, "label": r["label"],
                       "at": r["at"], "changed": _changed(conn, r["id"]), "undoes": r["undoes"],
                       "undone_by": r["undone_by"], "changed_since": bool(r["changed_since"])})
     return found

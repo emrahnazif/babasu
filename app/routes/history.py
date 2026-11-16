@@ -2,7 +2,7 @@
 the agent share, and undoing it."""
 
 import sqlite3
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -19,9 +19,10 @@ DB = Annotated[sqlite3.Connection, Depends(db.get)]
 
 class ActionOut(Answer):
     id: str = Field(description="The action's id (POST /api/history/{id}/undo).")
-    source: str = Field(description="What did it: request, job, agent or app.")
-    kind: str = Field(description="do, undo or redo.")
-    label: str = Field(description="What it was: the request, the job, the person's message to the agent.")
+    source: Literal["request", "job", "agent", "app"] = Field(description="What did it.")
+    kind: Literal["do", "undo", "redo"] = Field(description="redo: an undo undone, which does the action again.")
+    label: str = Field(description="What it was: the request, the job, the person's message to the agent; an undo "
+                       "or redo: the label of the action it undid.")
     at: str = Field(description="When, UTC (ISO 8601).")
     changed: str = Field(description="What it changed, in words.")
     undoes: str | None = Field(description="An undo: the action it undid.")
