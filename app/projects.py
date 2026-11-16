@@ -113,7 +113,8 @@ class FrozenError(Exception):
 
 
 def _project(row: sqlite3.Row) -> dict:
-    classes = [c for c in json.loads(row["classes"]) if c["active"]]
+    """A project row with its classes, without those removed (and so without their `active`)."""
+    classes = [{k: v for k, v in c.items() if k != "active"} for c in json.loads(row["classes"]) if c["active"]]
     return dict(row) | {"classes": classes}
 
 
@@ -298,11 +299,10 @@ def _image(row: sqlite3.Row, class_ids: set[int], matched: set[int] | None = Non
     """An image row for templates and the API: its annotations (of active classes), and, when
     the filter asks for objects, `matches`: the positions in that list of the objects it found."""
     kept = [(i, a) for i, a in enumerate(json.loads(row["annotations"])) if a["class_id"] in class_ids]
-    image = dict(row) | {
+    image = {k: row[k] for k in ("media_id", "filename", "split", "width", "height")} | {
         "annotations": [a for _, a in kept],
         "url": media.url(row["sha256"], row["ext"]),
         "thumb_url": media.thumb_url(row["sha256"]),
-        "aspect": round(row["width"] / row["height"], 3),  # width / height
     }
     if matched is not None:
         image["matches"] = [n for n, (i, _) in enumerate(kept) if i in matched]

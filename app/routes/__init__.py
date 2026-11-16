@@ -44,7 +44,6 @@ class ClassOut(Answer):
     name: str = Field(description="Its name, e.g. car.")
     color: str = Field(description="The colour it's drawn in, #rrggbb.")
     prompt: str = Field(description=PROMPT)
-    active: bool = Field(description="Always true here (removed classes are left out).")
 
 
 class ToDownload(Answer):
