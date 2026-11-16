@@ -128,6 +128,13 @@ def filesize(n: int) -> str:
     return f"{n:.{0 if n >= 100 else 1 if n >= 10 else 2}f} {unit}"
 
 
+def counted(job: dict) -> str:
+    """How far a job is, for people: "1.20 GB / 3.45 GB" when it counts bytes, else "120 / 5,084"."""
+    if job["unit"] == "bytes":
+        return f"{filesize(job['done'])} / {filesize(job['total'])}"
+    return f"{number(job['done'])} / {number(job['total'])}"
+
+
 def period(timestamp: str) -> str:
     """Which stretch of time a stored UTC time falls in, for grouping lists: Today, Yesterday,
     Previous 7 days, Previous 30 days, Older (by local calendar days)."""
@@ -154,6 +161,7 @@ templates.env.filters["options"] = options
 templates.env.filters["ago"] = ago
 templates.env.filters["period"] = period
 templates.env.filters["filesize"] = filesize
+templates.env.filters["counted"] = counted
 templates.env.filters["number"] = number
 templates.env.filters["plural"] = plural
 templates.env.globals["app_name"] = config.APP_NAME

@@ -6,10 +6,7 @@
     {# A running job's progress: a fraction (none while the total is unknown), and in words. #}
     {% set fraction = job.done / job.total if job.status == "running" and job.total else none %}
     {% set counted %}
-      {%- if fraction is not none %}
-        {%- if job.unit == "bytes" %}{{ job.done | filesize }} / {{ job.total | filesize }}
-        {%- else %}{{ "{:,}".format(job.done) }} / {{ "{:,}".format(job.total) }}{% endif %} · {{ (100 * fraction) | round | int }}%
-      {%- endif %}
+      {%- if fraction is not none %}{{ job | counted }} · {{ (100 * fraction) | round | int }}%{% endif %}
     {%- endset %}
     <div class="job job--{{ job.status }}" data-id="{{ job.id }}" data-status="{{ job.status }}"
          data-title="{{ job.title }}" data-summary="{{ job.summary }}" data-project-id="{{ job.project_id or '' }}"
