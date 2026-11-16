@@ -37,9 +37,10 @@
   {%- if description %}{{ text(description, muted=true) }}{% endif %}
 {%- endmacro %}
 
-{# A part of a page: its title, a line under it, then what it holds. #}
-{% macro section(title=none, description=none, children=none) -%}
-  <section>
+{# A part of a page: its title, a line under it, then what it holds. `id`: for links to it
+   (/page#id). #}
+{% macro section(title=none, description=none, id=none, children=none) -%}
+  <section{{ {"id": id} | xmlattr }}>
     {%- if title %}
     <h2>{{ title }}</h2>
     {%- endif %}
@@ -193,6 +194,11 @@
 {# A link in a line of text: ["An agent runs on a model:", {"type": "link", "label": "add one",
    "href": "/settings/models"}]. #}
 {% macro link(label, href) %}<a href="{{ href }}">{{ label }}</a>{% endmacro %}
+
+{# A list of points, each text or components. #}
+{% macro list(items) -%}
+  <ul>{% for each in items if each is number or each %}<li>{{ render(each) }}</li>{% endfor %}</ul>
+{%- endmacro %}
 
 {# Code or a path, in a line of text; `block`: a box of its own, its lines kept (a log). #}
 {% macro code(text, block=false) -%}
@@ -391,20 +397,21 @@
    own (min, max and step for a number). `suggestions`: values offered as it's
    typed, as (value, label) pairs, e.g. servers by name; their list's id is the field's `id`
    (from the name if not given) and "-suggestions". #}
-{% macro input(name, label, value=none, kind=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false, autocomplete=none, id=none, suggestions=none) -%}
-  {%- set list = (id or "input-" ~ name) ~ "-suggestions" if suggestions -%}
+{% macro input(name, label, value=none, kind=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false, autofocus=false, autocomplete=none, id=none, suggestions=none) -%}
+  {%- set suggested = (id or "input-" ~ name) ~ "-suggestions" if suggestions -%}
   <label class="field">
     {{ _label(label, note) }}
     <input{{ {"type": kind, "id": id, "name": name, "value": value, "placeholder": placeholder, "min": min, "max": max, "step": step,
-              "maxlength": maxlength, "required": "required" if required else none, "autocomplete": autocomplete, "list": list} | xmlattr }}>
+              "maxlength": maxlength, "required": "required" if required else none, "autofocus": "autofocus" if autofocus else none,
+              "autocomplete": autocomplete, "list": suggested} | xmlattr }}>
     {%- if suggestions %}
-    <datalist id="{{ list }}">{% for value, label in suggestions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</datalist>
+    <datalist id="{{ suggested }}">{% for value, label in suggestions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</datalist>
     {%- endif %}
   </label>
 {%- endmacro %}
 
 {# A value the form sends that nobody types (e.g. which item it's about). #}
-{% macro hidden(name, value) %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endmacro %}
+{% macro hidden(name, value=none) %}<input type="hidden"{{ {"name": name, "value": value} | xmlattr }}>{% endmacro %}
 
 {# A field for a few lines of text, with its label. #}
 {% macro textarea(name, label, value=none, note=none, placeholder=none, rows=3, maxlength=none) -%}
@@ -520,7 +527,7 @@
   "heading": heading, "section": section, "divider": divider, "text": text, "columns": columns,
   "stack": stack, "grid": grid, "center": center, "region": region, "row": row, "card": card,
   "button": button, "actions": actions, "badge": badge, "time": time, "icon": icon, "link": link,
-  "code": code, "table": table, "gallery": gallery, "tiles": tiles, "image": image,
+  "code": code, "list": list, "table": table, "gallery": gallery, "tiles": tiles, "image": image,
   "progress": progress, "stat": stat, "stats": stats, "item": item, "bars": bars, "area": area,
   "empty": empty, "pagination": pagination, "form": form, "fields": fields, "input": input,
   "hidden": hidden, "textarea": textarea, "select": select, "segmented": segmented, "range": range,

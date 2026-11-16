@@ -321,15 +321,12 @@
   {% call ui.section("Dialogs: one that asks before deleting, one with a form") %}
     {{ ui.actions([ui.button("Delete project…", variant="destructive", popover="demo-delete"),
                 ui.button("Add images", variant="secondary", icon="plus", popover="demo-add")], variant="start") }}
-    {% call ui.dialog("demo-delete", "Delete person merged?", actions=ui.button("Delete", variant="destructive", close="demo-delete"), alert=true) %}
-      <p>This removes:</p>
-      <ul>
-        <li>5,084 images and 296 annotations</li>
-        <li>its runs (auto-annotate, Try and workflow runs on its images) and their results</li>
-        <li>the image files no other project, run or report uses, from the workspace</li>
-      </ul>
-      <p class="muted">History can undo it for 30 days.</p>
-    {% endcall %}
+    {{ ui.dialog("demo-delete", "Delete person merged?", actions=ui.button("Delete", variant="destructive", close="demo-delete"), alert=true, children=[
+      ui.text("This removes:"),
+      ui.list(["5,084 images and 296 annotations", "its runs (auto-annotate, Try and workflow runs on its images) and their results",
+               "the image files no other project, run or report uses, from the workspace"]),
+      ui.text("History can undo it for 30 days.", muted=true),
+    ]) }}
     {{ ui.dialog("demo-add", "Add images", description=image_formats ~ " images. A folder brings its subfolders too. Images already in the project are skipped.",
                  actions=ui.button("Import", close="demo-add"), children=ui.fields([
       ui.dropzone("demo-add-drop", "paths", drop, accept=image_suffixes),
