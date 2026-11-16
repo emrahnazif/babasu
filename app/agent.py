@@ -54,8 +54,8 @@ class Busy(Exception):
     """A message sent while the conversation's agent is still answering the last one."""
 
 
-# Events that follow one of their kind (and index) are merged into it: text joined (by this key);
-# progress replaced (only the latest counts).
+# Events that follow one of their kind are merged into it: text joined (by this key); progress
+# replaced (only the latest counts).
 _MERGED = {"text": "delta", "output": "text", "progress": None}
 
 
@@ -73,8 +73,7 @@ class Turn:
         with _lock:
             if event is None:
                 self.ended = True
-            elif (event["type"] in _MERGED and self.events and self.events[-1]["type"] == event["type"]
-                  and self.events[-1].get("index") == event.get("index")):
+            elif event["type"] in _MERGED and self.events and self.events[-1]["type"] == event["type"]:
                 # Kept as one event, so a page that follows later replays it at once.
                 key = _MERGED[event["type"]]
                 self.events[-1] = event | ({key: self.events[-1][key] + event[key]} if key else {})
