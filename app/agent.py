@@ -68,9 +68,9 @@ class Busy(Exception):
     """A message sent while the conversation's agent is still answering the last one."""
 
 
-# Events that follow one of their kind are merged into it: text joined (by this key); progress
-# replaced (only the latest counts).
-_MERGED = {"text": "delta", "output": "text", "progress": None}
+# Events that follow one of their kind (of the same tool call, for a call's) are merged into it:
+# text joined (by this key); progress replaced (only the latest counts).
+_MERGED = {"text": "delta", "call": "delta", "output": "text", "progress": None}
 
 
 class Turn:
@@ -87,7 +87,8 @@ class Turn:
         with _lock:
             if event is None:
                 self.ended = True
-            elif event["type"] in _MERGED and self.events and self.events[-1]["type"] == event["type"]:
+            elif (event["type"] in _MERGED and self.events and self.events[-1]["type"] == event["type"]
+                  and self.events[-1].get("id") == event.get("id")):
                 # Kept as one event, so a page that follows later replays it at once.
                 key = _MERGED[event["type"]]
                 self.events[-1] = event | ({key: self.events[-1][key] + event[key]} if key else {})
@@ -401,6 +402,7 @@ def run_turn(
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
+      {"type": "call", "id", "name", "delta": "..."}        a tool call's arguments as the model writes them
       {"type": "output", "text": "..."}                     what the running tool prints (run_code)
       {"type": "progress", "done": 3, "total": 10}          how far the running tool is
       {"type": "open", "url": "/projects/3?where=car"}      a page to show once the reply is done
@@ -484,6 +486,9 @@ def run_turn(
                                 if part.function:
                                     call["name"] += part.function.name or ""
                                     call["arguments"] += part.function.arguments or ""
+                                    if part.function.arguments:  # a page may show it as it's written
+                                        yield {"type": "call", "id": call["id"], "name": call["name"],
+                                               "delta": part.function.arguments}
                 except Exception as exc:  # unreachable server, bad key, unknown model…
                     finish("error", describe(exc, model))
                     yield {"type": "error", "message": describe(exc, model)}

@@ -22,7 +22,9 @@ function changed(yes) {
   unsaved.hidden = !yes;
 }
 
-editor.on("change", () => changed(true));
+let following = null; // the agent's call this builder is drawing: { id, saves } (inert while it lasts)
+
+editor.on("change", () => { if (!following) changed(true); });
 about.forEach((input) => input.addEventListener("input", () => changed(true)));
 
 // Leaving with unsaved changes asks first.
@@ -82,4 +84,44 @@ testButton.addEventListener("click", async () => {
   testButton.disabled = true;
   await editor.test(image);  // the editor shows each node's output, or why it failed
   testButton.disabled = false;
+});
+
+// --- The agent building this workflow ---
+// While the agent writes a workflow document for this builder (call_api: PUT to it, or POST a new
+// one or a check, named as this one; the chat passes what's written so far as "agent:call"), the
+// builder draws it: each node once its id and type are written, each edge once both its nodes are
+// there. It's inert meanwhile. When the reply ends, a save to this workflow that went through
+// reloads the page with it (the chat does); anything else stays here as unsaved changes.
+
+function drawn(body) {
+  const nodes = (body.nodes ?? []).filter((n) => n && n.id && n.type);
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges = (body.edges ?? []).filter((e) => e && ids.has(e.source) && ids.has(e.target) && e.sourceHandle && e.targetHandle);
+  return { ...body, nodes, edges };
+}
+
+const nameInput = [...about].find((input) => input.name === "name");
+
+document.addEventListener("agent:call", ({ detail }) => {
+  const { method, path, body } = detail.arguments;
+  if (detail.name !== "call_api" || !Array.isArray(body?.nodes) || !["PUT", "POST"].includes(method)) return;
+  const to = element.dataset.saveTo;
+  const saves = Boolean(to) && path === to;
+  const mine = saves || (["/api/workflows", "/api/workflows/check"].includes(path) && (!to || body.name === nameInput.value.trim()));
+  if (!mine) return;
+  following = { id: detail.id, saves };
+  element.inert = true;
+  editor.setDocument(drawn(body));
+});
+
+// A save the API refused didn't save: what was drawn stays as unsaved changes.
+document.addEventListener("agent:tool", ({ detail }) => {
+  if (following?.id === detail.id && detail.status === "error") following.saves = false;
+});
+
+document.addEventListener("agent:end", () => {
+  if (!following) return;
+  element.inert = false;
+  if (!following.saves) changed(true);
+  following = null;
 });

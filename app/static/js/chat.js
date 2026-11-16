@@ -117,6 +117,38 @@ if (chat) {
     else messages.removeAttribute("aria-busy");
   }
 
+  // The page hears what the agent does, as it does it, so it can show what's being made (the
+  // workflow builder draws a workflow as it's written); the chat doesn't know which page does:
+  //   "agent:call"  {id, name, arguments}  a tool call as the model writes it: what's complete of
+  //                                        its arguments so far (an object), at most once a frame
+  //   "agent:tool"  {id, name, status}     a tool call running, then done or refused ("error")
+  //   "agent:end"                          the reply is over (before the page reloads)
+  const hear = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
+
+  // The value of the longest complete prefix of JSON text being written (a tool call's arguments),
+  // closed as it stands (a partly written string, number or key is left out); null if none yet.
+  function partialJson(text) {
+    const closers = [];
+    let inString = false, escaped = false, cut = -1, open = [];
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (c === "\\") escaped = true;
+        else if (c === '"') inString = false;
+      } else if (c === '"') inString = true;
+      else if (c === "{" || c === "[") closers.push(c === "{" ? "}" : "]");
+      else if (c === "}" || c === "]") { closers.pop(); cut = i + 1; open = [...closers]; }
+      else if (c === ",") { cut = i; open = [...closers]; }
+    }
+    if (cut < 0) return null;
+    try {
+      return JSON.parse(text.slice(0, cut) + open.reverse().join(""));
+    } catch {
+      return null;
+    }
+  }
+
   // Show a reply as it streams into `turn`: newline-delimited JSON events (app/agent.py,
   // run_turn), from the request that sent the message or one that follows the reply.
   async function follow(request, turn) {
@@ -124,6 +156,18 @@ if (chat) {
     let ended = false;
     let open = null; // a page the agent wants to show; opened when the reply is done
     let changed = false; // the agent changed what pages show: this one reloads when the reply is done
+    const calls = new Map(); // the tool calls being written: id -> {name, text: their arguments so far}
+    const written = new Set(); // the ids written to since the page last heard them
+    // The page hears each call written to, once a frame (a model writes faster than it's worth
+    // showing), and before anything that follows it (its tool running, the end of the reply).
+    function heard() {
+      for (const id of written) {
+        const { name, text } = calls.get(id);
+        const value = partialJson(text);
+        if (value) hear("agent:call", { id, name, arguments: value });
+      }
+      written.clear();
+    }
     try {
       const response = await request;
       // Nothing to follow: the app restarted since this page was made, which stopped the reply.
@@ -141,7 +185,17 @@ if (chat) {
           const event = JSON.parse(line);
           if (event.type === "agent") turn.by(event.agent, event.model);
           else if (event.type === "text") turn.text(event.delta);
-          else if (event.type === "tool") turn.tool(event);
+          else if (event.type === "tool") {
+            heard();
+            turn.tool(event);
+            hear("agent:tool", event);
+          } else if (event.type === "call") {
+            const call = calls.get(event.id) ?? { name: event.name, text: "" };
+            call.text += event.delta;
+            calls.set(event.id, call);
+            if (!written.size) requestAnimationFrame(heard);
+            written.add(event.id);
+          }
           else if (event.type === "output") turn.output(event);
           else if (event.type === "progress") turn.progress(event);
           else if (event.type === "open") open = event.url;
@@ -152,12 +206,16 @@ if (chat) {
         }
       }
       if (!ended) turn.end("error", "The reply ended unexpectedly.");
+      heard();
+      hear("agent:end"); // a page may keep what it drew as unsaved work: it's then not reloaded
       // The chat is saved, so it's there on the new page. A page showing that it has unsaved work
       // ([data-unsaved], e.g. the workflow builder's note) isn't reloaded under the person.
       if (open) location.assign(open);
       else if (changed && !document.querySelector("[data-unsaved]:not([hidden])")) location.reload();
     } catch (error) {
       if (!leaving) turn.end("error", error.message || "The app didn't answer.");
+      heard();
+      hear("agent:end");
     } finally {
       setBusy(false);
     }
