@@ -1,8 +1,8 @@
 # Building a view
 
 A view is a page you write: a Jinja template, shown in the app's main area (the app's header and chat
-stay around it). Write HTML; use the components below where they fit, and your own HTML, CSS and JS
-where they don't.
+stay around it). Build it from the components below, the same ones the app's own pages are made of;
+write your own HTML, CSS and JS only where none fits.
 
 ## Rules
 
@@ -11,11 +11,18 @@ where they don't.
   with the reason, so ask only for what exists.
 - Look at an answer with the `call_api` tool (GET) before using its fields, so the template uses the
   names it really has.
-- The template sees only `api`, `ui` (the components below) and `view` (its id and title). Jinja's usual tags and
-  filters work (`for`, `if`, `set`, `length`, `round`, `sum`, `groupby`, `selectattr`, `map`…).
-- A `{% set %}` inside a `{% for %}` is gone after the loop (Jinja). Shape data with filters
-  instead (`map`, `selectattr`, `sum`, `groupby`, and `count_by` below), or pass the API's list
-  straight to a component that names its keys.
+- The template sees only `api`, `ui` (the components below), `view` (its id and title) and the filters
+  below. Jinja's usual tags and filters work (`for`, `if`, `set`, `length`, `round`, `sum`, `groupby`,
+  `selectattr`, `map`…).
+- A component is called with its arguments: `{{ ui.heading("Cars", "Counted per project") }}`,
+  `{{ ui.table(rows, columns=["Project", {"label": "Cars", "number": true}]) }}`. A container's content is
+  its `children` (a component, text, or a list of them: `children=[ui.text("…"), ui.button("Open",
+  href="/projects/3")]`), or what's between `{% call ui.card("Title") %}` and `{% endcall %}`.
+- A component shows what it's given: to leave a part out, don't give it (an empty text or list counts as
+  not given; 0 is a value). An argument it doesn't take is an error.
+- A `{% set %}` inside a `{% for %}` is gone after the loop (Jinja). To build a list in a loop (a
+  table's rows, a gallery's images), use a namespace: `{% set ns = namespace(rows=[]) %}`, then
+  `{% set ns.rows = ns.rows + [[p.name, p.image_count]] %}` in the loop, and `ns.rows` after it.
 - Output is escaped; mark trusted HTML with `|safe` only when you built it yourself.
 - Your page sits inside `<div class="view">`. Keep your own CSS inside it (`.view .my-chart {…}`)
   so the rest of the app keeps its look. Use the app's colours: `var(--color-text)`,

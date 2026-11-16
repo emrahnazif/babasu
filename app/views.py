@@ -1,5 +1,6 @@
 """Views: pages the agent writes (product.md "The agent"), shown in the main area inside babasu's
-shell. A view is a Jinja template: HTML, our components, and any JS.
+shell. A view is a Jinja template: HTML, the components the app's pages are built from
+(components.html, as `ui`), and any JS.
 
 Each view is a folder in the workspace (config.VIEWS_DIR/<id>): `view.json` (its title) and one
 file per version (`1.html`, `2.html`…). Writing adds a version; restoring an old one adds it again
@@ -15,6 +16,7 @@ view exists (the view_media table), so the media cleanup keeps them.
 """
 
 import html
+import inspect
 import json
 import re
 import traceback
@@ -25,11 +27,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from jinja2 import Template, TemplateError, TemplateSyntaxError
+from jinja2 import FileSystemLoader, Template, TemplateError, TemplateSyntaxError
 from jinja2.sandbox import SandboxedEnvironment
 from markupsafe import Markup
 
-from app import config, db, media, settings, view_components
+from app import config, db, formatting, media, settings
 from app.history import trash  # views.history() is a view's versions
 
 TEMPLATE_NAME = "<template>"  # what Jinja calls a template made from a string, in its tracebacks
@@ -166,23 +168,37 @@ def delete(view_id: str) -> bool:
 # --- The reference the agent reads ---
 
 REFERENCE = config.TEMPLATES_DIR / "views" / "reference.md"
+COMPONENTS = config.TEMPLATES_DIR / "components.html"
+# A macro and the comment right before it, which says what it draws: components.html's convention.
+_MACRO = re.compile(r"\{#((?:(?!#\}).)*)#\}\s*\{%-?\s*macro (\w+)\((.*?)\)\s*-?%\}", re.DOTALL)
 # The API parts a view reads: data, not the app's settings or the chat.
 API_FOR_VIEWS = ("/api/projects", "/api/jobs", "/api/vision", "/api/workflows", "/api/runs")
 
 
+def _words(text: str) -> str:
+    return " ".join(text.split())
+
+
 def reference() -> str:
-    """How to build a view (reference.md), and the API a view can read: each GET endpoint with its
-    query parameters and what it returns, from the app's own OpenAPI description."""
-    lines = []
+    """How to build a view (reference.md); the components, each macro's call and its comment
+    (components.html); the filters (formatting.py) and icons; and the API a view can read: each GET
+    endpoint with its query parameters and what it returns, from the app's own OpenAPI description."""
+    components = [f"- `ui.{name}({_words(args)})`: {_words(about)}"
+                  for about, name, args in _MACRO.findall(COMPONENTS.read_text()) if not name.startswith("_")]
+    filters = []
+    for name, fn in formatting.FILTERS.items():
+        args = list(inspect.signature(fn).parameters)[1:]
+        filters.append(f"- `| {name}{'(' + ', '.join(args) + ')' if args else ''}`: {_words(fn.__doc__)}")
+    api = []
     for path, ops in openapi()["paths"].items():
         get = ops.get("get")
         if not get or not path.startswith(API_FOR_VIEWS):
             continue
         query = [p["name"] for p in get.get("parameters", []) if p["in"] == "query"]
-        about = " ".join((get.get("description") or get["summary"]).split())
-        lines.append(f"- `GET {path}`{' (?' + ', '.join(query) + ')' if query else ''}: {about}")
-    return (REFERENCE.read_text() + "\n" + view_components.reference()
-            + "\n## The API\n\n" + "\n".join(lines) + "\n")
+        api.append(f"- `GET {path}`{' (?' + ', '.join(query) + ')' if query else ''}: {_words(get.get('description') or get['summary'])}")
+    icons = ", ".join(sorted(p.stem for p in formatting.ICONS_DIR.glob("*.svg")))
+    return "\n".join([REFERENCE.read_text(), "## Components (`ui`)", "", *components, "", "## Filters", "", *filters,
+                      "", "## Icons", "", f"The names a component's `icon` takes: {icons}.", "", "## The API", "", *api, ""])
 
 
 # --- Rendering ---
@@ -244,9 +260,9 @@ def page_title(path: str) -> str:
     return html.unescape(found[1]).strip() if found else path
 
 
-_env = SandboxedEnvironment(autoescape=True)
-_env.filters.update(view_components.FILTERS)
-_env.globals["ui"] = view_components.UI
+_env = SandboxedEnvironment(loader=FileSystemLoader(config.TEMPLATES_DIR), autoescape=True)
+_env.filters.update(formatting.FILTERS)
+_env.globals.update(formatting.GLOBALS)
 
 
 @lru_cache(maxsize=64)
@@ -287,6 +303,7 @@ def render(template: str, view: dict, answers: dict, replay: bool = False) -> Ma
 
     call = recorded if replay else recording
     try:
-        return Markup(_compiled(template).render(api=call, view=view))
+        ui = _env.get_template("components.html").module  # reloaded when the file changes, like the pages'
+        return Markup(_compiled(template).render(api=call, view=view, ui=ui))
     except (TemplateError, ApiError, ArithmeticError, LookupError, TypeError, ValueError) as error:  # the template's
         raise ViewError(str(error), _line(error)) from None
