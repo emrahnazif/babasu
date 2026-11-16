@@ -1,5 +1,6 @@
-{# A view the agent wrote, rendered in the sandbox (app/views.py), in the main area. Its own
-   styles should stay inside .view. An older version shows which one it is. #}
+{# A view the agent wrote, rendered in the sandbox (app/views.py), in the main area: the data as
+   it was when the version was written. Its own styles should stay inside .view. An older version
+   shows which one it is. #}
 {% extends "base.html" %}
 {% import "components.html" as ui %}
 {% set crumbs = [("Views", "/views"), (view.title, None)] %}
@@ -7,9 +8,7 @@
   {% if view.shown != view.version %}
     {{ ui.text(["Version " ~ view.shown ~ " of " ~ view.version ~ ".", ui.link("Show the newest", "/views/" ~ view.id)], muted=true) }}
   {% endif %}
-  {% if view.answers is not none %}
-    {{ ui.text("A report: the data as it was when this version was written.", muted=true) }}
-  {% endif %}
+  {{ ui.text("The data as it was when this version was written.", muted=true) }}
   {% if error %}
     {{ ui.text("This view can't be shown: " ~ error, error=true) }}
   {% else %}

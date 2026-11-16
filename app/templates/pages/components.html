@@ -324,7 +324,7 @@
     {{ ui.dialog("demo-delete", "Delete person merged?", actions=ui.button("Delete", variant="destructive", close="demo-delete"), alert=true, children=[
       ui.text("This removes:"),
       ui.list(["5,084 images and 296 annotations", "its runs (auto-annotate, Try and workflow runs on its images) and their results",
-               "the image files no other project, run or report uses, from the workspace"]),
+               "the image files no other project, run or view uses, from the workspace"]),
       ui.text("History can undo it for 30 days.", muted=true),
     ]) }}
     {{ ui.dialog("demo-add", "Add images", description=image_formats ~ " images. A folder brings its subfolders too. Images already in the project are skipped.",
@@ -356,7 +356,7 @@
 
   {% call ui.section("Activity, as on History: a table, what changed under each line") %}
     {{ ui.table(columns=["When", "What", ""], rows=[
-      [ui.time("2026-11-15T02:18:07Z"), ui.text("Agent: go", note="4 images of reports added"), ui.button("Undo", variant="secondary")],
+      [ui.time("2026-11-15T02:18:07Z"), ui.text("Agent: go", note="4 images of views added"), ui.button("Undo", variant="secondary")],
       [ui.time("2026-11-15T00:34:06Z"), ui.text("PUT /api/projects/14/images/109/annotations", note="image in a project changed, project “person merged” changed"),
        ui.text("Changed since", muted=true)],
       [ui.time("2026-11-15T00:33:58Z"), ui.text("PUT /api/projects/14/images/109/annotations", note="image in a project changed, project “person merged” changed"),

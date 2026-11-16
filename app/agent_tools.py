@@ -82,9 +82,6 @@ class ViewIdArgs(Args):
 class WriteViewArgs(ViewIdArgs):
     template: str = Field(description="The whole page: a Jinja template (see get_components).")
     title: str | None = Field(None, description="The page's title; needed for a new view.")
-    kind: Literal["report", "studio"] | None = Field(
-        None, description="report (the default; kept as it was when written) or studio (a live page for one workflow).")
-    workflow: str | None = Field(None, description="For a studio page: the workflow's id, from GET /api/workflows.")
 
 
 class EditViewArgs(ViewIdArgs):
@@ -529,7 +526,7 @@ def _opened(view: dict) -> dict:
     opens=True,
 )
 def write_view(conn: sqlite3.Connection, args: WriteViewArgs) -> dict:
-    return _opened(views.save(args.view_id, args.template, args.title, args.kind, args.workflow))
+    return _opened(views.save(args.view_id, args.template, args.title))
 
 
 @tool(

@@ -1,18 +1,17 @@
 """Views: pages the agent writes (product.md "The agent"), shown in the main area inside babasu's
-shell. A view is a Jinja template: HTML, our components, and any JS. Kinds: a report (what it
-shows is kept as it was when written) and a Studio page (live, for one workflow).
+shell. A view is a Jinja template: HTML, our components, and any JS.
 
-Each view is a folder in the workspace (config.VIEWS_DIR/<id>): `view.json` (title, kind,
-workflow) and one file per version (`1.html`, `2.html`…). Writing adds a version; restoring an old
-one adds it again as the newest, so nothing is ever lost.
+Each view is a folder in the workspace (config.VIEWS_DIR/<id>): `view.json` (its title) and one
+file per version (`1.html`, `2.html`…). Writing adds a version; restoring an old one adds it again
+as the newest, so nothing is ever lost.
 
 A template is rendered in Jinja's sandbox: it sees only what it's given. Its data comes from
 `api("/api/…")`: babasu's own API, the same GET routes and JSON as the browser gets, called in the
 same process. The page's JS may call the API too.
 
-A report keeps what it showed: when a version is saved, every api() answer is recorded with it
+A view keeps what it showed: when a version is saved, every api() answer is recorded with it
 (`<n>.json`), and the page replays them. The images in those answers count as used while the
-report exists (the view_media table), so the media cleanup keeps them.
+view exists (the view_media table), so the media cleanup keeps them.
 """
 
 import html
@@ -23,7 +22,6 @@ from contextlib import closing
 from datetime import UTC, datetime
 from functools import cache, lru_cache
 from pathlib import Path
-from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -34,7 +32,6 @@ from markupsafe import Markup
 from app import config, db, media, settings, view_components
 from app.history import trash  # views.history() is a view's versions
 
-Kind = Literal["report", "studio"]
 TEMPLATE_NAME = "<template>"  # what Jinja calls a template made from a string, in its tracebacks
 
 
@@ -67,15 +64,18 @@ def _when(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, UTC).strftime(db.TIME)
 
 
+def _title(folder: Path) -> str:
+    return json.loads((folder / "view.json").read_text())["title"]
+
+
 def _entry(view_id: str, folder: Path, versions: list[int]) -> dict:
-    """A view as lists show it: its own fields (view.json), its newest version and when that was
-    written."""
-    return {"id": view_id} | json.loads((folder / "view.json").read_text()) | {
-        "version": versions[-1], "updated_at": _when(folder / f"{versions[-1]}.html")}
+    """A view as lists show it: its title, its newest version and when that was written."""
+    return {"id": view_id, "title": _title(folder), "version": versions[-1],
+            "updated_at": _when(folder / f"{versions[-1]}.html")}
 
 
 def list_all() -> list[dict]:
-    """Every view: id, title, kind, workflow, its newest version and when it was written; newest change first."""
+    """Every view: id, title, its newest version and when it was written; newest change first."""
     if not config.VIEWS_DIR.is_dir():
         return []
     found = [(f, _versions(f)) for f in config.VIEWS_DIR.iterdir()]
@@ -93,7 +93,7 @@ def get(view_id: str, version: int | None = None) -> dict | None:
     answers = folder / f"{version}.json"
     return _entry(view_id, folder, versions) | {
         "shown": version, "template": (folder / f"{version}.html").read_text(),
-        "answers": json.loads(answers.read_text()) if answers.is_file() else None}
+        "answers": json.loads(answers.read_text()) if answers.is_file() else {}}
 
 
 def history(view_id: str) -> list[dict] | None:
@@ -106,30 +106,27 @@ def history(view_id: str) -> list[dict] | None:
             for n in reversed(versions)]
 
 
-def save(view_id: str, template: str, title: str | None = None, kind: Kind | None = None,
-         workflow: str | None = None) -> dict:
+def save(view_id: str, template: str, title: str | None = None) -> dict:
     """Add a version of a view, checked first by rendering it (ViewError with the line), and
-    return the view. A new view needs a title; title, kind and workflow change only when given."""
+    return the view. A new view needs a title; the title changes only when given."""
     folder = _dir(view_id)
     versions = _versions(folder)
-    meta = json.loads((folder / "view.json").read_text()) if versions else {"title": None, "kind": "report", "workflow": None}
-    meta |= {k: v for k, v in {"title": title, "kind": kind, "workflow": workflow}.items() if v is not None}
-    if not meta["title"]:
+    title = title or (_title(folder) if versions else None)
+    if not title:
         raise ViewError("A new view needs a title")
-    answers = {} if meta["kind"] == "report" else None
-    render(template, meta, answers)
+    answers = {}
+    render(template, {"id": view_id, "title": title}, answers)
     version = (versions[-1] if versions else 0) + 1
     _write_version(view_id, folder, version, template, answers)
-    settings.write_file(folder / "view.json", json.dumps(meta, indent=2))
+    settings.write_file(folder / "view.json", json.dumps({"title": title}, indent=2))
     return get(view_id)
 
 
-def _write_version(view_id: str, folder: Path, version: int, template: str, answers: dict | None) -> None:
-    """A version's files, and (a report's) the images its answers show, kept as used."""
-    if answers is not None:
-        settings.write_file(folder / f"{version}.json", json.dumps(answers))
-        with closing(db.connect()) as conn, conn:
-            media.keep(conn, view_id, _media_ids(answers))
+def _write_version(view_id: str, folder: Path, version: int, template: str, answers: dict) -> None:
+    """A version's files, and the images its answers show, kept as used."""
+    settings.write_file(folder / f"{version}.json", json.dumps(answers))
+    with closing(db.connect()) as conn, conn:
+        media.keep(conn, view_id, _media_ids(answers))
     settings.write_file(folder / f"{version}.html", template)
 
 
@@ -144,8 +141,8 @@ def _media_ids(answer) -> set[int]:
 
 
 def restore(view_id: str, version: int) -> dict | None:
-    """Make an older version the newest again (as a new version, with the answers a report
-    recorded then); None if there's no such one."""
+    """Make an older version the newest again (as a new version, with the answers it recorded
+    then); None if there's no such one."""
     old = get(view_id, version)
     if old is None:
         return None
@@ -267,28 +264,28 @@ def _line(error: BaseException) -> int | None:
 
 
 def page(view: dict) -> tuple[Markup | None, str | None]:
-    """A view as its page shows it (a report replaying what it recorded): (HTML, None), or
-    (None, why it can't be shown, e.g. the data it reads is gone)."""
+    """A view as its page shows it, replaying what it recorded: (HTML, None), or (None, why it
+    can't be shown)."""
     try:
         return render(view["template"], view, view["answers"], replay=True), None
     except ViewError as e:
         return None, str(e)
 
 
-def render(template: str, view: dict, answers: dict | None = None, replay: bool = False) -> Markup:
-    """A view's template as HTML. ViewError (with the line) if it can't be rendered. With
-    `answers`: replay=False records each api() answer in it (path -> JSON); replay=True answers
-    from it instead of the API (a report showing what it recorded)."""
+def render(template: str, view: dict, answers: dict, replay: bool = False) -> Markup:
+    """A view's template as HTML. ViewError (with the line) if it can't be rendered. replay=False
+    records each api() answer in `answers` (path -> JSON); replay=True answers from it instead of
+    the API (showing what it recorded)."""
     def recorded(path: str):
         if path not in answers:
-            raise ApiError(f"api({path!r}) wasn't asked for when this report was written")
+            raise ApiError(f"api({path!r}) wasn't asked for when this version was written")
         return answers[path]
 
     def recording(path: str):
         answers[path] = api(path)
         return answers[path]
 
-    call = api if answers is None else recorded if replay else recording
+    call = recorded if replay else recording
     try:
         return Markup(_compiled(template).render(api=call, view=view))
     except (TemplateError, ApiError, ArithmeticError, LookupError, TypeError, ValueError) as error:  # the template's

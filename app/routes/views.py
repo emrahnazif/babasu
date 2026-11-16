@@ -15,14 +15,11 @@ router = APIRouter()
 
 
 class ViewWrite(BaseModel):
-    """A new version of a view: its whole template; title (needed for a new view), kind and
-    workflow change only when given."""
+    """A new version of a view: its whole template; its title (needed for a new view) changes only
+    when given."""
 
     template: str = Field(max_length=500_000, description="The whole page: a Jinja template (see get_components).")
     title: str | None = Field(None, min_length=1, max_length=200, description="The page's title; needed for a new view.")
-    kind: views.Kind | None = Field(None, description="report (the default; kept as it was when written) or studio "
-                                    "(a live page for one workflow).")
-    workflow: str | None = Field(None, description="For a studio page: the workflow's id, from GET /api/workflows.")
 
 
 class Restore(BaseModel):
@@ -34,8 +31,6 @@ class Restore(BaseModel):
 class ViewListed(Answer):
     id: str = Field(description="The view's id; its page is /views/{id}.")
     title: str
-    kind: views.Kind = Field(description="report: kept as it was when written; studio: a live page for one workflow.")
-    workflow: str | None = Field(description="A studio page's workflow (GET /api/workflows); null for a report.")
     version: int = Field(description="Its newest version.")
     updated_at: str = Field(description="When its newest version was written, UTC (ISO 8601).")
 
@@ -43,7 +38,7 @@ class ViewListed(Answer):
 class ViewDetail(ViewListed):
     shown: int = Field(description="The version this template is (the newest unless ?version= asked for another).")
     template: str = Field(description="The page: a Jinja template.")
-    answers: dict | None = Field(description="A report: the API answers it recorded when written, by path; null otherwise.")
+    answers: dict = Field(description="The API answers it recorded when written, by path: what the page shows.")
 
 
 class ViewVersion(Answer):
@@ -74,8 +69,8 @@ def view_list(request: Request):
 
 @router.get("/views/{view_id}", response_class=HTMLResponse)
 def view_page(request: Request, view_id: str, version: int | None = None):
-    """The view (an older version with ?version=); a template that no longer renders (say, the
-    data it reads is gone) shows why instead."""
+    """The view (an older version with ?version=); a version that no longer renders (say, a
+    component it uses is gone) shows why instead."""
     view = _found(views.get(view_id, version))
     body, error = views.page(view)
     return templates.TemplateResponse(request, "views/view.html", {"view": view, "body": body, "error": error})
@@ -86,14 +81,14 @@ def view_page(request: Request, view_id: str, version: int | None = None):
 
 @router.get("/api/views", response_model=list[ViewListed])
 def api_views() -> list[dict]:
-    """Every view, newest change first: id, title, kind, workflow, newest version and when it was written."""
+    """Every view, newest change first: id, title, newest version and when it was written."""
     return views.list_all()
 
 
 @router.get("/api/views/{view_id}", response_model=ViewDetail)
 def api_view(view_id: str, version: Annotated[int | None, Query(description="An older version; empty for the newest.")] = None) -> dict:
-    """The view with its template (the newest version, or ?version=), and for a report the API
-    answers it recorded."""
+    """The view with its template (the newest version, or ?version=) and the API answers it
+    recorded."""
     return _found(views.get(view_id, version))
 
 
@@ -101,7 +96,7 @@ def api_view(view_id: str, version: Annotated[int | None, Query(description="An 
 def api_write_view(view_id: str, write: ViewWrite) -> dict:
     """Adds a version (making the view if it's new). 422 if the template doesn't render, with the
     line and why."""
-    return views.save(view_id, write.template, write.title, write.kind, write.workflow)
+    return views.save(view_id, write.template, write.title)
 
 
 @router.get("/api/views/{view_id}/versions", response_model=list[ViewVersion])

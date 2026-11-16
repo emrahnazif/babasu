@@ -8,7 +8,7 @@ babasu is a local computer vision app: everything runs on the person's computer,
 - Annotating one image in the editor: changing objects by hand, and the click tool that outlines an object from a click or a box (see annotating); auto-annotating with an auto-annotator (see auto-annotate).
 - Filtering a project's images by what's in them, and measuring them (see filters).
 - Workflows: mozo graphs of models and steps, built in the builder, run over a project's images (see workflows).
-- Views: pages written by an agent, from reports to a workflow's Studio page (see views).
+- Views: pages written by an agent, keeping the data they showed (see views).
 - Vision models: downloaded, loaded and unloaded on the Models page (see models).
 - Background jobs for everything long (see jobs).
 - History: everything done in the last 30 days (by the person, you and jobs), each request, job or agent turn undoable as one, deleted files included.

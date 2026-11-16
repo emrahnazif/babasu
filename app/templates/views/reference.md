@@ -11,7 +11,7 @@ where they don't.
   with the reason, so ask only for what exists.
 - Look at an answer with the `call_api` tool (GET) before using its fields, so the template uses the
   names it really has.
-- The template sees only `api`, `ui` (the components below) and `view` (its id, title, kind, workflow). Jinja's usual tags and
+- The template sees only `api`, `ui` (the components below) and `view` (its id and title). Jinja's usual tags and
   filters work (`for`, `if`, `set`, `length`, `round`, `sum`, `groupby`, `selectattr`, `map`…).
 - A `{% set %}` inside a `{% for %}` is gone after the loop (Jinja). Shape data with filters
   instead (`map`, `selectattr`, `sum`, `groupby`, and `count_by` below), or pass the API's list
@@ -22,7 +22,7 @@ where they don't.
   `var(--color-text-muted)`, `var(--color-border)`, `var(--color-bg)`.
 - JS is allowed (`<script>`); it may call the API with `fetch("/api/…")`.
 - Images: `/media/…` URLs from the API (`thumb_url` for a small one).
-- Kinds: `report` (the default; what it shows is kept as it was when written) or `studio` (a live page
-  for one workflow: give `workflow`).
+- A view keeps what it showed: every api() answer is recorded when it's written, and the page shows
+  those, not today's data. To bring it up to date, write it again.
 - Writing checks the page first: if it doesn't render, you get the line and why, and nothing is saved.
   Every version is kept; an older one can be restored.

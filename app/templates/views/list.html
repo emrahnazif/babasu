@@ -7,10 +7,9 @@
   {% if views %}
     {% set table = namespace(rows=[]) %}
     {% for v in views %}
-      {% set table.rows = table.rows + [[ui.link(v.title, "/views/" ~ v.id), [v.kind | capitalize, "· " ~ v.workflow if v.workflow],
-                                         v.version, ui.time(v.updated_at)]] %}
+      {% set table.rows = table.rows + [[ui.link(v.title, "/views/" ~ v.id), v.version, ui.time(v.updated_at)]] %}
     {% endfor %}
-    {{ ui.table(columns=["View", "Kind", {"label": "Versions", "number": true}, "Changed"], rows=table.rows) }}
+    {{ ui.table(columns=["View", {"label": "Versions", "number": true}, "Changed"], rows=table.rows) }}
   {% else %}
     {{ ui.empty("No views yet", "Ask the agent to build one.", icon="document-text") }}
   {% endif %}
