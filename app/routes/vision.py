@@ -2,18 +2,48 @@
 and actions as JSON under /api/vision."""
 
 import sqlite3
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from mozo import weights
+from pydantic import Field
 
 from app import config, db, vision
+from app.routes import Answer
 from app.templating import templates
 
 router = APIRouter()
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
+
+
+# --- What the API answers ---
+
+
+class ModelVariant(Answer):
+    variant: str = Field(description="Which of the family's models, e.g. tiny.")
+    license: str = Field(description="Its licence.")
+    size: int = Field(description="Its weights, in bytes.")
+    to_download: int = Field(description="Bytes still to download for this computer (0 once downloaded).")
+    state: Literal["not downloaded", "downloading", "downloaded", "loading", "loaded"] = Field(
+        description="downloading and loading: a job is under way.")
+
+
+class ModelFamily(Answer):
+    family: str = Field(description="The model family, e.g. grounding_dino.")
+    task: str = Field(description="What it does, e.g. object_detection.")
+    description: str = Field(description="What it is and how it works, as mozo describes it.")
+    variants: list[ModelVariant]
+
+
+class LoadedModel(Answer):
+    family: str
+    variant: str
+    device: str = Field(description="What it runs on, e.g. mps or cpu.")
+    runtime: str | None = Field(description="What runs it, e.g. torch-fp32 or coreml-fp16; null if the model doesn't say.")
+    last_used: str = Field(description="When something last used it, UTC (ISO 8601).")
+    size: int | None = Field(description="Its memory, estimated from its weights' size in bytes; null if unknown.")
 
 
 def _exists(family: str, variant: str) -> None:
@@ -91,7 +121,7 @@ def unload_all():
 # --- API ---
 
 
-@router.get("/api/vision/models")
+@router.get("/api/vision/models", response_model=list[ModelFamily])
 def api_models(conn: DB) -> list[dict]:
     """Every model mozo publishes, by family, with each variant's licence, size, bytes left to download and state."""
     return vision.catalogue(conn)
@@ -116,7 +146,7 @@ def api_load(family: str, variant: str, conn: DB) -> dict:
     return {"job_id": _start_load(conn, family, variant)}
 
 
-@router.get("/api/vision/loaded")
+@router.get("/api/vision/loaded", response_model=list[LoadedModel])
 def api_loaded() -> list[dict]:
     """The loaded models, with device, runtime, when last used and estimated memory in bytes."""
     return vision.loaded()

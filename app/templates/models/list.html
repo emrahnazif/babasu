@@ -1,75 +1,51 @@
 {% extends "base.html" %}
+{% import "components.html" as ui %}
 {# Models: the vision models mozo publishes, by task. Download and Load start jobs (sent in the
    background; progress in the jobs drawer); the list refreshes when a job ends. #}
 
-{% macro button(family, variant, action, label, background=false) %}
-  <form method="post" action="/models/{{ family }}/{{ variant }}/{{ action }}"{% if background %} data-background-form{% endif %}>
-    <button class="button secondary" type="submit">{{ label }}</button>
-  </form>
-{% endmacro %}
-
 {% block content %}
-  <div id="models" data-refresh-on="job-ended">
-    <p class="muted">Models mozo publishes, for annotation and workflows. Each carries its own licence. They run on {{ device }}.</p>
-    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% call ui.region("models", on="job-ended") %}
+    {{ ui.text("Models mozo publishes, for annotation and workflows. Each carries its own licence. They run on " ~ device ~ ".", muted=true) }}
+    {% if error %}{{ ui.text(error, error=true) }}{% endif %}
 
     {% if loaded %}
-      <section class="stack">
-        <h2>Loaded</h2>
-        <div class="card">
-        <table>
-          <thead><tr><th>Model</th><th>Runs on</th><th>Memory (estimate)</th><th></th></tr></thead>
-          <tbody>
-            {% for m in loaded %}
-              <tr>
-                <td>{{ m.family }} <span class="muted">{{ m.variant }}</span></td>
-                <td>{{ m.device }}{% if m.runtime %} <span class="muted">{{ m.runtime }}</span>{% endif %}</td>
-                <td>{{ m.size | filesize if m.size else "—" }}</td>
-                <td>{{ button(m.family, m.variant, "unload", "Unload") }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        <div class="actions">
-          <form method="post" action="/models/unload-all"><button class="button secondary" type="submit">Unload all</button></form>
-        </div>
-        </div>
-      </section>
+      {% set table = namespace(rows=[]) %}
+      {% for m in loaded %}
+        {% set table.rows = table.rows + [[ui.text(m.family, note=m.variant), ui.text(m.device, note=m.runtime), m.size | filesize if m.size,
+                                           ui.button("Unload", post="/models/" ~ m.family ~ "/" ~ m.variant ~ "/unload", variant="secondary")]] %}
+      {% endfor %}
+      {% call ui.section("Loaded") %}
+        {{ ui.card(children=[
+          ui.table(columns=["Model", "Runs on", "Memory (estimate)", ""], rows=table.rows),
+          ui.actions(ui.button("Unload all", post="/models/unload-all", variant="secondary")),
+        ]) }}
+      {% endcall %}
     {% endif %}
 
     {% for task, families in catalogue | groupby("task") %}
-      <section class="stack">
-      <h2>{{ task | replace("_", " ") | capitalize }}</h2>
-      {% for f in families %}
-        <div class="card">
-          <h2>{{ f.family }}</h2>
-          <p class="muted">{{ f.description }}</p>
-          <table>
-            <thead><tr><th>Variant</th><th>Licence</th><th>Size</th><th>State</th><th></th></tr></thead>
-            <tbody>
-              {% for v in f.variants %}
-                <tr>
-                  <td>{{ v.variant }}</td>
-                  <td><span class="badge plain">{{ v.license }}</span></td>
-                  <td>{{ v.size | filesize }}</td>
-                  {% if v.state in ("downloading", "loading") %}
-                    <td class="muted">{{ v.state | capitalize }}…</td><td></td>
-                  {% elif v.state == "loaded" %}
-                    <td>Loaded</td><td>{{ button(f.family, v.variant, "unload", "Unload") }}</td>
-                  {% elif v.state == "downloaded" %}
-                    <td>Downloaded</td>
-                    <td>{{ button(f.family, v.variant, "load", "Load", background=true) }}{{ button(f.family, v.variant, "remove", "Remove") }}</td>
-                  {% else %}
-                    <td class="muted">{{ v.to_download | filesize }} to download</td>
-                    <td>{{ button(f.family, v.variant, "download", "Download", background=true) }}</td>
-                  {% endif %}
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% endfor %}
-      </section>
+      {% call ui.section(task | replace("_", " ") | capitalize) %}
+        {% call ui.stack() %}
+          {% for f in families %}
+            {% set table = namespace(rows=[]) %}
+            {% for v in f.variants %}
+              {% set at = "/models/" ~ f.family ~ "/" ~ v.variant ~ "/" %}
+              {% if v.state in ("downloading", "loading") %}
+                {% set state, actions = ui.text(v.state | capitalize ~ "…", muted=true), "" %}
+              {% elif v.state == "loaded" %}
+                {% set state, actions = "Loaded", ui.button("Unload", post=at ~ "unload", variant="secondary") %}
+              {% elif v.state == "downloaded" %}
+                {% set state, actions = "Downloaded", [ui.button("Load", post=at ~ "load", background=true, variant="secondary"),
+                                                       ui.button("Remove", post=at ~ "remove", variant="secondary")] %}
+              {% else %}
+                {% set state, actions = ui.text(v.to_download | filesize ~ " to download", muted=true),
+                                        ui.button("Download", post=at ~ "download", background=true, variant="secondary") %}
+              {% endif %}
+              {% set table.rows = table.rows + [[v.variant, ui.badge(v.license), v.size | filesize, state, actions]] %}
+            {% endfor %}
+            {{ ui.card(f.family, f.description, children=ui.table(columns=["Variant", "Licence", "Size", "State", ""], rows=table.rows)) }}
+          {% endfor %}
+        {% endcall %}
+      {% endcall %}
     {% endfor %}
-  </div>
+  {% endcall %}
 {% endblock %}

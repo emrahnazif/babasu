@@ -9,12 +9,13 @@ wait behind a run: what it waits behind is said (loading()).
 """
 
 import json
+from datetime import UTC, datetime
 
 from mozo import MODEL_REGISTRY, weights
 from mozo.manager import ModelManager
 from mozo.registry import get_model_info
 
-from app import config, jobs
+from app import config, db, jobs
 
 DOWNLOAD = "download_model"  # job kinds
 LOAD = "load_model"
@@ -129,9 +130,11 @@ def unload(family: str, variant: str) -> bool:
 
 
 def loaded() -> list[dict]:
-    """The loaded models: family, variant, the device and runtime they run on, when last used,
-    and an estimate of their memory in bytes (from the weights' size; None if unknown)."""
-    return [{k: r[k] for k in ("family", "variant", "device", "runtime", "last_used", "size")}
+    """The loaded models: family, variant, the device and runtime they run on, when last used
+    (UTC, ISO 8601), and an estimate of their memory in bytes (from the weights' size; None if
+    unknown)."""
+    return [{k: r[k] for k in ("family", "variant", "device", "runtime", "size")}
+            | {"last_used": datetime.fromtimestamp(r["last_used"], UTC).strftime(db.TIME)}
             for r in models.resident()]
 
 
