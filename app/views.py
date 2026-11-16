@@ -92,10 +92,9 @@ def get(view_id: str, version: int | None = None) -> dict | None:
     version = version or (versions[-1] if versions else None)
     if version not in versions:
         return None
-    answers = folder / f"{version}.json"
     return _entry(view_id, folder, versions) | {
         "shown": version, "template": (folder / f"{version}.html").read_text(),
-        "answers": json.loads(answers.read_text()) if answers.is_file() else {}}
+        "answers": json.loads((folder / f"{version}.json").read_text())}
 
 
 def history(view_id: str) -> list[dict] | None:
