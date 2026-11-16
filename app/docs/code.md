@@ -14,7 +14,7 @@ Use run_code for what one API call doesn't do: going through many images, changi
 - `progress(done, total)` shows a bar in the chat while a long loop runs; what you print shows there as it's printed.
 
 ## Your folder
-Each chat has a folder of its own, and your code runs in it: files open by relative paths, and its `.py` files import. Keep your work there:
+Each chat has a folder of its own, and your code runs in it: files open by relative paths. A `.py` file run with `file` runs like code, in the same process: the functions and variables it makes are there for the next runs, and running it again after an edit makes them anew. Keep your work there:
 - scripts you'll run again or change (write_file, then run_code with `file`; edit_file to change a line),
 - what a step finds, saved by your code (`json.dump(misses, open("results/misses.json", "w"))`),
 - drafts (pages, workflows) before they're published.

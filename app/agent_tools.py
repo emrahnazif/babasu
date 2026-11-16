@@ -502,7 +502,7 @@ class CodeArgs(Args):
 @tool(
     "Run Python for what one API call can't do: going through many images or projects, filtering objects, "
     "changing many at once, combining projects, measuring, comparing. Read read_docs code first (the client, "
-    "paging, examples). It runs in your folder (files open by relative paths, its .py files import), in one "
+    "paging, examples). It runs in your folder (files open by relative paths; a .py file runs like code), in one "
     "process kept for this chat: variables stay for the next run, and files stay for good. Work in steps: save "
     "what a step finds (a json file), look at it, decide, go on with it instead of copying it. Its changes go "
     "through the API, so they're checked, and undone with your turn (files in your folder stay as they are). "

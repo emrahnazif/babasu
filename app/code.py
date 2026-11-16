@@ -16,11 +16,9 @@ imports this module, so it imports nothing of the app's at the top.
 """
 
 import contextlib
-import importlib
 import io
 import multiprocessing
 import os
-import sys
 import threading
 import time
 import traceback
@@ -104,14 +102,12 @@ class _Printed(io.TextIOBase):
 
 
 def _child(pipe, folder: str) -> None:
-    """In the child: work in the conversation's folder (its files open by relative paths, its .py
-    files import), and run each piece of code the app sends, all in one namespace, so what one run
-    leaves in variables the next can use. Sends what's printed as it's printed, then ("done",
-    error): None, or the error with the line it was on (its file, number and text)."""
+    """In the child: work in the conversation's folder (its files open by relative paths), and run
+    each piece of code the app sends (a snippet, or a file of the folder) all in one namespace, so
+    what one run leaves in variables and functions the next can use. Sends what's printed as it's
+    printed, then ("done", error): None, or the error with the line it was on (its file, number
+    and text)."""
     os.chdir(folder)
-    sys.path.insert(0, folder)
-    sys.dont_write_bytecode = True  # no __pycache__ among the agent's files
-    inside = os.path.join(folder, "")
     printed = _Printed(pipe)
     shown = [-1]  # the last percentage sent in this run: a loop of any length sends at most ~100
 
@@ -127,12 +123,6 @@ def _child(pipe, folder: str) -> None:
     while True:
         code, name = pipe.recv()  # name: CODE, or the file it was read from
         shown[0], error = -1, None
-        # The folder's modules import again, as they are now: an edit to one takes effect (objects
-        # made before keep their old classes).
-        for key, module in list(sys.modules.items()):
-            if (getattr(module, "__file__", None) or "").startswith(inside):
-                del sys.modules[key]
-        importlib.invalidate_caches()  # a module written since the last run is found
         label = "" if name == CODE else f"{name} "
         if name == CODE:
             names.pop("__file__", None)
