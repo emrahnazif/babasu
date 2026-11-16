@@ -1,44 +1,28 @@
 {# Every workflow, built in or saved: what it uses, and its ways in: Use (its Studio page) and
    Edit (the builder). A saved one can be deleted (asked first); a built-in can't. #}
 {% extends "base.html" %}
+{% import "components.html" as ui %}
 
 {% block actions %}
-  <a class="icon-button" href="/workflows/new" aria-label="New workflow" title="New workflow">{{ icon("plus") }}</a>
+  {{ ui.button("New workflow", href="/workflows/new", variant="icon", icon="plus") }}
 {% endblock %}
 
 {% block content %}
-  <table>
-    <thead><tr><th>Workflow</th><th>Models</th><th></th></tr></thead>
-    <tbody>
-      {% for w in workflows %}
-        <tr>
-          <td>
-            {{ w.name }}{% if w.builtin %} <span class="badge plain">Built in</span>{% endif %}
-            {% if w.description %}<br><span class="muted">{{ w.description }}</span>{% endif %}
-            {% if w.error %}<br><span class="error">Doesn't load: {{ w.error }}</span>{% endif %}
-          </td>
-          <td class="muted">
-            {% for m in w.models or [] %}{{ m.family }} {{ m.variant }}{% if m.size %} ({{ m.size | filesize }} to download){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
-          </td>
-          <td>
-            {% if not w.builtin %}
-              <button class="button secondary" type="button" popovertarget="delete-{{ w.id }}">Delete</button>
-              <div id="delete-{{ w.id }}" class="dialog" popover role="alertdialog" aria-labelledby="delete-{{ w.id }}-title">
-                <form method="post" action="/workflows/{{ w.id }}/delete">
-                  <h2 id="delete-{{ w.id }}-title">Delete {{ w.name }}?</h2>
-                  <p class="muted">Runs made with it keep their results and their own copy of it. History can undo it for 30 days.</p>
-                  <div class="actions">
-                    <button class="button secondary" type="button" popovertarget="delete-{{ w.id }}" popovertargetaction="hide" autofocus>Cancel</button>
-                    <button class="button destructive" type="submit">Delete</button>
-                  </div>
-                </form>
-              </div>
-            {% endif %}
-            <a class="button secondary" href="/workflows/{{ w.id }}/edit">Edit</a>
-            {% if not w.error %}<a class="button" href="/studio/{{ w.id }}">Use</a>{% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  {% set table = namespace(rows=[]) %}
+  {% for w in workflows %}
+    {% set models %}{% for m in w.models or [] %}{{ m.family }} {{ m.variant }}{% if m.size %} ({{ m.size | filesize }} to download){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
+    {% set delete = "delete-" ~ w.id %}
+    {% set table.rows = table.rows + [[
+      [ui.text([w.name, ui.badge("Built in") if w.builtin], note=w.description),
+       ui.text("Doesn't load: " ~ w.error, error=true) if w.error],
+      ui.text(models, muted=true) if models,
+      [[ui.button("Delete", variant="secondary", popover=delete),
+        ui.dialog(delete, "Delete " ~ w.name ~ "?", form="/workflows/" ~ w.id ~ "/delete", alert=true,
+                  description="Runs made with it keep their results and their own copy of it. History can undo it for 30 days.",
+                  actions=ui.button("Delete", variant="destructive", submit=true))] if not w.builtin,
+       ui.button("Edit", href="/workflows/" ~ w.id ~ "/edit", variant="secondary"),
+       ui.button("Use", href="/studio/" ~ w.id) if not w.error],
+    ]] %}
+  {% endfor %}
+  {{ ui.table(columns=["Workflow", "Models", ""], rows=table.rows) }}
 {% endblock %}

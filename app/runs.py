@@ -46,7 +46,7 @@ def _files() -> dict[str, Path]:
 def _entry(id: str, workflow: Workflow | None = None) -> dict:
     """A workflow's id, name (its file's, or its id), description and whether it's built in."""
     name, description = (workflow.name, workflow.description) if workflow else (None, None)
-    return {"id": id, "name": name or id, "description": description, "builtin": id in BUILTIN}
+    return {"id": id, "name": name or id, "description": description or "", "builtin": id in BUILTIN}
 
 
 def workflows() -> list[dict]:

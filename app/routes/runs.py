@@ -36,7 +36,7 @@ class ModelUse(Answer):
 class WorkflowListed(Answer):
     id: str = Field(description="The workflow's id (what runs and annotators name).")
     name: str
-    description: str | None
+    description: str = Field(description="What it does, in a sentence or two; empty if it doesn't say.")
     builtin: bool = Field(description="Comes with the app (can't be changed or deleted).")
     models: list[ModelUse] | None = Field(None, description="The models it uses.")
     error: str | None = Field(None, description="Instead of models: why it doesn't load.")
