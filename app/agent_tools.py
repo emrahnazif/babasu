@@ -396,8 +396,8 @@ def run_code(conn: sqlite3.Connection, args: CodeArgs) -> dict:
     "(search, find_images), its page is in what they return. The pages: /projects (all projects), "
     "/projects/new (create one), /projects/ID (its images; ?where=FILTER for some of them), "
     "/projects/ID/images/IMAGE_ID (one image with its objects), /projects/ID/edit (its settings: name, type, "
-    "annotator, classes, delete), /workflows, /workflows/new, /workflows/ID/edit (the builder), /studio/ID (try a "
-    "workflow on images), /models (vision models), /jobs/ID (a job and its log), /views/ID (a view), "
+    "annotator, classes, delete), /workflows, /workflows/new, /workflows/ID/edit (the builder), /models (vision "
+    "models), /jobs/ID (a job and its log), /views/ID (a view), "
     "/settings/general, /settings/models and /settings/agents (the models and agents you run on).",
     PageArgs,
     opens=True,

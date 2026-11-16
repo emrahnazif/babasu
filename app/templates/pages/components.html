@@ -75,11 +75,11 @@
   {% call ui.section("Table") %}
     {{ ui.table(columns=["Workflow", "Models", ""], rows=[
       [ui.text(["SAM 3", ui.badge("Built in")], note="Finds and outlines every object matching each prompt."), ui.text("sam3 sam3", muted=true),
-       [ui.button("Edit", href="/workflows/sam3/edit", variant="secondary"), ui.button("Use", href="/studio/sam3")]],
+       [ui.button("Edit", href="/workflows/sam3/edit", variant="secondary"), ui.button("Use", href="#")]],
       [ui.text(["Grounding DINO", ui.badge("Built in")], note="Finds each prompt's objects, as boxes."), ui.text("grounding_dino tiny", muted=true),
-       [ui.button("Edit", href="/workflows/grounding-dino/edit", variant="secondary"), ui.button("Use", href="/studio/grounding-dino")]],
+       [ui.button("Edit", href="/workflows/grounding-dino/edit", variant="secondary"), ui.button("Use", href="#")]],
       [ui.text(["Grounding DINO → EdgeTAM", ui.badge("Built in")], note="Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one."), ui.text("grounding_dino tiny, edgetam edgetam", muted=true),
-       [ui.button("Edit", href="/workflows/grounding-dino-edgetam/edit", variant="secondary"), ui.button("Use", href="/studio/grounding-dino-edgetam")]],
+       [ui.button("Edit", href="/workflows/grounding-dino-edgetam/edit", variant="secondary"), ui.button("Use", href="#")]],
       [[ui.text("my-detector"), ui.text("Doesn't load: no node type named 'detect'", error=true)], "", ui.button("Edit", variant="secondary")],
     ]) }}
   {% endcall %}
@@ -370,9 +370,9 @@
 
   {% call ui.section("Link list, as on Studio") %}
     {{ ui.stack([
-      ui.item("SAM 3", "Finds and outlines every object matching each prompt.", icon="play", href="/studio/sam3"),
-      ui.item("Grounding DINO", "Finds each prompt's objects, as boxes.", icon="play", href="/studio/grounding-dino"),
-      ui.item("Grounding DINO → EdgeTAM", "Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one.", icon="play", href="/studio/grounding-dino-edgetam"),
+      ui.item("SAM 3", "Finds and outlines every object matching each prompt.", icon="play", href="#"),
+      ui.item("Grounding DINO", "Finds each prompt's objects, as boxes.", icon="play", href="#"),
+      ui.item("Grounding DINO → EdgeTAM", "Grounding DINO finds boxes from the prompts; EdgeTAM outlines each one.", icon="play", href="#"),
     ]) }}
   {% endcall %}
 {% endblock %}

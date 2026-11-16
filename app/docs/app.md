@@ -20,10 +20,10 @@ The annotations say only what someone (or auto-annotate) marked. To find things 
 Training models (mayaku), evaluation, exporting models, COCO import and export of annotations, classification projects, a review queue for model-made objects, video, versions as their own feature, and searching images by what's in them. Asked for one of these, say it isn't in the app yet.
 
 ## The pages
-- /: Home, where the app opens: a way into Studio (find and count things in images), a way into making a project (a dataset), and examples to try.
+- /: Home, where the app opens: a way into Studio, a way into making a project (a dataset), and examples to try.
 - /projects: every project. /projects/new: create one.
 - /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, auto-annotator, classes), Duplicate and Delete.
 - /projects/ID/images/IMAGE_ID: one image in the editor, with its objects and the click tool; stepping to the previous and next image.
-- /workflows: every workflow. /workflows/ID/edit: the builder. /studio/ID: a workflow's Studio page.
+- /workflows: every workflow. /workflows/ID/edit: the builder. /studio: the workflows to use (a workflow's own Studio page isn't built yet).
 - /models: vision models. /jobs/ID: a job and its log. /views/ID: a view. /history: what was done in the last 30 days, with Undo.
 - /settings/general, /settings/models, /settings/agents: the theme, and the language models and agents (you) run on.

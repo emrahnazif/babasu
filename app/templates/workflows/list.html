@@ -1,5 +1,6 @@
-{# Every workflow, built in or saved: what it uses, and its ways in: Use (its Studio page) and
-   Edit (the builder). A saved one can be deleted (asked first); a built-in can't. #}
+{# Every workflow, built in or saved: what it uses, and its ways in: Use (its Studio page, not
+   built yet: the link is a placeholder) and Edit (the builder). A saved one can be deleted (asked
+   first); a built-in can't. #}
 {% extends "base.html" %}
 {% import "components.html" as ui %}
 
@@ -21,7 +22,7 @@
                   description="Runs made with it keep their results and their own copy of it. History can undo it for 30 days.",
                   actions=ui.button("Delete", variant="destructive", submit=true))] if not w.builtin,
        ui.button("Edit", href="/workflows/" ~ w.id ~ "/edit", variant="secondary"),
-       ui.button("Use", href="/studio/" ~ w.id) if not w.error],
+       ui.button("Use", href="#") if not w.error],
     ]] %}
   {% endfor %}
   {{ ui.table(columns=["Workflow", "Models", ""], rows=table.rows) }}

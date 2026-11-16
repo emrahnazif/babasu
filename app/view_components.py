@@ -10,7 +10,6 @@ from the function itself. The agent reads it as text (get_components).
 """
 
 import inspect
-import json
 import math
 import re
 from collections import Counter
@@ -20,7 +19,6 @@ from jinja2 import Environment, FileSystemLoader
 from markupsafe import Markup, escape
 
 from app import config
-
 
 
 @cache
@@ -185,50 +183,6 @@ def images(items: list, classes: list, caption: str = "filename") -> Markup:
     return Markup(f'<div class="grid">{tiles}</div>')
 
 
-def compare(results: list, classes: list) -> Markup:
-    """The same images side by side, a column per result label (e.g. two models in one workflow):
-    the `results` of /api/runs/{id}/annotations. Each says how many objects it found."""
-    labels = list(dict.fromkeys(r["label"] for r in results))
-    by_image: dict[int, dict] = {}
-    for r in results:
-        by_image.setdefault(r["media_id"], {})[r["label"]] = r
-    head = "".join(f"<strong>{escape(label)}</strong>" for label in labels)
-    cells = []
-    for found in by_image.values():
-        for label in labels:
-            r = found.get(label)
-            n = len(r["annotations"]) if r else 0
-            cells.append(f'<figure class="thumb">{image(r, classes)}<figcaption>{n} object{"" if n == 1 else "s"} · '
-                         f'{escape(r["filename"])}</figcaption></figure>' if r else "<div></div>")
-    return Markup(f'<div class="compare" style="--columns: {len(labels)}">{head}{"".join(cells)}</div>')
-
-
-# --- Studio: running a workflow from the page (js/studio.js) ---
-
-
-def dropzone(workflow_id: str, prompts: list | None = None, ask_prompts: bool = False) -> Markup:
-    """Drop or pick images: they're stored and run through the workflow, the progress is shown, and
-    the page shows again when the run ends (read its results with
-    api("/api/runs?workflow_id=…&limit=1") and /api/runs/{id}/annotations). prompts: what to look
-    for; ask_prompts: a field for them on the page (comma-separated), starting with `prompts`."""
-    run = escape(json.dumps({"workflow_id": workflow_id, "prompts": prompts}))
-    field = (Markup(f'<label class="field">What to look for<input name="prompts" value="{escape(", ".join(prompts or []))}" '
-                    'placeholder="car, person"></label>') if ask_prompts else "")
-    return Markup(f'<div class="dropzone" data-studio-drop data-run="{run}" role="button" tabindex="0">'
-                  f'{field}<p>Drop images here, or click to choose</p><input type="file" accept="image/*" multiple hidden>'
-                  '<p class="muted" data-status></p></div>')
-
-
-def run_button(label: str, workflow_id: str, project_id: int | None = None, where: str = "",
-               count: int | None = None, prompts: list | None = None) -> Markup:
-    """A button that runs the workflow on a project's images (its filter `where`; `count` of them
-    at random) with `prompts`, shows the progress, and shows the page again when the run ends."""
-    run = escape(json.dumps({"workflow_id": workflow_id, "project_id": project_id, "where": where, "count": count,
-                             "prompts": prompts}))
-    return Markup(f'<div class="actions"><button class="button" type="button" data-studio-run data-run="{run}">'
-                  f'{escape(label)}</button><span class="muted" data-status></span></div>')
-
-
 # --- Filters, for shaping API answers ---
 
 
@@ -273,12 +227,6 @@ COMPONENTS = [
     (histogram, "{{ ui.histogram([12, 15, 15, 18, 22, 22, 22, 30, 31, 45]) }}"),
     (image, _IMAGE + '\n<div style="max-width: 12rem">{{ ui.image(item, classes) }}</div>'),
     (images, _IMAGE + "\n{{ ui.images([item, item], classes) }}"),
-    (dropzone, '{{ ui.dropzone("sam3", ["car"], ask_prompts=true) }}'),
-    (run_button, '{{ ui.run_button("Run on 5 images", "sam3", project_id=1, count=5, prompts=["car"]) }}'),
-    (compare, _IMAGE + '\n{% set sam = {"media_id": 1, "label": "SAM 3", "filename": "example.png", "width": 256, '
-              '"height": 256, "url": item.url, "annotations": item.annotations} %}\n'
-              '{{ ui.compare([sam, {"media_id": 1, "label": "DINO → EdgeTAM", "filename": "example.png", "width": 256, '
-              '"height": 256, "url": item.url, "annotations": []}], classes) }}'),
 ]
 
 # What a template calls as `ui`.

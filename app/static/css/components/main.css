@@ -794,11 +794,3 @@ td:has(> .icon) { width: 1px; }  /* the cell as wide as the icon, not a share of
 
 .area .fill { fill: var(--color-highlight); fill-opacity: 0.15; stroke: none; }
 .area .line { stroke: var(--color-highlight); stroke-width: 2; stroke-dasharray: none; }
-
-/* The same images side by side, a column per result (style="--columns: 2"): ui.compare. */
-.compare {
-  display: grid;
-  grid-template-columns: repeat(var(--columns), minmax(0, 18rem));
-  gap: var(--space-4);
-  margin-top: var(--space-6);
-}
