@@ -64,7 +64,7 @@ def _versions(folder: Path) -> list[int]:
 
 
 def _when(path: Path) -> str:
-    return datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(timespec="seconds")
+    return datetime.fromtimestamp(path.stat().st_mtime, UTC).strftime(db.TIME)
 
 
 def _entry(view_id: str, folder: Path, versions: list[int]) -> dict:
