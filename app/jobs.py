@@ -193,6 +193,7 @@ def _job(row: sqlite3.Row) -> dict:
         "title": known.title if known else row["kind"],
         "unit": known.unit if known else "items",
         "params": json.loads(row["params"]),
+        "waits_for": json.loads(row["waits_for"]),
         "result": result,
         "summary": _summary(result, row["error"]),
         "active": row["status"] in ACTIVE,

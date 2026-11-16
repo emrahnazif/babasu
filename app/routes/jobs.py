@@ -61,7 +61,7 @@ class JobOut(Answer):
     summary: str = Field(description="The result or the error, in one line.")
     error: str | None = Field(description="Why it failed; read the log (GET /api/jobs/{id}/log) for the details.")
     stop_reason: str | None = Field(description="user or shutdown: it was asked to stop.")
-    waits_for: str = Field(description="The jobs it waits for before it starts (a JSON list of job ids).")
+    waits_for: list[int] = Field(description="The jobs it waits for before it starts (their ids).")
     can_cancel: bool
     can_retry: bool
     created_at: str = Field(description="UTC (ISO 8601), as are started_at and finished_at.")
