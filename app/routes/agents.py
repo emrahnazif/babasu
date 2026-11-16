@@ -6,13 +6,29 @@ from pydantic import Field
 
 from app import agent, agents, settings
 from app.agents import AgentForm, ModelForm
-from app.routes import message
+from app.routes import Answer, message
 
 router = APIRouter(prefix="/api")
 
 
-def _model(m: settings.Model) -> dict:
-    return m.model_dump(exclude={"api_key"}) | {"has_api_key": bool(m.api_key)}
+def _said(form: type, field: str) -> str:
+    return form.model_fields[field].description
+
+
+class ModelOut(Answer):
+    id: str = Field(description="The model's id (what an agent's model_id names).")
+    name: str = Field(description=_said(ModelForm, "name"))
+    base_url: str = Field(description=_said(ModelForm, "base_url"))
+    model: str = Field(description=_said(ModelForm, "model"))
+    has_api_key: bool = Field(description="Whether an API key is saved (keys are never returned).")
+
+
+class AgentOut(Answer):
+    id: str = Field(description="The agent's id.")
+    name: str = Field(description=_said(AgentForm, "name"))
+    model_id: str = Field(description=_said(AgentForm, "model_id"))
+    instructions: str = Field(description=_said(AgentForm, "instructions"))
+    default: bool = Field(description="New chats start with it.")
 
 
 def _do(action):
@@ -23,16 +39,16 @@ def _do(action):
         raise HTTPException(409, message(exc)) from None
 
 
-@router.get("/models")
+@router.get("/models", response_model=list[ModelOut])
 def list_models() -> list[dict]:
     """The language models agents run on: id, name, base_url, model, and whether an API key is saved."""
-    return [_model(m) for m in settings.get().models]
+    return [agents.shown_model(m) for m in settings.get().models]
 
 
-@router.post("/models", status_code=201)
+@router.post("/models", status_code=201, response_model=ModelOut)
 def add_model(form: ModelForm) -> dict:
     """Adds a language model; returns it with its id. 409 with why (e.g. a name taken)."""
-    return _model(_do(lambda: agents.add_model(form)))
+    return agents.shown_model(_do(lambda: agents.add_model(form)))
 
 
 @router.put("/models/{model_id}", status_code=204)
@@ -73,17 +89,18 @@ def test_model(model_id: str) -> dict:
     return {"ok": ok, "message": result}
 
 
-@router.get("/agents")
-def list_agents() -> dict:
-    """The agents (id, name, model_id, instructions) and which is the default for new chats."""
+@router.get("/agents", response_model=list[AgentOut])
+def list_agents() -> list[dict]:
+    """The agents: id, name, the model each runs on, its instructions, and which one new chats start with."""
     s = settings.get()
-    return {"agents": [a.model_dump() for a in s.agents], "default": s.default_agent}
+    return [agents.shown_agent(a, s.default_agent) for a in s.agents]
 
 
-@router.post("/agents", status_code=201)
+@router.post("/agents", status_code=201, response_model=AgentOut)
 def add_agent(form: AgentForm) -> dict:
     """Adds an agent; returns it with its id. 409 with why (e.g. an unknown model)."""
-    return _do(lambda: agents.add_agent(form)).model_dump()
+    new = _do(lambda: agents.add_agent(form))
+    return agents.shown_agent(new, settings.get().default_agent)
 
 
 @router.put("/agents/{agent_id}", status_code=204)

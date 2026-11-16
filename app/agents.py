@@ -27,6 +27,16 @@ class AgentForm(BaseModel):
     instructions: str = Field("", description="Its role and rules, e.g. Answer from the app's real data.")
 
 
+def shown_model(m: Model) -> dict:
+    """A model as the API and Settings show it: never its API key, only whether one is saved."""
+    return m.model_dump(exclude={"api_key"}) | {"has_api_key": bool(m.api_key)}
+
+
+def shown_agent(a: Agent, default_agent: str) -> dict:
+    """An agent as the API and Settings show it, with whether new chats start with it."""
+    return a.model_dump() | {"default": a.id == default_agent}
+
+
 def _find(items: list, item_id: str, kind: str):
     for item in items:
         if item.id == item_id:
