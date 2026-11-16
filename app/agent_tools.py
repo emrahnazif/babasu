@@ -471,12 +471,27 @@ class EditArgs(Args):
 @tool("Change part of a file in your folder: `old`, which must be in it exactly once, becomes `new`.", EditArgs)
 def edit_file(conn: sqlite3.Connection, args: EditArgs) -> dict:
     path = _path(args.path, "file")
-    text = path.read_text()
-    count = text.count(args.old)
-    if count != 1:
-        raise ToolError(f"{args.path}: `old` is there {count} times; it must be there exactly once (give more around it)")
-    settings.write_file(path, text.replace(args.old, args.new))
+    settings.write_file(path, _replace_once(path.read_text(), args.old, args.new, args.path, "read_file"))
     return {"edited": args.path}
+
+
+def _replace_once(text: str, old: str, new: str, what: str, source: str) -> str:
+    """`text` with `old`, found in it exactly once (give or take the spaces around it), replaced by
+    `new`. ToolError when it's there more than once, or not at all (with the closest lines);
+    `what` and `source` name the text and where to copy the piece from, for the agent."""
+    if text.count(old) == 0 and old.strip() and text.count(old.strip()) == 1:
+        old, new = old.strip(), new.strip()
+    found = text.count(old)
+    if found > 1:
+        raise ToolError(f"That piece is in {what} {found} times; give more of it, so it's found once.")
+    if not found:
+        lines = text.splitlines()
+        first = old.strip().splitlines()[0] if old.strip() else ""
+        near = difflib.get_close_matches(first, lines, n=3, cutoff=0.5)
+        hint = "".join(f"\n  line {lines.index(n) + 1}: {n!r}" for n in near)
+        raise ToolError(f"That piece isn't in {what}; copy it exactly from {source}."
+                        + (f" The closest lines:{hint}" if hint else ""))
+    return text.replace(old, new)
 
 
 class CodeArgs(Args):
@@ -671,19 +686,8 @@ def write_view(conn: sqlite3.Connection, args: WriteViewArgs) -> dict:
 )
 def edit_view(conn: sqlite3.Connection, args: EditViewArgs) -> dict:
     template = _view(args.view_id)["template"]
-    old, new = args.old, args.new
-    if template.count(old) == 0 and old.strip() and template.count(old.strip()) == 1:
-        old, new = old.strip(), new.strip()  # the piece, give or take the spaces around it
-    found = template.count(old)
-    if found > 1:
-        raise ToolError(f"That piece is in the template {found} times; give more of it, so it's found once.")
-    if not found:
-        lines = template.splitlines()
-        near = difflib.get_close_matches(old.strip().splitlines()[0] if old.strip() else "", lines, n=3, cutoff=0.5)
-        hint = "".join(f"\n  line {lines.index(n) + 1}: {n!r}" for n in near)
-        raise ToolError("That piece isn't in the template; copy it exactly from GET /api/views/{view_id}."
-                        + (f" The closest lines:{hint}" if hint else ""))
-    return _opened(views.save(args.view_id, template.replace(old, new)))
+    changed = _replace_once(template, args.old, args.new, "the template", "GET /api/views/{view_id}")
+    return _opened(views.save(args.view_id, changed))
 
 
 # --- Building workflows ---
