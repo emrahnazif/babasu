@@ -90,7 +90,7 @@ class _Printed(io.TextIOBase):
 
     def write(self, text: str) -> int:
         self._line += text
-        if "\n" in self._line:
+        if "\n" in text:
             done, self._line = self._line.rsplit("\n", 1)
             self._pipe.send(("print", done + "\n"))
         return len(text)
@@ -101,50 +101,48 @@ class _Printed(io.TextIOBase):
             self._line = ""
 
 
+IDLE = 30 * 60  # seconds a conversation's process waits for its next run, then ends (freeing what it holds)
+
+
 def _child(pipe, folder: str) -> None:
     """In the child: work in the conversation's folder (its files open by relative paths), and run
     each piece of code the app sends (a snippet, or a file of the folder) all in one namespace, so
     what one run leaves in variables and functions the next can use. Sends what's printed as it's
     printed, then ("done", error): None, or the error with the line it was on (its file, number
-    and text)."""
+    and text). Ends after IDLE seconds without a run."""
     os.chdir(folder)
     printed = _Printed(pipe)
-    shown = [-1]  # the last percentage sent in this run: a loop of any length sends at most ~100
+    shown = -1  # the last percentage sent in this run: a loop of any length sends at most ~100
 
     def progress(done: int, total: int) -> None:
         """Shows how far a long loop is, as a bar in the chat."""
+        nonlocal shown
         percent = int(100 * done / total) if total else 0
-        if percent != shown[0]:
-            shown[0] = percent
+        if percent != shown:
+            shown = percent
             pipe.send(("progress", done, total))
 
-    api = Api(pipe)
-    names = {"api": api, "Refused": Refused, "progress": progress, "__name__": "__main__"}
-    while True:
-        code, name = pipe.recv()  # name: CODE, or the file it was read from
-        shown[0], error = -1, None
-        label = "" if name == CODE else f"{name} "
-        if name == CODE:
-            names.pop("__file__", None)
-        else:
-            names["__file__"] = name
+    names = {"api": Api(pipe), "Refused": Refused, "progress": progress, "__name__": "__main__"}
+    while pipe.poll(IDLE):
+        code, file = pipe.recv()  # file: the folder's file the code was read from; None for a snippet
+        name, shown, error = file or "<code>", -1, None
         try:
             with contextlib.redirect_stdout(printed):
                 exec(compile(code, name, "exec"), names)
         except Exception as e:
             lines = [f.lineno for f in traceback.extract_tb(e.__traceback__) if f.filename == name]
-            where = f"{label}line {lines[-1]} ({code.splitlines()[lines[-1] - 1].strip()}): " if lines else ""
+            where = ""
+            if lines:
+                where = f"{file + ' ' if file else ''}line {lines[-1]} ({code.splitlines()[lines[-1] - 1].strip()}): "
             error = where + "".join(traceback.format_exception_only(e)).strip()
         printed.flush()
         pipe.send(("done", error))
 
 
-CODE = "<code>"  # what a snippet's tracebacks call it
-
-
 class Session:
     """One conversation's code process: started at its first run, kept while it's used, so its
-    variables last from one run to the next. A run that times out or crashes ends it."""
+    variables last from one run to the next. A run that times out or crashes ends it, and it ends
+    itself after IDLE seconds without a run."""
 
     def __init__(self, folder: Path) -> None:
         context = multiprocessing.get_context("spawn")
@@ -159,30 +157,36 @@ class Session:
         return self._process.is_alive()
 
     def close(self) -> None:
-        if self._process.is_alive():
-            self._process.kill()
+        self._process.kill()  # nothing if it has ended
         self._process.join()
 
-    def run(self, code: str, call: Call, timeout: int = TIMEOUT, name: str = CODE) -> Iterator[dict]:
-        """Run the code (read from the file `name`, if it was), making its API calls with `call` (here, in this thread), for at most
-        `timeout` seconds. Yields what it shows as it comes, {"type": "output", "text"} (as much
-        as the agent gets) and {"type": "progress", "done", "total"}; returns {output: what it
-        printed (cut when long), error: why it stopped, or None}."""
+    def _ended(self, why: str) -> str:
+        """End the process after a run that didn't finish; why, for the agent."""
+        self.close()
+        return f"{why} Its variables are gone: the next run starts a new process."
+
+    def run(self, code: str, call: Call, timeout: int = TIMEOUT, file: str | None = None) -> Iterator[dict]:
+        """Run the code (read from `file` of the folder, if it was), making its API calls with
+        `call` (here, in this thread), for at most `timeout` seconds. Yields what it shows as it
+        comes, {"type": "output", "text"} (as much as the agent gets) and {"type": "progress",
+        "done", "total"}; returns {output: what it printed (cut when long), error: why it stopped,
+        or None}."""
         self.used = started = time.monotonic()
-        self._pipe.send((code, name))
+        self._pipe.send((code, file))
         kept, size = [], 0  # what's printed, up to OUTPUT_SIZE; how much in all
         while True:
             left = timeout - (time.monotonic() - started)
             if left <= 0 or not self._pipe.poll(left):
-                self.close()
-                return _result(kept, size, f"Stopped after {timeout} s; give it more time (seconds) or do less. {GONE}")
+                error = self._ended(f"Stopped after {timeout} s; give it more time (seconds) or do less.")
+                break
             try:
                 message = self._pipe.recv()
             except EOFError:
-                self.close()
-                return _result(kept, size, f"The code's process ended without finishing (it crashed or was killed). {GONE}")
+                error = self._ended("The code's process ended without finishing (it crashed or was killed).")
+                break
             if message[0] == "done":
-                return _result(kept, size, message[1])
+                error = message[1]
+                break
             if message[0] == "print":
                 text = message[1][:max(OUTPUT_SIZE - size, 0)]
                 size += len(message[1])
@@ -197,22 +201,11 @@ class Session:
                     self._pipe.send((True, call(method, path, body)))
                 except Refused as e:
                     self._pipe.send((False, str(e)))
+        cut = f"\n… cut: {size:,} characters printed in all" if size > OUTPUT_SIZE else ""
+        return {"output": "".join(kept) + cut, "error": error}
 
 
-GONE = "Its variables are gone: the next run starts a new process."
-
-
-def _result(kept: list[str], size: int, error: str | None) -> dict:
-    text = "".join(kept)
-    if size > OUTPUT_SIZE:
-        text += f"\n… cut: {size:,} characters printed in all"
-    return {"output": text, "error": error}
-
-
-# Each conversation's code process, by its folder. One that hasn't run code for IDLE seconds is
-# ended when the next run anywhere starts; at most SESSIONS live at once (the oldest goes).
-IDLE = 30 * 60
-SESSIONS = 4
+SESSIONS = 4  # conversation processes alive at once: starting another ends the least recently used
 _sessions: dict[Path, Session] = {}  # by the conversation's folder
 _lock = threading.Lock()
 
@@ -221,15 +214,13 @@ def session(folder: Path) -> Session:
     """The code process working in a conversation's folder, started if it has none or its last
     one ended."""
     with _lock:
-        now = time.monotonic()
         for other, found in list(_sessions.items()):
-            if not found.alive or (other != folder and now - found.used > IDLE):
+            if not found.alive:
                 found.close()
                 del _sessions[other]
         if folder not in _sessions:
-            while len(_sessions) >= SESSIONS:
-                oldest = min(_sessions, key=lambda k: _sessions[k].used)
-                _sessions.pop(oldest).close()
+            if len(_sessions) >= SESSIONS:
+                _sessions.pop(min(_sessions, key=lambda k: _sessions[k].used)).close()
             _sessions[folder] = Session(folder)
         return _sessions[folder]
 

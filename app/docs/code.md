@@ -30,7 +30,7 @@ Your runs in a chat share one Python process, so what a run leaves in variables 
 2. Look and decide: show a few of them (show_images), think, choose the next step.
 3. Go on with what the last step saved: no copying ids or numbers out of what was printed.
 
-A run that's stopped (time) or crashes ends the process: its variables are gone, and the next run says so; read the files again and go on.
+A run that's stopped (time) or crashes ends the process, and so do 30 minutes without a run: its variables are gone; read the files again and go on.
 
 ## A project's images
 `api.images(project_id)` goes through them all; `api.images(project_id, "car")` through those matching a filter (read docs: filters). Don't go through a filter while changing what it matches: it reads a page at a time (`GET /api/projects/{id}?page=N`), and the pages move under you. Go through all of them instead and pick in the code.

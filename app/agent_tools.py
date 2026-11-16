@@ -511,9 +511,8 @@ class CodeArgs(Args):
     writes=True,
 )
 def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
-    code, name = (_path(args.file, "file").read_text(), args.file) if args.file else (args.code, code_mode.CODE)
-    session = code_mode.session(folder())
-    result = yield from session.run(code, _for_code, args.seconds, name)
+    code = _path(args.file, "file").read_text() if args.file else args.code
+    result = yield from code_mode.session(folder()).run(code, _for_code, args.seconds, args.file)
     if result["error"]:
         raise ToolError(result["error"] + (f"\nPrinted before it:\n{result['output']}" if result["output"] else ""))
     return {"output": result["output"]}
