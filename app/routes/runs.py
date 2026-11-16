@@ -3,13 +3,13 @@
 import sqlite3
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from mozo.workflow import WorkflowError
 from pydantic import BaseModel, Field, StringConstraints
 
-from app import annotators, db, media, runs, vision
+from app import annotators, db, runs, vision
 from app.filters import WHERE, Filter
-from app.routes import UI_ONLY, AnnotationOut, Answer, ClassOut, ToDownload
+from app.routes import AnnotationOut, Answer, ClassOut, ToDownload
 
 router = APIRouter(prefix="/api")
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -189,28 +189,6 @@ def api_delete_workflow(workflow_id: str) -> None:
     """Deletes a saved workflow (built-ins can't be); its runs keep their copy."""
     if not runs.delete_workflow(workflow_id):
         raise HTTPException(404, "No such saved workflow (built-ins can't be deleted)")
-
-
-# --- Images to run on ---
-
-
-@router.post("/media", status_code=201, tags=[UI_ONLY])
-def api_upload_media(files: list[UploadFile], conn: DB) -> list[dict]:
-    """Stores images (e.g. dropped on a Studio page) to run a workflow on; each once, by its
-    content. Returns them in order: media id, width, height, url, thumbnail. 422 if one isn't an
-    image; none are kept then."""
-    stored = []
-    with conn:
-        for upload in files:
-            try:
-                media_id = media.store(conn, upload.file.read())
-            except media.NotAnImage:
-                raise HTTPException(422, f"{upload.filename} isn't an image") from None
-            row = conn.execute("SELECT sha256, ext, width, height FROM media WHERE id = ?", (media_id,)).fetchone()
-            stored.append({"media_id": media_id, "filename": upload.filename, "width": row["width"],
-                           "height": row["height"], "url": media.url(row["sha256"], row["ext"]),
-                           "thumb_url": media.thumb_url(row["sha256"])})
-    return stored
 
 
 # --- Runs ---
