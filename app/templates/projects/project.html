@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "components.html" as ui %}
 {% from "projects/annotated.html" import annotated %}
 {% from "projects/macros.html" import downloads, no_classes %}
 {% from "partials/select.html" import select %}
@@ -8,18 +9,11 @@
 {# Where images come from: files and folders dropped or chosen, or a typed path (local disk or NAS).
    Used by the Add images dialog and by an empty project's page. #}
 {% macro import_fields(id, large=false) %}
-  <p class="muted">{{ image_formats }} images. A folder brings its subfolders too. Images already in the project are skipped.</p>
-  <div class="fields">
-    <div class="dropzone{% if large %} large{% endif %}" id="{{ id }}-drop" data-drop-paths data-name="paths" data-accept="{{ image_suffixes }}"
-         role="button" tabindex="0">
-      <p>Drop images or folders here, or click to choose images</p>
-      <ul></ul>
-    </div>
-    <label class="field">
-      Or enter a path
-      <input name="paths" placeholder="/Volumes/NAS/datasets/coco/val2017">
-    </label>
-  </div>
+  {{ ui.text(image_formats ~ " images. A folder brings its subfolders too. Images already in the project are skipped.", muted=true) }}
+  {{ ui.fields([
+    ui.dropzone(id ~ "-drop", "paths", "Drop images or folders here, or click to choose images", accept=image_suffixes, large=large),
+    ui.input("paths", "Or enter a path", placeholder="/Volumes/NAS/datasets/coco/val2017"),
+  ]) }}
 {% endmacro %}
 
 {# Number fields for a range: "from" and "to", either may be empty. #}
@@ -157,36 +151,31 @@
 {% endblock %}
 
 {% block content %}
-  <div id="project-images" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
+  {% call ui.region("project-images", on="job-ended", when="projectId=" ~ project.id) %}
   {% if project.images %}
-    <div class="justified">
-      {% for image in project.images %}
-        <a class="tile" href="/projects/{{ project.id }}/images/{{ image.media_id }}{{ query(params) }}"
-           style="--ratio: {{ image.aspect }}">
-          {{ annotated(image, project.classes, image.thumb_url, label=image.filename) }}
-          {% if image.annotations %}<span class="badge plain" title="Labelled" aria-label="Labelled">{{ icon("check-circle") }}</span>{% endif %}
-        </a>
-      {% endfor %}
-    </div>
+    {% set tiles = namespace(list=[]) %}
+    {% for image in project.images %}
+      {% set tiles.list = tiles.list + [{"src": image.thumb_url, "width": image.width, "height": image.height, "caption": image.filename,
+                                         "href": "/projects/" ~ project.id ~ "/images/" ~ image.media_id ~ query(params),
+                                         "annotations": image.annotations, "matches": image.matches,
+                                         "badge": {"text": "Labelled", "icon": "check-circle"} if image.annotations}] %}
+    {% endfor %}
+    {{ ui.tiles(tiles.list, classes=project.classes) }}
     {% if project.pages > 1 %}
-      <div class="actions">
-        <span class="muted">Page {{ project.page }} of {{ project.pages }} · {{ project.match_count | plural("image") }}</span>
-        {% if project.page > 1 %}<a class="button secondary" href="{{ query(params, page=project.page - 1) }}">Previous</a>{% endif %}
-        {% if project.page < project.pages %}<a class="button secondary" href="{{ query(params, page=project.page + 1) }}">Next</a>{% endif %}
-      </div>
+      {{ ui.pagination(project.page, project.pages, note=project.match_count | plural("image"),
+                       previous=query(params, page=project.page - 1) if project.page > 1,
+                       next=query(params, page=project.page + 1) if project.page < project.pages) }}
     {% endif %}
   {% elif project.image_count %}
-    <p class="muted">No images match. <a href="{{ query({}) }}">Show all images</a></p>
+    {{ ui.text(["No images match.", ui.link("Show all images", query({}))], muted=true) }}
   {% else %}
     {# An empty project's first step is adding images, so the page itself is the way in. #}
-    <form method="post" action="/projects/{{ project.id }}/import" data-background-form>
+    {% call ui.form("/projects/" ~ project.id ~ "/import", background=true) %}
       {{ import_fields("first-images", large=true) }}
-      <div class="actions">
-        <button class="button" type="submit">Import</button>
-      </div>
-    </form>
+      {{ ui.actions(ui.button("Import", submit=true)) }}
+    {% endcall %}
   {% endif %}
-  </div>
+  {% endcall %}
 
   <div id="add-images" class="dialog" popover aria-labelledby="add-images-title">
     <form method="post" action="/projects/{{ project.id }}/import" data-background-form>
