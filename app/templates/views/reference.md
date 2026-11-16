@@ -11,8 +11,12 @@ write your own HTML, CSS and JS only where none fits.
   with the reason, so ask only for what exists.
 - Look at an answer with the `call_api` tool (GET) before using its fields, so the template uses the
   names it really has.
-- The template sees only `api`, `ui` (the components below), `view` (its id and title) and the filters
-  below. Jinja's usual tags and filters work (`for`, `if`, `set`, `length`, `round`, `sum`, `groupby`,
+- What your code worked out (counts, scores, the images it picked) comes as `data`: save the view from
+  the code, `api.put("/api/views/<id>", {"title": …, "template": …, "data": results})`, and the template
+  reads `data.…`. Never type a number the code found into the template. Written again without data, a
+  view keeps the data it had (none if it never had any).
+- The template sees only `api`, `data`, `ui` (the components below), `view` (its id and title) and the
+  filters below. Jinja's usual tags and filters work (`for`, `if`, `set`, `length`, `round`, `sum`, `groupby`,
   `selectattr`, `map`…).
 - A component is called with its arguments: `{{ ui.heading("Cars", "Counted per project") }}`,
   `{{ ui.table(rows, columns=["Project", {"label": "Cars", "number": true}]) }}`. A container's content is
@@ -29,7 +33,7 @@ write your own HTML, CSS and JS only where none fits.
   `var(--color-text-muted)`, `var(--color-border)`, `var(--color-bg)`.
 - JS is allowed (`<script>`); it may call the API with `fetch("/api/…")`.
 - Images: `/media/…` URLs from the API (`thumb_url` for a small one).
-- A view keeps what it showed: every api() answer is recorded when it's written, and the page shows
-  those, not today's data. To bring it up to date, write it again.
+- A view keeps what it showed: every api() answer is recorded when it's written, and its data kept;
+  the page shows those, not today's data. To bring it up to date, write it again.
 - Writing checks the page first: if it doesn't render, you get the line and why, and nothing is saved.
   Every version is kept; an older one can be restored.

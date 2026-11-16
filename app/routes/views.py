@@ -15,11 +15,14 @@ router = APIRouter()
 
 
 class ViewWrite(BaseModel):
-    """A new version of a view: its whole template; its title (needed for a new view) changes only
-    when given."""
+    """A new version of a view: its whole template, and the data it reads if any; its title
+    (needed for a new view) and data change only when given."""
 
     template: str = Field(max_length=500_000, description="The whole page: a Jinja template (see get_components).")
     title: str | None = Field(None, min_length=1, max_length=200, description="The page's title; needed for a new view.")
+    data: dict | list | None = Field(None, description="What your code worked out, as JSON: the template reads it "
+                                     "as `data`, and the version keeps it as it keeps its API answers. Not given: "
+                                     "the last version's.")
 
 
 class Restore(BaseModel):
@@ -39,6 +42,7 @@ class ViewDetail(ViewListed):
     shown: int = Field(description="The version this template is (the newest unless ?version= asked for another).")
     template: str = Field(description="The page: a Jinja template.")
     answers: dict = Field(description="The API answers it recorded when written, by path: what the page shows.")
+    data: dict | list | None = Field(description="The data it was written with (the template's `data`); null if none.")
 
 
 class ViewVersion(Answer):
@@ -87,8 +91,8 @@ def api_views() -> list[dict]:
 
 @router.get("/api/views/{view_id}", response_model=ViewDetail)
 def api_view(view_id: str, version: Annotated[int | None, Query(description="An older version; empty for the newest.")] = None) -> dict:
-    """The view with its template (the newest version, or ?version=) and the API answers it
-    recorded."""
+    """The view with its template (the newest version, or ?version=), the API answers it
+    recorded and its data."""
     return _found(views.get(view_id, version))
 
 
@@ -96,7 +100,7 @@ def api_view(view_id: str, version: Annotated[int | None, Query(description="An 
 def api_write_view(view_id: str, write: ViewWrite) -> dict:
     """Adds a version (making the view if it's new). 422 if the template doesn't render, with the
     line and why."""
-    return views.save(view_id, write.template, write.title)
+    return views.save(view_id, write.template, write.title, write.data)
 
 
 @router.get("/api/views/{view_id}/versions", response_model=list[ViewVersion])
