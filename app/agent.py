@@ -256,23 +256,26 @@ def set_conversation_agent(conn: sqlite3.Connection, agent_id: str) -> None:
         conn.execute("UPDATE conversation SET agent_id = ? WHERE id = ?", (agent_id, conversation_id))
 
 
-def _messages(conn: sqlite3.Connection, conversation_id: int | None, tool_results: bool = True) -> list[dict]:
-    """The conversation's messages in order, tool calls parsed. tool_results=False leaves out
-    the (possibly large) results, which only the model needs."""
-    content = "content" if tool_results else "CASE role WHEN 'tool' THEN '' ELSE content END AS content"
+def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bool = False) -> list[dict]:
+    """The conversation's messages in order, tool calls parsed. Tool results can be large and only
+    the model reads them, and only this turn's (`results`); the others are left out."""
     rows = conn.execute(
-        f"SELECT role, {content}, tool_calls, tool_call_id, status, error, agent, model, page, page_title FROM message "
-        "WHERE conversation_id = ? ORDER BY id",
-        (conversation_id,),
+        """SELECT role, tool_calls, tool_call_id, status, error, label, note, images, agent, model, page, page_title,
+                  CASE WHEN role = 'tool' AND NOT (:results AND id > (
+                      SELECT max(id) FROM message WHERE conversation_id = :id AND role = 'user'))
+                  THEN '' ELSE content END AS content
+           FROM message WHERE conversation_id = :id ORDER BY id""",
+        {"id": conversation_id, "results": results},
     ).fetchall()
     return [dict(row) | {"tool_calls": json.loads(row["tool_calls"] or "[]")} for row in rows]
 
 
 def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
     """The conversation as the chat shows it: the person's turns, and each agent turn as one
-    entry with its parts in order (text and tool calls) and how it ended."""
-    messages = _messages(conn, conversation_id, tool_results=False)
-    tool_status = {m["tool_call_id"]: m["status"] for m in messages if m["role"] == "tool"}
+    entry with its parts in order (its text, and the tool calls that ran: each its label, note,
+    status and the images it found, {"project_id", "media_ids"}) and how it ended."""
+    messages = _messages(conn, conversation_id)
+    answers = {m["tool_call_id"]: m for m in messages if m["role"] == "tool"}
     result: list[dict] = []
     for m in messages:
         if m["role"] == "user":
@@ -283,8 +286,10 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
             turn = result[-1]
             if m["content"]:
                 turn["parts"].append({"kind": "text", "text": m["content"]})
-            for call in m["tool_calls"]:
-                turn["parts"].append({"kind": "tool", "name": call["name"], "status": tool_status.get(call["id"], "error")})
+            for answer in filter(None, (answers.get(call["id"]) for call in m["tool_calls"])):
+                turn["parts"].append({"kind": "tool", "label": answer["label"] or "", "note": answer["note"] or "",
+                                      "status": answer["status"],
+                                      "images": json.loads(answer["images"]) if answer["images"] else None})
             turn["status"], turn["error"] = m["status"], m["error"]
             turn["agent"], turn["model"] = m["agent"] or turn["agent"], m["model"] or turn["model"]
     return result
@@ -307,13 +312,30 @@ def _arguments(text: str) -> str:
         return "{}"
 
 
+LONG = 200  # characters of an argument an earlier call keeps; a longer one (code, a file) is left out
+
+
+def _shortened(text: str) -> str:
+    """An earlier call's arguments: what it was called on (ids, filters, paths) kept, its long
+    texts (code, a file's content) left out."""
+    return json.dumps({key: value if len(json.dumps(value)) <= LONG else "(left out)"
+                       for key, value in json.loads(_arguments(text)).items()}, ensure_ascii=False)
+
+
 def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Agent) -> list[dict]:
     """The conversation as the model gets it. A tool call without a saved result (the app stopped
-    in between) is left out, since the API requires every call to have its result."""
-    messages = _messages(conn, conversation_id)
+    in between) is left out, since the API requires every call to have its result.
+
+    The model works with a whole result only in the turn it comes in. An earlier turn's calls keep
+    what they were called on and what came out (their note): what the model concluded is in its
+    reply, data that has to last is in its folder's files, and it can call again. So a long chat
+    doesn't push its start (the instructions) out of a small context."""
+    messages = _messages(conn, conversation_id, results=True)
     answered = {m["tool_call_id"] for m in messages if m["role"] == "tool"}
+    this_turn = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=0)
     history = [{"role": "system", "content": system_prompt(agent)}]
-    for m in messages:
+    for i, m in enumerate(messages):
+        earlier = i < this_turn
         if m["role"] == "user":
             history.append({"role": "user", "content": _on_page(m) + m["content"]})
         elif m["role"] == "assistant":
@@ -323,12 +345,14 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
             message = {"role": "assistant", "content": m["content"]}
             if calls:
                 message["tool_calls"] = [
-                    {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": _arguments(c["arguments"])}}
+                    {"id": c["id"], "type": "function", "function": {
+                        "name": c["name"], "arguments": (_shortened if earlier else _arguments)(c["arguments"])}}
                     for c in calls
                 ]
             history.append(message)
         else:
-            history.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]})
+            content = f"(An earlier result, shortened) {m['note'] or m['status']}" if earlier else m["content"]
+            history.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": content})
     return history
 
 
@@ -442,7 +466,7 @@ def run_turn(
     was left) to the conversation's agent and yield what happens, for the chat to show as it streams:
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
-      {"type": "tool", "id", "name", "status": "running" | "done" | "error"}
+      {"type": "tool", "id", "label", "status": "running" | "done" | "error", "note", "images"}
       {"type": "call", "id", "name", "delta": "..."}        a tool call's arguments as the model writes them
       {"type": "output", "text": "..."}                     what the running tool prints (run_code)
       {"type": "progress", "done": 3, "total": 10}          how far the running tool is
@@ -552,20 +576,23 @@ def run_turn(
                     return
 
                 for ran, call in enumerate(tool_calls):
-                    yield {"type": "tool", "id": call["id"], "name": call["name"], "status": "running"}
+                    label = agent_tools.label(call["name"], call["arguments"])
+                    yield {"type": "tool", "id": call["id"], "label": label, "status": "running"}
                     try:
                         # What it shows while it works (run_code's output), then its result.
-                        result, status, error = (yield from agent_tools.call(conn, call["name"], call["arguments"])), "done", None
+                        (result, note, images), status, error = \
+                            (yield from agent_tools.call(conn, call["name"], call["arguments"])), "done", None
                     except Exception as exc:  # the model sees the error and can correct itself
                         error = str(exc)
-                        result, status = json.dumps({"error": error}), "error"
+                        result, note, images, status = json.dumps({"error": error}), error.partition("\n")[0], None, "error"
                     with conn:
                         conn.execute(
-                            "INSERT INTO message (conversation_id, role, content, tool_call_id, status, error) "
-                            "VALUES (?, 'tool', ?, ?, ?, ?)",
-                            (conversation_id, result, call["id"], status, error),
+                            "INSERT INTO message (conversation_id, role, content, tool_call_id, status, error, label, note, "
+                            "images) VALUES (?, 'tool', ?, ?, ?, ?, ?, ?, ?)",
+                            (conversation_id, result, call["id"], status, error, label, note,
+                             json.dumps(images) if images else None),
                         )
-                    yield {"type": "tool", "id": call["id"], "name": call["name"], "status": status}
+                    yield {"type": "tool", "id": call["id"], "label": label, "status": status, "note": note, "images": images}
                     if stop.is_set():  # the tools after it don't run, and the model isn't asked again
                         yield stopped(tool_calls[:ran + 1])
                         return

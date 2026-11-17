@@ -5,7 +5,7 @@ import json
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import (
     HTMLResponse,
     RedirectResponse,
@@ -14,7 +14,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, StringConstraints
 
-from app import agent, db
+from app import agent, db, projects
 from app.routes import UI_ONLY, safe_next
 from app.templating import page_name, templates
 
@@ -46,6 +46,16 @@ def send_message(message: NewMessage) -> StreamingResponse:
     except agent.Busy as exc:
         raise HTTPException(409, str(exc)) from None
     return _stream(turn)
+
+
+@router.get("/agent/images", response_class=HTMLResponse)
+def step_images(request: Request, conn: DB, project_id: int, media_ids: Annotated[list[int], Query()]):
+    """The images a step of the agent found, drawn (partials/chat-images.html): chat.js fetches
+    them when the step ends."""
+    shown = projects.images(conn, project_id, media_ids)
+    if shown is None:
+        raise HTTPException(404, "No such project")
+    return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": shown})
 
 
 @router.get("/api/agent/turn", response_model=None)

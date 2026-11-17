@@ -61,17 +61,26 @@ if (chat) {
         part.markdown += delta;
         frame ||= requestAnimationFrame(draw);
       },
-      tool({ id, name, status: state }) {
+      tool({ id, label, note, images, status: state }) {
         if (frame) draw(); // the part ends as written
         part = null;
         clearStatus();
         let element = tools.get(id);
         if (!element) {
           element = append(turn, clone("chat-tool"));
-          element.querySelector(".chat__tool-name").textContent = name;
+          element.querySelector(".chat__tool-label").textContent = label;
           tools.set(id, element);
         }
+        element.querySelector(".chat__tool-note").textContent = note ?? "";
         element.dataset.status = state;
+        // The images it found, drawn by the server (partials/chat-images.html) as in a saved turn.
+        if (images) {
+          const query = new URLSearchParams({ project_id: images.project_id });
+          for (const mediaId of images.media_ids) query.append("media_ids", mediaId);
+          fetch(`/agent/images?${query}`)
+            .then((response) => (response.ok ? response.text() : ""))
+            .then((html) => element.insertAdjacentHTML("beforeend", html));
+        }
         running = {};
         // After a tool and between rounds, show that the agent is still working.
         if (state !== "running") status = append(turn, clone("chat-status"));
@@ -121,7 +130,7 @@ if (chat) {
   // workflow builder draws a workflow as it's written); the chat doesn't know which page does:
   //   "agent:call"  {id, name, arguments}  a tool call as the model writes it: what's complete of
   //                                        its arguments so far (an object), at most once a frame
-  //   "agent:tool"  {id, name, status}     a tool call running, then done or refused ("error")
+  //   "agent:tool"  {id, label, status, note, images}  a tool call running, then done or refused ("error")
   //   "agent:end"                          the reply is over (before the page reloads)
   const hear = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 

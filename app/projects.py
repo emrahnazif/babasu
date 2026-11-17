@@ -309,6 +309,20 @@ def _image(row: sqlite3.Row, class_ids: set[int], matched: set[int] | None = Non
     return image
 
 
+def images(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> dict | None:
+    """Some of a project's images, in the order given, each as image pages get it, with the
+    project's classes to draw them in; None if the project is gone."""
+    project = get(conn, project_id)
+    if project is None:
+        return None
+    rows = {r["media_id"]: r for r in conn.execute(
+        f"{_IMAGE_SELECT} WHERE project_media.project_id = ? AND project_media.media_id IN (SELECT value FROM json_each(?))",
+        (project_id, json.dumps(media_ids)))}
+    class_ids = {c["id"] for c in project["classes"]}
+    return {"project_id": project_id, "classes": project["classes"],
+            "images": [_image(rows[m], class_ids) for m in media_ids if m in rows]}
+
+
 # An annotation `a` of the project_media row being filtered.
 _OF_IMAGE = "a.project_id = project_media.project_id AND a.media_id = project_media.media_id"
 

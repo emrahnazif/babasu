@@ -50,6 +50,8 @@ def agent_chat(request: Request, page_title: str) -> dict:
             page = request.url.path + (f"?{request.url.query}" if request.url.query else "")
             agent.set_page(conn, conversation_id, page, page_name(page_title))
         turns = agent.turns(conn, conversation_id)
+        for part in (part for turn in turns for part in turn.get("parts", []) if part.get("images")):
+            part["shown"] = projects.images(conn, part["images"]["project_id"], part["images"]["media_ids"])
         agent_id = agent.conversation_agent(conn, conversation_id)
     running = agent.running(conversation_id)
     if running and turns and turns[-1]["role"] == "agent":

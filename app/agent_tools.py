@@ -9,6 +9,10 @@ across things, run code.
 A tool registered with opens=True returns {"open": "/a/page", …}: that page is shown to the person
 once the reply is done (app/agent.py, run_turn); after a tool that `writes`, the page they're on
 reloads then instead (unless one opens).
+
+What the person sees of a call is one line: its label, what it's doing (the `step` the model gives,
+or the tool's own label), and its note, what came out (written from the result by the tool, so it's
+always true), with the images it found. An earlier turn's result reaches the model as its note.
 """
 
 import difflib
@@ -51,6 +55,7 @@ class Args(BaseModel):
     its mistake (a misspelt field) instead of being told a change it asked for was made."""
 
     model_config = ConfigDict(extra="forbid")
+    step: str = Field("", max_length=100, description="What this does, for the person: Counting cars in Street cars")
 
 
 class PageArgs(Args):
@@ -89,8 +94,12 @@ class DocsArgs(Args):
 @dataclass(frozen=True)
 class Tool:
     description: str
-    args: type[BaseModel]
-    func: Callable[[sqlite3.Connection, BaseModel], object]
+    args: type[Args]
+    func: Callable[[sqlite3.Connection, Args], object]
+    label: str  # what it does, for the person, when the model gave no `step`
+    note: Callable[[Args, object], str]  # what came out, in a few words, from its arguments and result
+    # The images it found, for the person to see in its row: a project's id and a few media ids.
+    shows: Callable[[Args, object], tuple[int, list[int]]] | None = None
     opens: bool = False  # it returns {"open": "/a/page", …}: that page is shown to the person after the reply
     # It changes what pages show: the page the person is on reloads after the reply. A function of
     # the arguments for a tool that only sometimes does (call_api: not a GET).
@@ -104,12 +113,13 @@ class ToolError(Exception):
     """The model asked for a tool that doesn't exist, or gave arguments that don't fit."""
 
 
-def tool(description: str, args: type[BaseModel], opens: bool = False,
-         writes: bool | Callable[[BaseModel], bool] = False):
+def tool(description: str, args: type[Args], label: str, note: Callable[[Args, object], str] = lambda args, result: "",
+         shows: Callable[[Args, object], tuple[int, list[int]]] | None = None, opens: bool = False,
+         writes: bool | Callable[[Args], bool] = False):
     """Register a function as a tool, under its own name."""
 
     def register(func):
-        TOOLS[func.__name__] = Tool(description, args, func, opens, writes)
+        TOOLS[func.__name__] = Tool(description, args, func, label, note, shows, opens, writes)
         return func
 
     return register
@@ -142,10 +152,23 @@ def turn_of(conversation_id: int, stop: threading.Event) -> Iterator[None]:
         _turn.reset(token)
 
 
+def label(name: str, arguments: str) -> str:
+    """What a call does, for the person: the `step` the model gave, or the tool's own label."""
+    found = TOOLS.get(name)
+    if found is None:
+        return name
+    try:
+        step = json.loads(arguments or "{}").get("step")
+    except (ValueError, AttributeError):
+        step = None
+    return step.strip() if isinstance(step, str) and step.strip() else found.label
+
+
 def call(conn: sqlite3.Connection, name: str, arguments: str) -> Iterator[dict]:
     """Run a tool with the model's JSON arguments. Yields what it shows while it works (a tool
     that's a generator: {"type": "output", "text"}, {"type": "progress", "done", "total"});
-    returns the result as JSON text. Raises ToolError."""
+    returns its result for the model (JSON text), its note and the images it found ({"project_id",
+    "media_ids"}, or None). Raises ToolError."""
     if name not in TOOLS:
         raise ToolError(f"There is no tool named {name!r}.")
     found = TOOLS[name]
@@ -157,7 +180,9 @@ def call(conn: sqlite3.Connection, name: str, arguments: str) -> Iterator[dict]:
     result = found.func(conn, args)
     if inspect.isgenerator(result):
         result = yield from result
-    return json.dumps(result, ensure_ascii=False)
+    shown = found.shows(args, result) if found.shows else None
+    images = {"project_id": shown[0], "media_ids": shown[1]} if shown and shown[1] else None
+    return json.dumps(result, ensure_ascii=False), found.note(args, result), images
 
 
 def writes(name: str, arguments: str) -> bool:
@@ -323,6 +348,8 @@ class FindApiArgs(Args):
     "of what it answers (what your code gets). Give an operation (\"PATCH /api/projects/{project_id}\"), or "
     "words to find up to three.",
     FindApiArgs,
+    label="Looking up the app's API",
+    note=lambda args, found: f"{len(found)} found",
 )
 def find_api(conn: sqlite3.Connection, args: FindApiArgs) -> list[dict]:
     query = args.query.strip().lower()
@@ -354,6 +381,8 @@ class CallApiArgs(Args):
 @tool(
     "Do anything the app's pages do: call one of its API operations (find_api finds one and its details). Reads (GET) answer with the data; changes are checked as the pages' are, and a refusal says why.",
     CallApiArgs,
+    label="Using the app's data",
+    note=lambda args, answer: f"{len(answer)} found" if isinstance(answer, list) else "",
     writes=lambda args: args.method != "GET",
 )
 def call_api(conn: sqlite3.Connection, args: CallApiArgs) -> object:
@@ -424,7 +453,8 @@ class PathArgs(Args):
 
 
 @tool(f"The files in your folder (or a folder in it), with their sizes in bytes (at most {LISTED}). Your folder is "
-      "this chat's: your scripts, the results they save, your drafts. run_code works in it.", PathArgs)
+      "this chat's: your scripts, the results they save, your drafts. run_code works in it.", PathArgs,
+      label="Listing files", note=lambda args, found: f"{len(found['files']) + found.get('more', 0)} files")
 def list_files(conn: sqlite3.Connection, args: PathArgs) -> dict:
     root = folder()
     files = [p for p in _path(args.path, "folder").rglob("*") if p.is_file()]
@@ -439,7 +469,7 @@ class ReadArgs(Args):
 
 @tool(f"Read a file of your folder, {READ_SIZE:,} characters at a time (a bigger one says where the next part "
       "starts). For data, read what you need in code instead: a file is for you to check, not to copy from.",
-      ReadArgs)
+      ReadArgs, label="Reading a file", note=lambda args, read: args.path)
 def read_file(conn: sqlite3.Connection, args: ReadArgs) -> dict:
     path = _path(args.path, "file")
     with path.open(errors="replace") as f:
@@ -457,7 +487,7 @@ class WriteArgs(Args):
 
 @tool("Write a file in your folder (all of it; a file that's there is replaced): a script to run with run_code, "
       "notes, a draft. Results your code makes, it saves itself. Your folder is your working copy: undoing a turn "
-      "doesn't change its files.", WriteArgs)
+      "doesn't change its files.", WriteArgs, label="Writing a file", note=lambda args, written: args.path)
 def write_file(conn: sqlite3.Connection, args: WriteArgs) -> dict:
     path = _path(args.path)
     settings.write_file(path, args.content)
@@ -470,7 +500,8 @@ class EditArgs(Args):
     new: str = Field(description="What replaces it.")
 
 
-@tool("Change part of a file in your folder: `old`, which must be in it exactly once, becomes `new`.", EditArgs)
+@tool("Change part of a file in your folder: `old`, which must be in it exactly once, becomes `new`.", EditArgs,
+      label="Editing a file", note=lambda args, edited: args.path)
 def edit_file(conn: sqlite3.Connection, args: EditArgs) -> dict:
     """`old` is found once, give or take the spaces around it; not found, the closest lines say where to look."""
     path = _path(args.path, "file")
@@ -511,6 +542,12 @@ class CodeArgs(Args):
         return self
 
 
+def _last_line(text: str) -> str:
+    """The last line printed, what a script usually ends with: what it found."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1][:120] if lines else ""
+
+
 @tool(
     "Run Python for what one API call can't do: going through many images or projects, filtering objects, "
     "changing many at once, combining projects, measuring, comparing. Read read_docs code first (the client, "
@@ -520,6 +557,8 @@ class CodeArgs(Args):
     "through the API, so they're checked, and undone with your turn (files in your folder stay as they are). "
     "Returns what it printed.",
     CodeArgs,
+    label="Running code",
+    note=lambda args, ran: _last_line(ran["output"]),
     writes=True,
 )
 def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
@@ -543,6 +582,7 @@ def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
     "models), /jobs/ID (a job and its log), "
     "/settings/general, /settings/models and /settings/agents (the models and agents you run on).",
     PageArgs,
+    label="Opening a page",
     opens=True,
 )
 def open_page(conn: sqlite3.Connection, args: PageArgs) -> dict:
@@ -566,6 +606,9 @@ def _page_title(path: str) -> str:
     "with its page. Use it when the person names something without saying where it is; if more than one "
     "thing could be what they mean, ask which.",
     SearchArgs,
+    label="Searching by name",
+    note=lambda args, found: ", ".join(f"{len(found[kind])} {kind}" for kind in ("projects", "images", "workflows")
+                                       if found[kind]) or "nothing found",
 )
 def search(conn: sqlite3.Connection, args: SearchArgs) -> dict:
     found = projects.named(conn, args.text.strip())
@@ -598,6 +641,9 @@ def _filtered(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     "Find a project's images matching a filter: how many match, and the first ones (id, file name, page) with how "
     "many of the objects asked for each has. Use it to check a filter (and see it written back the way it was understood) before showing it.",
     FilterArgs,
+    label="Finding images",
+    note=lambda args, found: f"{found['match_count']:,} of {found['image_count']:,} images",
+    shows=lambda args, found: (args.project_id, [image["id"] for image in found["first"][:4]]),
 )
 def find_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     project = _filtered(conn, args)
@@ -613,6 +659,8 @@ def find_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     "Show the person a project's images matching a filter: their project page opens with it once you've answered, "
     "where they see it as chips they can change. Say in a few words what you're showing.",
     FilterArgs,
+    label="Showing images",
+    note=lambda args, shown: f"{shown['match_count']:,} images",
     opens=True,
 )
 def show_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
@@ -621,7 +669,8 @@ def show_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     return {"open": f"/projects/{args.project_id}{query}", "match_count": project["match_count"]}
 
 
-@tool("Wait for a background job to end (or for `seconds` to pass), then show it as GET /api/jobs/{job_id} does.", WaitArgs)
+@tool("Wait for a background job to end (or for `seconds` to pass), then show it as GET /api/jobs/{job_id} does.", WaitArgs,
+      label="Waiting for a job", note=lambda args, job: f"{job['title']} {job['status']}" + (f": {job['summary']}" if job["summary"] else ""))
 def wait_for_job(conn: sqlite3.Connection, args: WaitArgs) -> dict:
     deadline, stop = time.monotonic() + args.seconds, _turn.get().stop
     while (job := jobs.get(conn, args.job_id)) and job["status"] in jobs.ACTIVE and time.monotonic() < deadline:
@@ -648,6 +697,8 @@ DOCS = _docs()
     "it when you're unsure what something is or does, or before explaining it. The topics: "
     + "; ".join(f"{topic} ({lines[1].rstrip('.')})" for topic, lines in DOCS.items()) + ".",
     DocsArgs,
+    label="Reading the docs",
+    note=lambda args, doc: doc.partition("\n")[0].removeprefix("# "),
 )
 def read_docs(conn: sqlite3.Connection, args: DocsArgs) -> str:
     topic = args.topic.strip().lower().removesuffix(".md")
@@ -664,6 +715,8 @@ def read_docs(conn: sqlite3.Connection, args: DocsArgs) -> str:
     "inputs and outputs (name: type) and parameters (name, kind, default, options; `prompts`: it takes the prompts). "
     "A run keeps what reaches a save_to_babasu node, under its label; read_media is where each image comes in.",
     NodesArgs,
+    label="Looking at workflow nodes",
+    note=lambda args, nodes: f"{len(nodes)} nodes",
 )
 def list_nodes(conn: sqlite3.Connection, args: NodesArgs) -> list[dict]:
     def ports(items: list[dict]) -> list[str]:

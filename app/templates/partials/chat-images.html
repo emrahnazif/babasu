@@ -1,0 +1,4 @@
+{# The images a step of the agent found (projects.images): in a saved turn (partials/chat.html) and
+   fetched by chat.js when a step ends (/agent/images). #}
+{% from "projects/macros.html" import image_tiles %}
+<div class="chat__images">{{ image_tiles(shown.project_id, shown.images, shown.classes) }}</div>

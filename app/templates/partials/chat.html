@@ -12,11 +12,15 @@
   <div class="chat__text">{{ text }}</div>
 {%- endmacro %}
 
-{# A tool call: running (spinner), done (check) or error (cross). The icon follows data-status. #}
-{% macro tool_part(name, status) -%}
+{# A step the agent takes (a tool call): what it's doing, then what came out (its note, or why it
+   failed), and the images it found under it. Running (spinner), done (check) or error (cross): the
+   icon follows data-status. #}
+{% macro tool_part(label, note, status, shown=none) -%}
   <div class="chat__tool" data-status="{{ status }}">
     <span class="chat__tool-icon" aria-hidden="true"><span class="chat__spinner"></span>{{ icon("check") }}{{ icon("x-mark") }}</span>
-    <span class="chat__tool-name">{{ name }}</span>
+    <span class="chat__tool-label">{{ label }}</span>
+    <span class="chat__tool-note">{{ note }}</span>
+    {%- if shown %}{% include "partials/chat-images.html" %}{% endif %}
   </div>
 {%- endmacro %}
 
@@ -49,7 +53,7 @@
       {% else %}
         <div class="chat__message chat__message--agent" data-status="{{ turn.status }}">
           {% for part in turn.parts %}
-            {% if part.kind == "text" %}{{ text_part(part.text) }}{% else %}{{ tool_part(part.name, part.status) }}{% endif %}
+            {% if part.kind == "text" %}{{ text_part(part.text) }}{% else %}{{ tool_part(part.label, part.note, part.status, part.shown) }}{% endif %}
           {% endfor %}
           {% if turn.status == "error" %}{{ note("error", turn.error) }}{% endif %}
           {% if turn.status == "stopped" %}{{ note("stopped", "Stopped") }}{% endif %}
@@ -79,7 +83,7 @@
   <template id="chat-user">{{ user_message("") }}</template>
   <template id="chat-agent"><div class="chat__message chat__message--agent" data-status="streaming"></div></template>
   <template id="chat-text">{{ text_part("") }}</template>
-  <template id="chat-tool">{{ tool_part("", "running") }}</template>
+  <template id="chat-tool">{{ tool_part("", "", "running") }}</template>
   {# While a tool runs (run_code): what it prints, and how far it is (progress(done, total)). #}
   <template id="chat-output"><pre class="chat__output"></pre></template>
   <template id="chat-progress"><div class="progress chat__progress" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"></div></template>
