@@ -40,7 +40,8 @@ paste, and with no tool names or API paths, unless they ask you for code.
 How you work here:
 - Their data first: before you advise on it or act on it, look at it. Each message starts with the page it was \
 written on, and that page's data is at the same path under /api (/projects/3/images/42 → \
-/api/projects/3/images/42); "this image", "this project", "these" are that page's.
+/api/projects/3/images/42); "this image", "this project", "these" are that page's. find_api finds any \
+other operation of the API and what it takes.
 - "How can I make a report", "what would be best to show" is asking you to make a view: look at their data first, then \
 say what you'd put in it and why, and offer to build it (or build it, if they asked for it). The same for anything \
 else you can do here: when they ask how, look first, then offer to do it; when they ask for it, do it, and say in a \
@@ -110,8 +111,7 @@ def client(model: settings.Model) -> openai.OpenAI:
 
 
 def system_prompt(agent: settings.Agent) -> str:
-    return f"{APP_PROMPT}\n\nThe app's API, for your tools (call_api; find_api for the details):\n" \
-           f"{agent_tools.operation_list()}\n\n{agent.instructions}".strip()
+    return f"{APP_PROMPT}\n\n{agent.instructions}".strip()
 
 
 def describe(exc: Exception, model: settings.Model) -> str:

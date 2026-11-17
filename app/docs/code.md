@@ -4,7 +4,7 @@ How to write Python for run_code: the api client, paging through a project's ima
 Use run_code for what one API call doesn't do: going through many images, changing many objects at once, combining projects. For one change, call_api is simpler.
 
 ## The client
-- `api.get(path)`, `api.post(path, body)`, `api.put(path, body)`, `api.patch(path, body)`, `api.delete(path)`: the operations in your instructions. Each returns the JSON answer (None when there's none); find_api shows what an operation takes and the fields of its answer, so look there before writing code that reads one.
+- `api.get(path)`, `api.post(path, body)`, `api.put(path, body)`, `api.patch(path, body)`, `api.delete(path)`: any /api operation (find_api finds one and what it takes). Each returns the JSON answer (None when there's none); find_api shows what an operation takes and the fields of its answer, so look there before writing code that reads one.
 - `api.images(project_id, where="")`: a project's images (those matching a filter), each with its objects, a page at a time.
 - A refusal raises `Refused` with the API's reason: catch it to go on with the others, or let it stop the code.
 - `print()` what you need to see and what you'll report: the output comes back to you (8,000 characters at most).

@@ -3,9 +3,8 @@
 Each tool's arguments are a pydantic model, so the JSON schema the model sees is generated, never
 written by hand. Tools that change things don't ask for confirmation: what they change in the
 database, and the views and workflows they delete, can be undone for 30 days (app/history.py).
-Everything the pages can do goes through call_api, one tool for the whole API (its operations are
-listed in the agent's instructions, find_api gives the details); the other tools do what one call
-can't: open a page, wait, search across things, write views.
+Everything the pages can do goes through call_api, one tool for the whole API (find_api finds an
+operation and its details); the other tools do what one call can't: open a page, wait, search across things, write views.
 A tool registered with opens=True returns {"open": "/a/page", …}: that page is shown to the person
 once the reply is done (app/agent.py, run_turn); after a tool that `writes`, the page they're on
 reloads then instead (unless one opens).
@@ -301,24 +300,15 @@ def _search() -> list[tuple[dict, str, re.Pattern]]:
     return [(o, text(o), answers(o["operation"])) for o in operations()]
 
 
-@cache
-def operation_list() -> str:
-    """One line per operation, for the agent's instructions: "GET /api/projects: Every project…"."""
-    def first(text: str) -> str:
-        sentence = re.split(r"\.\s+(?=[A-Z])", " ".join(text.split()))[0].rstrip(".")  # not at "e.g. to"
-        return sentence if len(sentence) <= 160 else sentence[:157] + "…"
-    return "\n".join(f"{o['operation']}: {first(o['description'])}" for o in operations())
-
-
 class FindApiArgs(Args):
-    query: str = Field(min_length=1, description='An operation from the list ("PATCH /api/projects/{project_id}"), '
-                       'or words ("annotations", "cancel job").')
+    query: str = Field(min_length=1, description='An operation ("PATCH /api/projects/{project_id}"), or words ("annotations", '
+                       '"cancel job").')
 
 
 @tool(
     "The details of the app's API operations: what one does, its parameters, the JSON body it takes and the fields "
-    "of what it answers (what your code gets). Give the "
-    "operation from the list in your instructions, or words to find up to three.",
+    "of what it answers (what your code gets). Give an operation (\"PATCH /api/projects/{project_id}\"), or "
+    "words to find up to three.",
     FindApiArgs,
 )
 def find_api(conn: sqlite3.Connection, args: FindApiArgs) -> list[dict]:
@@ -330,7 +320,7 @@ def find_api(conn: sqlite3.Connection, args: FindApiArgs) -> list[dict]:
     scored = sorted(((sum(w in text for w in words), o) for o, text, _ in _search()), key=lambda t: -t[0])
     found = [o for score, o in scored[:3] if score]
     if not found:
-        raise ToolError("No operation matches those words; the list in your instructions has them all.")
+        raise ToolError("No operation matches those words; try others.")
     return found
 
 
@@ -349,8 +339,7 @@ class CallApiArgs(Args):
 
 
 @tool(
-    "Do anything the app's pages do: call one of its API operations (the list in your instructions; find_api for "
-    "the details). Reads (GET) answer with the data; changes are checked as the pages' are, and a refusal says why.",
+    "Do anything the app's pages do: call one of its API operations (find_api finds one and its details). Reads (GET) answer with the data; changes are checked as the pages' are, and a refusal says why.",
     CallApiArgs,
     writes=lambda args: args.method != "GET",
 )
@@ -371,7 +360,7 @@ def _request(method: str, path: str, body=None):
     target = path.split("?")[0]
     methods = [o["operation"].split(" ")[0] for o, _, answers in _search() if answers.match(target)]
     if not methods:
-        raise ToolError(f"There's no operation at {target}; the list in your instructions has them all.")
+        raise ToolError(f"There's no operation at {target}; find_api finds them.")
     if method not in methods:
         raise ToolError(f"{target} takes {', '.join(methods)}, not {method}.")
     response = views.client().request(method, path, json=body)
