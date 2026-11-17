@@ -1,5 +1,8 @@
 """Route modules (one per area), plus what they share."""
 
+from collections.abc import Iterator
+
+from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 # Not `from app import projects`: in this package that name is the projects route module.
@@ -8,6 +11,27 @@ from app.projects import PROMPT, Annotation
 # The tag of API operations only the app's own pages use (the chat's, uploads): the agent's list
 # of operations leaves them out (agent_tools.operations).
 UI_ONLY = "ui-only"
+
+
+def _query_parameters(dependant) -> Iterator[str]:
+    """The query parameters a route takes, its dependencies' too."""
+    yield from (p.alias for p in dependant.query_params)
+    for inner in dependant.dependencies:
+        yield from _query_parameters(inner)
+
+
+def known_query(request: Request) -> None:
+    """An /api operation refuses a query parameter it doesn't take (422, naming those it does), as
+    a tool refuses an argument it doesn't take: one misspelt or made up is a mistake to say, not to
+    ignore, or the answer reads as if it had been taken (all the projects as if filtered). The
+    app's dependency for every route; pages keep theirs."""
+    route = request.scope.get("route")
+    if route is None or not request.url.path.startswith("/api/"):
+        return
+    taken = set(_query_parameters(route.dependant))
+    if unknown := sorted(set(request.query_params) - taken):
+        raise HTTPException(422, f"Not a parameter of {route.path}: {', '.join(unknown)}; it takes "
+                                 + (", ".join(sorted(taken)) or "none"))
 
 
 class Answer(BaseModel):

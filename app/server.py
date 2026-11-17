@@ -5,12 +5,13 @@ import time
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, Response
+from fastapi import Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from mozo.workflow.api import workflow_router
 
 from app import agent, agent_tools, code, config, db, history, jobs, segment, vision
 from app.filters import FilterError
+from app import routes
 from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
 from app.routes import history as history_routes
@@ -61,7 +62,8 @@ async def lifespan(app: FastAPI):
     vision.unload_all()
 
 
-app = FastAPI(title=config.APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title=config.APP_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
+              dependencies=[Depends(routes.known_query)])
 app.add_middleware(Actions)
 app.mount("/static", AppFiles(directory=config.STATIC_DIR), name="static")
 # check_dir=False: the folder appears with the first stored file.
