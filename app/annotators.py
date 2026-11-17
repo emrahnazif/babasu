@@ -27,7 +27,7 @@ FINDERS: dict[Finder, str] = {id: runs.load(id).name for id in get_args(Finder)}
 
 # The annotator a new project of each type gets. None: no model knows the user's own keypoints,
 # so keypoint projects start by hand.
-SUGGESTED: dict[Task, Finder | None] = {"detection": "sam3", "segmentation": "sam3", "keypoints": None}
+SUGGESTED: dict[Task, Finder | None] = {"detection": runs.FINDER, "segmentation": runs.FINDER, "keypoints": None}
 
 
 def to_annotations(detections: pf.Detections, classes: list[int]) -> list[projects.Annotation]:

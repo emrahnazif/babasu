@@ -38,6 +38,10 @@ class WorkflowListed(Answer):
     name: str
     description: str = Field(description="What it does, in a sentence or two; empty if it doesn't say.")
     builtin: bool = Field(description="Comes with the app (can't be changed or deleted).")
+    default: bool | None = Field(None, description="What a run runs when no workflow is named.")
+    prompts: bool | None = Field(None, description="It finds what prompts name (a run gives them).")
+    keeps: list[str] | None = Field(None, description="What a run of it keeps: its results' labels.")
+    to_download: int | None = Field(None, description="Bytes of models it downloads before its first run (0: ready).")
     models: list[ModelUse] | None = Field(None, description="The models it uses.")
     error: str | None = Field(None, description="Instead of models: why it doesn't load.")
 
@@ -108,7 +112,8 @@ class RunStarted(Answer):
 
 @router.get("/workflows", response_model=list[WorkflowListed], response_model_exclude_unset=True)
 def api_workflows() -> list[dict]:
-    """Every workflow: id, name, whether it's built in, and its models (or why it doesn't load)."""
+    """Every workflow: what it does, whether it takes prompts, what a run keeps, what it still
+    downloads, which one a run runs when none is named, and its models (or why it doesn't load)."""
     return runs.workflows()
 
 

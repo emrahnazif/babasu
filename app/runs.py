@@ -24,6 +24,7 @@ KIND = "workflow_run"  # job kind
 
 # The built-in workflows' ids (their names are in their files).
 BUILTIN = ("sam3", "grounding-dino", "grounding-dino-edgetam")
+FINDER = "sam3"  # what a run runs when no workflow is named: it finds and outlines what its prompts name
 
 
 @node(category="Output")
@@ -76,7 +77,12 @@ def workflows() -> list[dict]:
 
 
 def _listed(id: str, workflow: Workflow) -> dict:
-    return _entry(id, workflow) | {"models": [use._asdict() for use in workflow.check(device=config.DEVICE).models]}
+    """A workflow as the list shows it: what it does and is (built in, the default finder), whether
+    it takes prompts, what a run keeps, what it still downloads, its models."""
+    models = workflow.check(device=config.DEVICE).models
+    return _entry(id, workflow) | {"default": id == FINDER, "prompts": bool(workflow.prompt_parameters),
+                                   "keeps": list(_kept(workflow).values()), "to_download": sum(m.size for m in models),
+                                   "models": [use._asdict() for use in models]}
 
 
 def load(id: str) -> Workflow | None:
@@ -116,14 +122,15 @@ def _loaded(document: dict) -> Workflow:
 
 
 def resolve(workflow_id: str | None, document: dict | None = None) -> tuple[str | None, Workflow]:
-    """What a run runs: a saved workflow (its id), or one not saved yet (its document: a draft
-    tried on a few images; it has no id). ValueError: neither, no such workflow, or a document mozo
-    doesn't load."""
+    """What a run runs: a saved workflow (its id; none named, FINDER), or one not saved yet (its
+    document: a draft tried on a few images; it has no id). ValueError: no such workflow, or a
+    document mozo doesn't load."""
     if document is not None:
         return None, _loaded(document)
-    workflow = load(workflow_id) if workflow_id else None
+    workflow_id = workflow_id or FINDER
+    workflow = load(workflow_id)
     if workflow is None:
-        raise ValueError(f"There is no workflow {workflow_id!r}" if workflow_id else "Give a workflow_id, or a workflow to try")
+        raise ValueError(f"There is no workflow {workflow_id!r}")
     return workflow_id, workflow
 
 
