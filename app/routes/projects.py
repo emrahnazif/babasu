@@ -337,14 +337,22 @@ def _exists(conn: sqlite3.Connection, project_id: int) -> None:
 
 
 @contextmanager
-def _writing(conn: sqlite3.Connection, project_id: int):
-    """A change to a project, committed at the end: 404 if there's no such project, 409 if it's frozen."""
+def _writing(conn: sqlite3.Connection, project_id: int, dry_run: bool = False):
+    """A change to a project, committed at the end (`dry_run`: done, then rolled back, so what it
+    says it changed is exactly what it would): 404 if there's no such project, 409 if it's frozen."""
     _exists(conn, project_id)
     try:
-        with conn:
-            yield
+        yield
     except projects.FrozenError:
+        conn.rollback()
         raise HTTPException(409, "The project is frozen; duplicate it to change it") from None
+    except BaseException:
+        conn.rollback()
+        raise
+    if dry_run:
+        conn.rollback()
+    else:
+        conn.commit()
 
 
 def _started(start: Callable[[], dict | None]) -> dict:
@@ -579,6 +587,44 @@ class Found(Answer):
     images: list[FoundImage] = Field(description="The first 20, by file name.")
     image_count: int = Field(description="How many images match in all.")
     workflows: list[FoundWorkflow]
+
+
+class ProjectChange(BaseModel):
+    """A change to a project's images matching a filter, all at once."""
+
+    model_config = ConfigDict(extra="forbid")
+    action: projects.Change = Field(description="delete_objects or set_class (the objects the filter names in "
+                                    "brackets, e.g. (car w:<10)); remove_images; copy_images or move_images (to "
+                                    "to_project_id, with their objects; classes it lacks are added).")
+    where: str = Field("", max_length=2000, description=WHERE)
+    class_id: int | None = Field(None, description="set_class: the class the objects become.")
+    to_project_id: int | None = Field(None, description="copy_images, move_images: the project they go to.")
+    dry_run: bool = Field(True, description="Only say what would change (how many, a few of the images), changing "
+                          "nothing; false to change it.")
+
+
+class ChangeOut(Answer):
+    action: str
+    dry_run: bool = Field(description="Nothing was changed: this is what would be.")
+    images: int = Field(description="How many images it changes (only those that change).")
+    objects: int | None = Field(None, description="How many objects it deletes, gives a class, or copies.")
+    examples: list[int] = Field(description="The first few of those images (media ids).")
+    classes_added: list[str] | None = Field(None, description="Copying: the classes the other project gets.")
+    already_in_target: int | None = Field(None, description="Copying: images the other project has already (left as they are).")
+
+
+@router.post("/api/projects/{project_id}/changes", response_model=ChangeOut, response_model_exclude_unset=True)
+def api_change(project_id: int, change: ProjectChange, conn: DB) -> dict:
+    """Changes the project's images matching a filter all at once: deletes the objects it names or
+    gives them a class, removes the images, or copies or moves them to another project. Unless
+    dry_run is false, nothing changes: the answer says what would (how many images and objects, the
+    first images). History undoes a change whole."""
+    with _writing(conn, project_id, dry_run=change.dry_run):
+        try:
+            return projects.change(conn, project_id, Filter.parse(change.where), change.action, change.class_id,
+                                   change.to_project_id) | {"dry_run": change.dry_run}
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
 
 
 @router.get("/api/search", response_model=Found)

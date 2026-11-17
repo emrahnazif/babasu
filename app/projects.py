@@ -591,12 +591,101 @@ def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, an
     if row is None:
         return False
     kept = [a for a in json.loads(row["annotations"]) if a["class_id"] not in active]
-    conn.execute(
-        f"UPDATE project_media SET annotations = ?, updated_at = {db.NOW} WHERE project_id = ? AND media_id = ?",
-        (json.dumps([a.model_dump(exclude_none=True) for a in annotations] + kept), project_id, media_id),
-    )
-    _touch(conn, project_id)
+    _save_objects(conn, project_id, media_id, [a.model_dump(exclude_none=True) for a in annotations] + kept)
     return True
+
+
+Change = Literal["delete_objects", "set_class", "remove_images", "copy_images", "move_images"]
+EXAMPLES = 4  # images a change names as examples
+
+
+def change(conn: sqlite3.Connection, project_id: int, filter: Filter, action: Change, class_id: int | None = None,
+           to_project: int | None = None) -> dict | None:
+    """Change the images matching `filter` all at once, as one action (History undoes it whole):
+    delete the objects the filter names in brackets, e.g. (car w:<10), or give them `class_id`;
+    remove the images from the project; or copy or move them, with their objects, to `to_project`
+    (by class name: the classes it lacks are added to it; images it has already stay as they are,
+    in both). Returns how many images (and objects) it changed, the first few images, and the
+    classes it added; a preview is this, rolled back. None if there's no such project. Caller
+    commits. Raises FrozenError, or ValueError saying why it can't."""
+    row = _row(conn, project_id)
+    if row is None:
+        return None
+    media_ids = sample(conn, project_id, filter)
+    if action in ("delete_objects", "set_class"):
+        return {"action": action} | _rewrite(conn, row, filter, media_ids, class_id if action == "set_class" else None)
+    if action == "remove_images":
+        _remove(conn, project_id, media_ids)
+        return {"action": action, "images": len(media_ids), "examples": media_ids[:EXAMPLES]}
+    result, copied = _copy(conn, row, to_project, media_ids)
+    if action == "move_images":
+        _remove(conn, project_id, copied)
+    return {"action": action} | result
+
+
+def _rewrite(conn: sqlite3.Connection, row: sqlite3.Row, filter: Filter, media_ids: list[int], class_id: int | None) -> dict:
+    """Delete the objects the filter names (class_id None), or give them class_id: those images'
+    and objects' counts, and the first images."""
+    matches = _matches(conn, row, filter, media_ids)
+    if matches is None:
+        raise ValueError("Say which objects, in brackets: e.g. (car w:<10)")
+    if class_id is not None:
+        _check_active(row, {class_id})
+    _editable(conn, row["id"])
+    changed, objects = [], 0
+    for media_id, found in matches.items():
+        stored = json.loads(conn.execute("SELECT annotations FROM project_media WHERE project_id = ? AND media_id = ?",
+                                         (row["id"], media_id)).fetchone()[0])
+        found = {i for i in found if class_id is None or stored[i]["class_id"] != class_id}  # already that class: as it is
+        if not found:
+            continue
+        _save_objects(conn, row["id"], media_id, [o for i, o in enumerate(stored) if i not in found] if class_id is None
+                      else [o | {"class_id": class_id} if i in found else o for i, o in enumerate(stored)])
+        changed.append(media_id)
+        objects += len(found)
+    return {"images": len(changed), "objects": objects, "examples": changed[:EXAMPLES]}
+
+
+def _remove(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> None:
+    """Remove images from a project, and the stored images nothing uses any more."""
+    _editable(conn, project_id)
+    conn.execute("DELETE FROM project_media WHERE project_id = ? AND media_id IN (SELECT value FROM json_each(?))",
+                 (project_id, json.dumps(media_ids)))
+    media.remove_unused(conn, media_ids)
+    _touch(conn, project_id)
+
+
+def _copy(conn: sqlite3.Connection, source: sqlite3.Row, to_project: int | None, media_ids: list[int]) -> tuple[dict, list[int]]:
+    """Copy images, with their objects of active classes, to another project by class name, adding
+    the classes it lacks; images it has already stay as they are. What it copied and the classes
+    it added, and the images it copied (a move removes them)."""
+    target = _row(conn, to_project)
+    if not target or target["id"] == source["id"]:
+        raise ValueError("Give to_project: another project's id")
+    classes = {c["id"]: c for c in _project(source)["classes"]}
+    rows = conn.execute("SELECT media_id, filename, split, annotations FROM project_media "
+                        "WHERE project_id = ? AND media_id IN (SELECT value FROM json_each(?))",
+                        (source["id"], json.dumps(media_ids))).fetchall()
+    objects = {r["media_id"]: [o for o in json.loads(r["annotations"]) if o["class_id"] in classes] for r in rows}
+    have = {c["name"].casefold() for c in _project(target)["classes"]}
+    used = {classes[o["class_id"]]["name"] for found in objects.values() for o in found}
+    added = sorted((name for name in used if name.casefold() not in have), key=str.casefold)
+    if added:
+        edit_classes(conn, target["id"], add=[NewClass(name=c["name"], color=c["color"], prompt=c["prompt"])
+                                               for c in classes.values() if c["name"] in added])
+    ids = {c["name"].casefold(): c["id"] for c in _project(_row(conn, target["id"]))["classes"]}
+    copied = [r["media_id"] for r in rows if add_image(
+        conn, target["id"], r["media_id"], r["filename"], split=r["split"],
+        annotations=[Annotation(**(o | {"class_id": ids[classes[o["class_id"]]["name"].casefold()]})) for o in objects[r["media_id"]]])]
+    return {"images": len(copied), "objects": sum(len(objects[m]) for m in copied), "examples": copied[:EXAMPLES],
+            "classes_added": added, "already_in_target": len(rows) - len(copied)}, copied
+
+
+def _save_objects(conn: sqlite3.Connection, project_id: int, media_id: int, objects: list[dict]) -> None:
+    """Write an image's objects (all of them, as stored) and mark it and its project changed."""
+    conn.execute(f"UPDATE project_media SET annotations = ?, updated_at = {db.NOW} WHERE project_id = ? AND media_id = ?",
+                 (json.dumps(objects), project_id, media_id))
+    _touch(conn, project_id)
 
 
 DUPLICATE_IOU = 0.9  # an added object whose box overlaps one of its class this much is already there
@@ -646,11 +735,7 @@ def add_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, an
         boxes.append((a.class_id, box))
         added += 1
     if added:
-        conn.execute(
-            f"UPDATE project_media SET annotations = ?, updated_at = {db.NOW} WHERE project_id = ? AND media_id = ?",
-            (json.dumps(objects), project_id, media_id),
-        )
-        _touch(conn, project_id)
+        _save_objects(conn, project_id, media_id, objects)
     return added
 
 
