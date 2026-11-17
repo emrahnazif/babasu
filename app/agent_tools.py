@@ -430,9 +430,15 @@ def _change_note(args: ChangeArgs, answer) -> str:
 
 
 @tool(
-    "Change anything the app's pages can: any write of its API (find_api has what each takes). It's checked as "
-    "the pages' changes are, a refusal says why, and History can undo it. Changing many images at once "
-    "(POST /api/projects/ID/changes) only previews unless dry_run is false: preview, then change.",
+    "Change anything the app's pages can: any write of its API, checked as the pages' changes are (a refusal says "
+    "why); History can undo it. The main ones: POST /api/projects (a new project with its classes); PATCH "
+    "/api/projects/ID (name, type, annotator); PATCH /api/projects/ID/classes (add, rename, remove classes, e.g. "
+    "{\"add\": [{\"name\": \"truck\"}]}); POST /api/projects/ID/annotate (auto-annotate the images matching where, "
+    "for its classes or class_ids: a job); POST /api/projects/ID/try (an annotator on a few images, nothing kept); "
+    "PUT /api/projects/ID/images/MEDIA_ID/annotations (one image's objects); POST /api/projects/ID/changes (many "
+    "images at once: delete objects, change their class, remove, copy or move images; only a preview unless "
+    "dry_run is false); POST /api/projects/ID/import (images from files and folders); POST /api/runs (a workflow "
+    "over images); POST /api/workflows (save one). find_api has what each takes, and any other.",
     ChangeArgs,
     label="Changing the app's data",
     note=_change_note,
