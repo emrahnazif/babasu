@@ -411,13 +411,13 @@ PAGE_SIZE = 30  # images a page of a run (each with its results, one a label)
 
 def _results(conn: sqlite3.Connection, run_id: int, page: int | None = None, shapes: bool = False) -> list[dict]:
     """Per image and label, by image (all of them, or one page of PAGE_SIZE images): media id,
-    sha256, the image's file name in the run's project (without one, the start of its sha256) and
+    sha256, the image's file name in the run's project (without one, its own name) and
     the objects found per class; with `shapes`, the result too, mozo's annotation line (detections
     with boxes, classes, scores and masks; the image's width and height)."""
     images = "" if page is None else \
         "AND r.media_id IN (SELECT DISTINCT media_id FROM run_result WHERE run_id = :run ORDER BY media_id LIMIT :size OFFSET :skip)"
     rows = conn.execute(
-        f"""SELECT r.media_id, m.sha256, coalesce(pm.filename, substr(m.sha256, 1, 12)) AS filename, r.label, r.objects
+        f"""SELECT r.media_id, m.sha256, {media.NAME} AS filename, r.label, r.objects
                    {", r.result" if shapes else ""}
             FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
             LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
@@ -433,7 +433,7 @@ def finds(conn: sqlite3.Connection, run_id: int, media_id: int) -> dict | None:
     detections, all labels' in order (class_name, confidence, bbox [x1, y1, x2, y2], …); None if
     the run has no result for the image."""
     rows = conn.execute(
-        """SELECT coalesce(pm.filename, substr(m.sha256, 1, 12)) AS filename, r.result
+        f"""SELECT {media.NAME} AS filename, r.result
            FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
            LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
            WHERE r.run_id = ? AND r.media_id = ? ORDER BY r.label""",

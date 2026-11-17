@@ -59,7 +59,7 @@ def import_images(ctx: jobs.Context, project_id: int, paths: list[str]) -> dict:
             try:
                 data = file.read_bytes()
                 with conn:  # one image, one transaction
-                    is_new = projects.add_image(conn, project_id, media.store(conn, data), name)
+                    is_new = projects.add_image(conn, project_id, media.store(conn, data, name), name)
             except (media.NotAnImage, OSError) as exc:
                 skipped += 1
                 ctx.log(f"Skipped {name}: {str(exc) or 'not a readable image'}")

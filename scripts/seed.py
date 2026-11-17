@@ -66,7 +66,7 @@ def main() -> None:
         for i in range(IMAGE_COUNT):
             data, annotations = make_image(rng)
             split = "train" if i < 18 else "val" if i < 22 else "test"
-            projects.add_image(conn, project_id, media.store(conn, data), f"shapes_{i:03}.jpg", annotations, split)
+            projects.add_image(conn, project_id, media.store(conn, data, f"shapes_{i:03}.jpg"), f"shapes_{i:03}.jpg", annotations, split)
     print(f"Created '{NAME}' with {IMAGE_COUNT} images.")
 
 

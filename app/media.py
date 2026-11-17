@@ -42,8 +42,9 @@ def thumb_url(sha256: str) -> str:
     return url(sha256, "thumb.webp")
 
 
-def store(conn: sqlite3.Connection, data: bytes) -> int:
-    """Store an image (if new) and return its media id. Caller commits.
+def store(conn: sqlite3.Connection, data: bytes, name: str) -> int:
+    """Store an image (if new) under the file name it came with, and return its media id. Caller
+    commits.
 
     EXIF rotation is applied here, so stored pixels are upright and width/height
     are true; annotations then never depend on a rotation flag.
@@ -80,8 +81,8 @@ def store(conn: sqlite3.Connection, data: bytes) -> int:
     if row:
         return row["id"]
     return conn.execute(
-        "INSERT INTO media (sha256, ext, width, height) VALUES (?, ?, ?, ?)",
-        (sha256, ext, width, height),
+        "INSERT INTO media (sha256, ext, width, height, name) VALUES (?, ?, ?, ?, ?)",
+        (sha256, ext, width, height, name),
     ).lastrowid
 
 
@@ -96,6 +97,11 @@ def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> None:
            AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id)""",
         (json.dumps(media_ids),),
     )
+
+
+# An image's name, in SQL over `media m LEFT JOIN project_media pm` (the project it's seen in, if
+# any): its name there; else its own, the file name it came with; else the start of its sha256.
+NAME = "coalesce(pm.filename, m.name, substr(m.sha256, 1, 12))"
 
 
 def _thumbnail(image: Image.Image) -> bytes:
