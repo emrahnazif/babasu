@@ -48,7 +48,7 @@ class Args(BaseModel):
     its mistake (a misspelt field) instead of being told a change it asked for was made."""
 
     model_config = ConfigDict(extra="forbid")
-    step: str = Field("", max_length=100, description="What this does, for the person: Counting cars in Street cars")
+    step: str = Field("", description="What this does, for the person: Counting cars in Street cars")
 
 
 @dataclass(frozen=True)
@@ -130,7 +130,10 @@ def label(name: str, arguments: str) -> str:
         step = json.loads(arguments or "{}").get("step")
     except (ValueError, AttributeError):
         step = None
-    return step.strip() if isinstance(step, str) and step.strip() else found.label
+    return step.strip()[:LABEL_SIZE] if isinstance(step, str) and step.strip() else found.label
+
+
+LABEL_SIZE = 100  # characters of a step's label: what the person reads at a glance
 
 
 @dataclass(frozen=True)
@@ -340,7 +343,9 @@ ANSWER_SIZE = 8_000  # characters of an answer the agent reads; a longer one is 
 
 def _answer(method: str, path: str, body=None) -> object:
     """An answer of the API for the agent: whole, or refused when it's too long to read, saying
-    the operation's own ways to ask for less (a cut answer reads as a wrong one)."""
+    the operation's own ways to ask for less (a cut answer reads as a wrong one). A list comes with
+    how many it has: a model reads a number better than it counts one."""
+    path = _api_path(path)
     response = _request(method, path, body)
     if not response.content:
         return {"done": True}
@@ -352,7 +357,7 @@ def _answer(method: str, path: str, body=None) -> object:
         less = f"Ask for less ({', '.join(asks)}), or go through it in code (run_code)." if asks else \
             "It can't be asked for in parts: go through it in code (run_code)."
         raise ToolError(f"That answer is {len(response.text):,} characters, too long to read here ({shape}). {less}")
-    return answer
+    return {"count": len(answer), "items": answer} if isinstance(answer, list) else answer
 
 
 SHOWN = 4  # images a step draws at most
@@ -363,12 +368,12 @@ def _shown(args, answer) -> tuple[int, list[int]] | None:
     a change's examples), or a run's on its project."""
     if not isinstance(answer, dict):
         return None
-    if found := re.match(r"/api/projects/(\d+)", args.path):
+    if found := re.match(r"/api/projects/(\d+)", _api_path(args.path)):
         images = answer.get("images")  # a page of images; in some answers, how many (a Try's)
         ids = answer.get("examples") or ([i["media_id"] for i in images] if isinstance(images, list) else []) or \
             ([answer["media_id"]] if "media_id" in answer else [])
         return int(found[1]), ids[:SHOWN]
-    if re.match(r"/api/runs/\d+", args.path) and answer.get("project_id"):
+    if re.match(r"/api/runs/\d+", _api_path(args.path)) and answer.get("project_id"):
         return answer["project_id"], list(dict.fromkeys(r["media_id"] for r in answer.get("results", [])))[:SHOWN]
     return None
 
@@ -378,16 +383,22 @@ class ReadArgs(Args):
 
 
 def _read_note(args: ReadArgs, answer) -> str:
-    if isinstance(answer, list):
-        return f"{len(answer)} found"
-    if isinstance(answer, dict) and "match_count" in answer:
+    if not isinstance(answer, dict):
+        return ""
+    if "items" in answer:
+        return f"{answer['count']} found"
+    if "match_count" in answer:
         return f"{answer['match_count']:,} of {plural(answer['image_count'], 'image')}"
     return ""
 
 
 @tool(
-    "Read anything in the app: any GET of its API (find_api finds the paths and what they answer; a page's data "
-    "is at its path under /api). Answers are kept short: one too long is refused, saying how to ask for less.",
+    "Read anything in the app: any GET of its API. Answers are short (one too long is refused, saying how to ask "
+    "for less). The main ones: /api/projects (every project, with its counts); /api/projects/ID (one, with a page "
+    "of its images; ?where=FILTER for some, ?images=0 for the project alone); /api/projects/ID/stats?field=class "
+    "(objects per class); /api/projects/ID/images/MEDIA_ID (one image and its objects); /api/runs, /api/runs/ID "
+    "(what a run found); /api/workflows; /api/workflows/nodes; /api/jobs; /api/vision/models; /api/search?q=NAME; "
+    "/api/history. A page's path works too (/projects/3 reads /api/projects/3); find_api finds any other.",
     ReadArgs,
     label="Reading the app's data",
     note=_read_note,
@@ -437,10 +448,17 @@ def _operations_at(path: str) -> list[dict]:
     return [o for o, _, answers in _search() if answers.match(target)]
 
 
+def _api_path(path: str) -> str:
+    """The API path the agent means: as given, or a page's path, whose data is at the same path under
+    /api (/projects/3 is /api/projects/3); a missing first / added."""
+    path = "/" + path.strip().lstrip("/")
+    return path if path.startswith("/api/") else "/api" + path
+
+
 def _request(method: str, path: str, body=None):
-    """One of the agent's API operations, made in this turn (its writes are the turn's action).
-    Raises ToolError: an unknown operation, a method the path doesn't take, the API's refusal."""
-    path = path.strip()
+    """One of the agent's API operations (_api_path), made in this turn (its writes are the turn's
+    action). Raises ToolError: an unknown operation, a method the path doesn't take, the API's refusal."""
+    path = _api_path(path)
     target = path.split("?")[0]
     methods = [o["operation"].split(" ")[0] for o in _operations_at(path)]
     if not methods:
