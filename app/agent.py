@@ -246,16 +246,20 @@ def set_conversation_agent(conn: sqlite3.Connection, agent_id: str) -> None:
 
 def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bool = False) -> list[dict]:
     """The conversation's messages in order, tool calls parsed. Tool results and the pictures tools
-    gave can be large and only the model reads them, and only this turn's (`results`); the others
-    are left out."""
+    gave can be large and only the model reads them: with `results`, this turn's results and
+    pictures, and earlier results, newest first, up to EARLIER characters; the others are left
+    out (empty)."""
     rows = conn.execute(
-        """WITH turn AS (SELECT max(id) AS started FROM message WHERE conversation_id = :id AND role = 'user')
+        """WITH turn AS (SELECT max(id) AS this FROM message WHERE conversation_id = :id AND role = 'user'),
+                earlier AS (SELECT message.id, sum(length(content)) OVER (ORDER BY message.id DESC) AS newer
+                            FROM message, turn WHERE conversation_id = :id AND role = 'tool' AND message.id < turn.this)
            SELECT id, role, tool_calls, tool_call_id, status, error, label, note, images, agent, model, page, page_title,
                   about, tokens_in, tokens_out, length(picture) IS NOT NULL AS has_picture,  -- length() doesn't read it
-                  CASE WHEN role = 'tool' AND NOT (:results AND id > turn.started) THEN '' ELSE content END AS content,
-                  CASE WHEN :results AND id > turn.started THEN picture END AS picture
+                  CASE WHEN role = 'tool' AND NOT (:results AND (id > turn.this OR id IN
+                      (SELECT id FROM earlier WHERE newer <= :earlier))) THEN '' ELSE content END AS content,
+                  CASE WHEN :results AND id > turn.this THEN picture END AS picture
            FROM message, turn WHERE conversation_id = :id ORDER BY id""",
-        {"id": conversation_id, "results": results},
+        {"id": conversation_id, "results": results, "earlier": EARLIER},
     ).fetchall()
     return [dict(row) | {"tool_calls": json.loads(row["tool_calls"] or "[]")} for row in rows]
 
@@ -326,6 +330,9 @@ def _arguments(text: str) -> str:
         return "{}"
 
 
+# Characters of earlier turns' results the model still gets whole, newest first: what it last read,
+# which follow-ups refer to ("open that one" needs its id). One answer's most (agent_tools.ANSWER_SIZE).
+EARLIER = 8_000
 LONG = 200  # characters of an argument an earlier call keeps; a longer one (code, a file) is left out
 PICTURES = 4  # pictures of this turn the model gets at most, the latest; it read the others in their round
 
@@ -341,19 +348,19 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
     """The conversation as the model gets it. A tool call without a saved result (the app stopped
     in between) is left out, since the API requires every call to have its result.
 
-    The model works with a whole result only in the turn it comes in. An earlier turn's calls keep
-    what they were called on and what came out (their note): what the model concluded is in its
-    reply, data that has to last is in its folder's files, and it can call again. So a long chat
-    doesn't push its start (the instructions) out of a small context. Pictures tools gave go only
-    with this turn, its latest PICTURES."""
+    The model gets this turn's results whole, and what it last read before (EARLIER: "open that
+    one" needs the id the last answer had). Older calls keep what they were called on and what came
+    out (their note): what the model concluded is in its reply, data that has to last is in its
+    folder's files, and it can call again. So a long chat doesn't push its start (the instructions)
+    out of a small context. Pictures tools gave go only with this turn, its latest PICTURES."""
     messages = _messages(conn, conversation_id, results=True)
     answered = {m["tool_call_id"] for m in messages if m["role"] == "tool"}
+    whole = {m["tool_call_id"] for m in messages if m["role"] == "tool" and m["content"]}
     this_turn = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=0)
     latest = {m["id"] for m in [m for m in messages if m["picture"]][-PICTURES:]}
     history = [{"role": "system", "content": system_prompt(agent)}]
     pictures: list[tuple[str, bytes]] = []  # sent after the results of the calls that gave them
     for i, m in enumerate(messages):
-        earlier = i < this_turn
         if m["role"] == "user":
             history.append({"role": "user", "content": _on_page(m, current=i == this_turn) + m["content"]})
         elif m["role"] == "assistant":
@@ -364,12 +371,12 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
             if calls:
                 message["tool_calls"] = [
                     {"id": c["id"], "type": "function", "function": {
-                        "name": c["name"], "arguments": (_shortened if earlier else _arguments)(c["arguments"])}}
+                        "name": c["name"], "arguments": (_arguments if c["id"] in whole else _shortened)(c["arguments"])}}
                     for c in calls
                 ]
             history.append(message)
         else:
-            content = f"(An earlier result, shortened) {m['note'] or m['status']}" if earlier else m["content"]
+            content = m["content"] or f"(An earlier result, shortened) {m['note'] or m['status']}"
             history.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": content})
             if m["id"] in latest:
                 pictures.append((m["note"], m["picture"]))
