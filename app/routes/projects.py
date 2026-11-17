@@ -554,6 +554,46 @@ def import_images(project_id: int, request: Annotated[ImageImport, Form()], conn
 # --- API ---
 
 
+class FoundProject(Answer):
+    id: int
+    name: str
+    page: str = Field(description="Its page in the app.")
+
+
+class FoundImage(Answer):
+    media_id: int
+    filename: str
+    project_id: int
+    project: str = Field(description="Its project's name.")
+    page: str = Field(description="Its page in the app.")
+
+
+class FoundWorkflow(Answer):
+    id: str
+    name: str
+    page: str = Field(description="Its page in the app (the builder).")
+
+
+class Found(Answer):
+    projects: list[FoundProject]
+    images: list[FoundImage] = Field(description="The first 20, by file name.")
+    image_count: int = Field(description="How many images match in all.")
+    workflows: list[FoundWorkflow]
+
+
+@router.get("/api/search", response_model=Found)
+def api_search(conn: DB, q: Annotated[str, Query(min_length=1, description="Part of a name, e.g. street or img_0042.")]) -> dict:
+    """Projects, images and workflows whose name contains `q` (ignoring case), each with its page."""
+    text = q.strip()
+    found = projects.named(conn, text)
+    return {
+        "projects": [p | {"page": f"/projects/{p['id']}"} for p in found["projects"]],
+        "images": [i | {"page": f"/projects/{i['project_id']}/images/{i['media_id']}"} for i in found["images"]],
+        "image_count": found["image_count"],
+        "workflows": [w | {"page": f"/workflows/{w['id']}/edit"} for w in runs.named(text)],
+    }
+
+
 @router.get("/api/projects", response_model=list[ProjectListed], response_model_exclude_unset=True)
 def api_project_list(conn: DB) -> list[dict]:
     """Every project, most recently changed first: id, name, type, how many images, how many of them

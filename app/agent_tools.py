@@ -34,7 +34,6 @@ from urllib.parse import urlencode
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from mozo.workflow import catalogue
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -792,20 +791,8 @@ def read_docs(conn: sqlite3.Connection, args: DocsArgs) -> str:
     note=lambda args, nodes: f"{len(nodes)} nodes",
 )
 def list_nodes(conn: sqlite3.Connection, args: NodesArgs) -> list[dict]:
-    def ports(items: list[dict]) -> list[str]:
-        return [f"{p['name']}: {p['type']}" for p in items]
-
-    def parameter(p: dict) -> dict:
-        return {k: v for k, v in p.items() if v not in (None, [], "", False) or k == "default"}
-
-    nodes = catalogue()
-    if args.names is None:
-        return [{"name": n["name"], "category": n["category"], "description": n["description"]} for n in nodes]
-    unknown = set(args.names) - {n["name"] for n in nodes}
-    if unknown:
-        raise ToolError(f"No such nodes: {sorted(unknown)}; list_nodes without names lists them.")
-    return [{"name": n["name"], "category": n["category"], "description": n["description"],
-             "inputs": ports(n["inputs"]), "outputs": ports(n["outputs"]),
-             "parameters": [parameter(p) for p in n["parameters"]]}
-            for n in nodes if n["name"] in args.names]
+    try:
+        return runs.nodes(args.names)
+    except ValueError as e:
+        raise ToolError(str(e)) from None
 

@@ -17,7 +17,7 @@ DB = Annotated[sqlite3.Connection, Depends(db.get)]
 Document = Annotated[dict[str, Any], Body(description=(
     'A mozo workflow: {"name", "description", "nodes": [{"id", "type", "data": {"parameters": {…}}}], '
     '"edges": [{"source", "sourceHandle", "target", "targetHandle"}]}. Node types with their ports and parameters '
-    "are in mozo's node catalogue (GET /mozo/workflow/nodes); an edge joins an output (sourceHandle) to an input "
+    "are in the node catalogue (GET /api/workflows/nodes); an edge joins an output (sourceHandle) to an input "
     "(targetHandle) of the "
     "same type. A run keeps what reaches a save_to_babasu node."))]
 
@@ -58,7 +58,7 @@ class WorkflowDetail(WorkflowListed):
 class RunOut(Answer):
     id: int = Field(description="The run's id.")
     name: str
-    workflow_id: str = Field(description="The workflow it ran (its copy is kept with the run).")
+    workflow_id: str | None = Field(description="The workflow it ran (its copy is kept with the run); null: one not saved, tried as a draft.")
     project_id: int | None = Field(description="The project its images came from; null: images given by id.")
     job_id: int | None = Field(description="The job that ran it (GET /api/jobs/{job_id}).")
     status: str | None = Field(description="The job's status: queued, running, succeeded, failed, cancelled, interrupted.")
@@ -109,6 +109,27 @@ class RunStarted(Answer):
 def api_workflows() -> list[dict]:
     """Every workflow: id, name, whether it's built in, and its models (or why it doesn't load)."""
     return runs.workflows()
+
+
+class NodeOut(Answer):
+    name: str
+    category: str
+    description: str = Field(description="What it does.")
+    inputs: list[str] | None = Field(None, description="With ?names=: its inputs, name: type.")
+    outputs: list[str] | None = Field(None, description="With ?names=: its outputs, name: type.")
+    parameters: list[dict[str, Any]] | None = Field(None, description="With ?names=: its parameters (name, kind, "
+                                                    "default, options; prompts: it takes the prompts).")
+
+
+@router.get("/workflows/nodes", response_model=list[NodeOut], response_model_exclude_unset=True)
+def api_nodes(names: Annotated[list[str] | None, Query(description="Nodes to show in full: inputs, outputs, parameters.")] = None) -> list[dict]:
+    """What workflows are built from: every node's name, category and what it does (?names= those
+    in full). A run keeps what reaches a save_to_babasu node, under its label; read_media is where
+    each image comes in. 422 naming unknown nodes."""
+    try:
+        return runs.nodes(names)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
 
 
 @router.get("/workflows/{workflow_id}", response_model=WorkflowDetail, response_model_exclude_unset=True)
@@ -172,7 +193,9 @@ class NewRun(BaseModel):
     prompted node (e.g. ["car", "person"]); `overrides`: parameter values as mozo's run takes
     them, by name or one node's (e.g. {"dino.threshold": 0.4})."""
 
-    workflow_id: str = Field(description="The workflow, an id from GET /api/workflows.")
+    workflow_id: str | None = Field(None, description="The workflow, an id from GET /api/workflows; or give `workflow`.")
+    workflow: dict[str, Any] | None = Field(None, description="Instead of workflow_id: a workflow not saved yet (its "
+                                            "document, as POST /api/workflows takes it), to try it on a few images.")
     media_ids: list[int] | None = Field(None, description="The images to run on, by id; or give project_id.")
     where: str = Field("", max_length=2000, description=WHERE)
     count: int | None = Field(None, ge=1, description="How many of the project's matching images, picked at random; empty for all.")
@@ -207,7 +230,8 @@ def api_start_run(new: NewRun, conn: DB) -> dict:
             if new.project_id is None:
                 raise ValueError("Give media_ids, or a project_id to run on its images")
             media_ids = runs.on_project(conn, new.project_id, Filter.parse(new.where), new.count)
-        run_id, job_id = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.project_id, new.name, new.prompts)
+        run_id, job_id = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.project_id, new.name, new.prompts,
+                                    new.workflow)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
     return {"run_id": run_id, "job_id": job_id, "images": len(media_ids),

@@ -111,7 +111,7 @@ def _launch(conn: sqlite3.Connection, project_id: int, annotator: Finder, label:
     order) and start its job: {run_id, job_id, images, downloads_first (the models it downloads
     before it runs, as vision.downloads_first)}."""
     name = runs.run_name(f"{label} · {FINDERS[annotator]}", len(media_ids))
-    run_id = runs.create(conn, annotator, media_ids, project_id, name, list(prompts), annotates)
+    run_id = runs.create(conn, *runs.resolve(annotator), media_ids, project_id, name, list(prompts), annotates)
     params = {"media_ids": media_ids, "prompts": list(prompts.values())} | (params or {})
     job_id = runs.launch(conn, run_id, kind, params, project_id)
     return {"run_id": run_id, "job_id": job_id, "images": len(media_ids),

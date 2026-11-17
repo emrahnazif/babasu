@@ -15,7 +15,7 @@ from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 
-from mozo.workflow import Detections, Workflow, WorkflowError, annotation_line, node
+from mozo.workflow import Detections, Workflow, WorkflowError, annotation_line, catalogue, node
 
 from app import config, db, history, jobs, media, projects, settings, vision
 
@@ -48,6 +48,17 @@ def _entry(id: str, workflow: Workflow | None = None) -> dict:
     """A workflow's id, name (its file's, or its id), description and whether it's built in."""
     name, description = (workflow.name, workflow.description) if workflow else (None, None)
     return {"id": id, "name": name or id, "description": description or "", "builtin": id in BUILTIN}
+
+
+def named(text: str) -> list[dict]:
+    """The workflows whose id or name contains `text` (ignoring case): id and name, read from their
+    files without loading them."""
+    found = []
+    for id, path in _files().items():
+        name = json.loads(path.read_text()).get("name") or id
+        if text.casefold() in id.casefold() or text.casefold() in name.casefold():
+            found.append({"id": id, "name": name})
+    return found
 
 
 def workflows() -> list[dict]:
@@ -102,6 +113,36 @@ def _loaded(document: dict) -> Workflow:
         return Workflow.from_dict(document)
     except WorkflowError as e:
         raise ValueError(f"The workflow doesn't load: {e}") from None
+
+
+def resolve(workflow_id: str | None, document: dict | None = None) -> tuple[str | None, Workflow]:
+    """What a run runs: a saved workflow (its id), or one not saved yet (its document: a draft
+    tried on a few images; it has no id). ValueError: neither, no such workflow, or a document mozo
+    doesn't load."""
+    if document is not None:
+        return None, _loaded(document)
+    workflow = load(workflow_id) if workflow_id else None
+    if workflow is None:
+        raise ValueError(f"There is no workflow {workflow_id!r}" if workflow_id else "Give a workflow_id, or a workflow to try")
+    return workflow_id, workflow
+
+
+def nodes(names: list[str] | None = None) -> list[dict]:
+    """What workflows are built from (mozo's catalogue): each node's name, category and what it
+    does; with `names`, those nodes in full: inputs and outputs (name: type) and parameters (name,
+    kind, default, options; `prompts`: it takes the prompts). ValueError naming unknown ones."""
+    found = catalogue()
+    if names is None:
+        return [{"name": n["name"], "category": n["category"], "description": n["description"]} for n in found]
+    unknown = set(names) - {n["name"] for n in found}
+    if unknown:
+        raise ValueError(f"No such nodes: {', '.join(sorted(unknown))}; without names, all of them are listed")
+    return [{"name": n["name"], "category": n["category"], "description": n["description"],
+             "inputs": [f"{p['name']}: {p['type']}" for p in n["inputs"]],
+             "outputs": [f"{p['name']}: {p['type']}" for p in n["outputs"]],
+             "parameters": [{k: v for k, v in p.items() if v not in (None, [], "", False) or k == "default"}
+                            for p in n["parameters"]]}
+            for n in found if n["name"] in names]
 
 
 def check_workflow(document: dict) -> dict:
@@ -180,15 +221,13 @@ def needs(conn: sqlite3.Connection, params: dict) -> list[int]:
     return [job for use in missing if (job := vision.ensure(conn, use.family, use.variant))]
 
 
-def create(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], project_id: int | None = None,
-           name: str | None = None, classes: list[int] | None = None, annotates: bool = False) -> int:
-    """Create a run of a workflow over stored images (no repeats), without its job (launch() starts
-    one), and commit it; returns its id. `classes`: the project classes its prompts stand for, in
-    order; `annotates`: its results become the project's annotations. ValueError: no such
-    workflow, or unknown images."""
-    workflow = load(workflow_id)
-    if workflow is None:
-        raise ValueError(f"There is no workflow {workflow_id!r}")
+def create(conn: sqlite3.Connection, workflow_id: str | None, workflow: Workflow, media_ids: list[int],
+           project_id: int | None = None, name: str | None = None, classes: list[int] | None = None,
+           annotates: bool = False) -> int:
+    """Create a run of a workflow (resolve: its id, None for one not saved) over stored images (no
+    repeats), without its job (launch() starts one), and commit it; returns its id. `classes`: the
+    project classes its prompts stand for, in order; `annotates`: its results become the project's
+    annotations. ValueError: unknown images."""
     found = conn.execute("SELECT count(*) FROM media WHERE id IN (SELECT value FROM json_each(?))",
                          (json.dumps(media_ids),)).fetchone()[0]
     if not media_ids or found != len(media_ids):
@@ -197,7 +236,8 @@ def create(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], pro
         return conn.execute(
             """INSERT INTO run (workflow_id, workflow, project_id, name, classes, annotates)
                VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
-            (workflow_id, json.dumps(workflow.to_dict()), project_id, name or run_name(workflow.name or workflow_id, len(media_ids)),
+            (workflow_id, json.dumps(workflow.to_dict()), project_id,
+             name or run_name(workflow.name or workflow_id or "Draft", len(media_ids)),
              classes and json.dumps(classes), annotates),
         ).fetchone()[0]
 
@@ -211,9 +251,11 @@ def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict, proje
     return job_id
 
 
-def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], overrides: dict | None = None,
-          project_id: int | None = None, name: str | None = None, prompts: list[str] | None = None) -> tuple[int, int]:
-    """Create a run of a workflow over stored images and start its job; returns (run id, job id).
+def start(conn: sqlite3.Connection, workflow_id: str | None, media_ids: list[int], overrides: dict | None = None,
+          project_id: int | None = None, name: str | None = None, prompts: list[str] | None = None,
+          document: dict | None = None) -> tuple[int, int]:
+    """Create a run of a workflow (a saved one, or a `document` not saved yet: trying a draft)
+    over stored images and start its job; returns (run id, job id).
     `prompts`: what to look for, given to every prompted node (see execute()); none given, a
     project's run of a workflow that takes prompts finds its class prompts. `overrides`:
     parameter values as mozo's run takes them, by name or one node's ("dino.threshold").
@@ -221,8 +263,9 @@ def start(conn: sqlite3.Connection, workflow_id: str, media_ids: list[int], over
     waits). The workflow's own problems (a missing file, prompts it can't take) fail the job,
     which says why."""
     media_ids = list(dict.fromkeys(media_ids))
-    run_id = create(conn, workflow_id, media_ids, project_id, name)
-    if prompts is None and project_id is not None and load(workflow_id).prompt_parameters:
+    workflow_id, workflow = resolve(workflow_id, document)
+    run_id = create(conn, workflow_id, workflow, media_ids, project_id, name)
+    if prompts is None and project_id is not None and workflow.prompt_parameters:
         prompts = [c["prompt"] for c in projects.get(conn, project_id)["classes"]]
     params = {"media_ids": media_ids, "overrides": overrides, "prompts": prompts}
     return run_id, launch(conn, run_id, KIND, params, project_id)
