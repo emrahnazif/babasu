@@ -236,17 +236,25 @@ class ProjectListed(Counted):
     covers: list[str] = Field(description="Thumbnail URLs of its first few images.")
 
 
-class ImageOut(Answer):
+class ImageListed(Answer):
     media_id: int = Field(description="The image's id (the same in every project and run that has it).")
     filename: str = Field(description="Its file name in this project.")
+    objects: dict[str, int] = Field(description="How many objects of each class it has (by class name).")
+    width: int | None = Field(None, description="In pixels (with ?annotations=1).")
+    height: int | None = Field(None, description="In pixels (with ?annotations=1).")
+    annotations: list[AnnotationOut] | None = Field(None, description="Its objects with their shapes, of the project's "
+                                                    "classes (with ?annotations=1).")
+    matches: list[int] | None = Field(None, description="With annotations, when the filter asks for objects (in "
+                                      "brackets): the positions in `annotations` of the objects it found.")
+
+
+class ImageOut(ImageListed):
     split: str | None = Field(description="train, val or test, if set; null if not.")
     width: int = Field(description="In pixels.")
     height: int = Field(description="In pixels.")
     url: str = Field(description="The full image.")
     thumb_url: str = Field(description="A small version of it.")
-    annotations: list[AnnotationOut] = Field(description="Its objects (of the project's classes).")
-    matches: list[int] | None = Field(None, description="Only when the filter asks for objects (in brackets): the "
-                                      "positions in `annotations` of the objects it found.")
+    annotations: list[AnnotationOut] = Field(description="Its objects with their shapes (of the project's classes).")
 
 
 class ProjectDetail(Counted):
@@ -255,7 +263,7 @@ class ProjectDetail(Counted):
     match_count: int = Field(description="How many images match the filter (all of them without one).")
     page: int = Field(description="This page's number, from 1.")
     pages: int = Field(description="How many pages the matching images make.")
-    images: list[ImageOut] = Field(description="This page of the matching images, by file name.")
+    images: list[ImageListed] = Field(description="This page of the matching images, by file name.")
 
 
 class ImageDetail(ImageOut):
@@ -563,15 +571,27 @@ def api_create_project(new: NewProject, conn: DB) -> dict:
         raise HTTPException(422, str(e)) from None
 
 
+# What an image in the project's answer has: enough to know it and what's in it; with ?annotations=1
+# also its objects themselves (and its size, which their coordinates are in).
+LISTED = ("media_id", "filename", "objects")
+WITH_SHAPES = ("width", "height", "annotations", "matches")
+
+
 @router.get("/api/projects/{project_id}", response_model=ProjectDetail, response_model_exclude_unset=True)
 def api_project(project_id: int, conn: DB, where: Where = "",
                 name: Annotated[str | None, Query(description="Only images whose file name contains this.")] = None,
                 page: Page = 1,
-                images: Annotated[int, Query(ge=0, le=projects.PAGE_SIZE, description="Images a page; 0 for the project alone.")] = projects.PAGE_SIZE) -> dict:
+                images: Annotated[int, Query(ge=0, le=projects.PAGE_SIZE, description="Images a page; 0 for the project alone.")] = projects.PAGE_SIZE,
+                annotations: Annotated[bool, Query(description="Each image's objects with their shapes (boxes, outlines, "
+                                                   "keypoints), not only how many of each class.")] = False) -> dict:
     """The project (name, type, annotator, classes with their prompts, colours and object counts,
-    image and labelled counts) with one page of the images matching ?where=, each with its
-    annotations. ?images=0 for the project alone. 422 if the filter names a class it doesn't have."""
-    return _detail(conn, project_id, page, _parse(where, name), images)
+    image and labelled counts) with one page of the images matching ?where=, each with how many
+    objects of each class it has (?annotations=1: the objects themselves). ?images=0 for the project
+    alone. 422 if the filter names a class it doesn't have."""
+    project = _detail(conn, project_id, page, _parse(where, name), images)
+    kept = LISTED + WITH_SHAPES if annotations else LISTED
+    project["images"] = [{k: image[k] for k in kept if k in image} for image in project["images"]]
+    return project
 
 
 @router.get("/api/projects/{project_id}/stats", response_model=Stats, response_model_exclude_unset=True)

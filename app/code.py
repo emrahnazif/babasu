@@ -73,7 +73,8 @@ class Api:
         page at a time. Don't change what a filter matches while going through it: the pages move."""
         page, pages = 1, 1
         while page <= pages:
-            data = self.get(f"/api/projects/{project_id}?{urlencode({'page': page, 'where': where})}")
+            data = self.get(f"/api/projects/{project_id}?"  # 100 a page, the most the API gives
+                            + urlencode({"page": page, "where": where, "images": 100, "annotations": 1}))
             pages = data["pages"]
             yield from data["images"]
             page += 1

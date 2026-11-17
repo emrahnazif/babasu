@@ -232,7 +232,7 @@ def _refusal(response) -> str:
     return f"{response.status_code}: {detail or response.reason_phrase}"
 
 
-ANSWER_SIZE = 8_000  # characters of an answer the agent gets; a longer one is cut
+ANSWER_SIZE = 8_000  # characters of an answer the agent reads; a longer one is refused, with how to ask for less
 
 
 def _inline(schema, defs: dict):
@@ -389,10 +389,21 @@ def call_api(conn: sqlite3.Connection, args: CallApiArgs) -> object:
     response = _request(args.method, args.path, args.body)
     if not response.content:
         return {"done": True}
-    if len(response.text) <= ANSWER_SIZE:
-        return response.json()
-    return {"cut": f"The answer is {len(response.text):,} characters; its start (ask for less: a filter, ?images=, "
-            "?limit=):", "start": response.text[:ANSWER_SIZE]}
+    if len(response.text) > ANSWER_SIZE:
+        answer = response.json()
+        shape = f"its fields: {', '.join(answer)}" if isinstance(answer, dict) else f"a list of {len(answer):,}"
+        asks = [f"?{p['name']}=" for o in _operations_at(args.path) if o["operation"].startswith(f"{args.method} ")
+                for p in o["parameters"] if p["in"] == "query"]
+        less = f"Ask for less ({', '.join(asks)}), or go through it in code (run_code)." if asks else \
+            "It can't be asked for in parts: go through it in code (run_code)."
+        raise ToolError(f"That answer is {len(response.text):,} characters, too long to read here ({shape}). {less}")
+    return response.json()
+
+
+def _operations_at(path: str) -> list[dict]:
+    """The operations that answer at a path (with its ids; its query left out), one a method."""
+    target = path.strip().split("?")[0]
+    return [o for o, _, answers in _search() if answers.match(target)]
 
 
 def _request(method: str, path: str, body=None):
@@ -400,7 +411,7 @@ def _request(method: str, path: str, body=None):
     Raises ToolError: an unknown operation, a method the path doesn't take, the API's refusal."""
     path = path.strip()
     target = path.split("?")[0]
-    methods = [o["operation"].split(" ")[0] for o, _, answers in _search() if answers.match(target)]
+    methods = [o["operation"].split(" ")[0] for o in _operations_at(path)]
     if not methods:
         raise ToolError(f"There's no operation at {target}; find_api finds them.")
     if method not in methods:
@@ -639,7 +650,7 @@ def _filtered(conn: sqlite3.Connection, args: FilterArgs) -> dict:
 
 @tool(
     "Find a project's images matching a filter: how many match, and the first ones (id, file name, page) with how "
-    "many of the objects asked for each has. Use it to check a filter (and see it written back the way it was understood) before showing it.",
+    "many objects of each class each has (and how many of those asked for). Use it to check a filter (and see it written back the way it was understood) before showing it.",
     FilterArgs,
     label="Finding images",
     note=lambda args, found: f"{found['match_count']:,} of {found['image_count']:,} images",
@@ -648,7 +659,7 @@ def _filtered(conn: sqlite3.Connection, args: FilterArgs) -> dict:
 def find_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
     project = _filtered(conn, args)
     first = [
-        _image(project, i) | {"objects": len(i["annotations"]), **({"found": len(i["matches"])} if "matches" in i else {})}
+        _image(project, i) | {"objects": i["objects"], **({"found": len(i["matches"])} if "matches" in i else {})}
         for i in project["images"][:20]
     ]
     return {"filter": project["filter"], "match_count": project["match_count"], "image_count": project["image_count"],

@@ -35,7 +35,7 @@ A run that's stopped (time) or crashes ends the process, and so do 30 minutes wi
 ## A project's images
 `api.images(project_id)` goes through them all; `api.images(project_id, "car")` through those matching a filter (read docs: filters). Don't go through a filter while changing what it matches: it reads a page at a time (`GET /api/projects/{id}?page=N`), and the pages move under you. Go through all of them instead and pick in the code.
 
-An image has `media_id`, `filename`, `width`, `height` and `annotations`: objects with `class_id` and `bbox` [x, y, w, h] in pixels, `segments` (an outline) or `keypoints`, and `score` on a model's. Write an image's objects back with `PUT /api/projects/{id}/images/{media_id}/annotations` and the whole list: leave out what goes, change what changes.
+An image from `api.images` has `media_id`, `filename`, `width`, `height`, `objects` (how many of each class) and `annotations`: objects with `class_id` and `bbox` [x, y, w, h] in pixels, `segments` (an outline) or `keypoints`, and `score` on a model's. Write an image's objects back with `PUT /api/projects/{id}/images/{media_id}/annotations` and the whole list: leave out what goes, change what changes.
 
 A class is known by its id in its project: read them with `GET /api/projects/{id}?images=0` (`classes`: id, name, prompt, color).
 

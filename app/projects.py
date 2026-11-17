@@ -7,6 +7,7 @@ out of every read here, together with their annotations.
 import json
 import math
 import sqlite3
+from collections import Counter
 from typing import Annotated, Literal
 
 from PIL import ImageColor
@@ -215,7 +216,7 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
         f"""{_IMAGE_SELECT} WHERE {where} ORDER BY project_media.filename, project_media.media_id LIMIT ? OFFSET ?""",
         (*params, page_size, (page - 1) * page_size),
     ).fetchall()
-    active = {c["id"] for c in project["classes"]}
+    names = _names(project)
     matches = _matches(conn, row, filter, [r["media_id"] for r in rows])
     return project | {
         "image_count": image_count,
@@ -224,7 +225,7 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
         "match_count": match_count,
         "page": page,
         "pages": pages,
-        "images": [_image(r, active, matches and matches[r["media_id"]]) for r in rows],
+        "images": [_image(r, names, matches and matches[r["media_id"]]) for r in rows],
     }
 
 
@@ -280,7 +281,7 @@ def image(conn: sqlite3.Connection, project_id: int, media_id: int, filter: Filt
     ).fetchone()
     project = _project(row)
     matches = _matches(conn, row, filter, [media_id])
-    return _image(found, {c["id"] for c in project["classes"]}, matches and matches[media_id]) | {
+    return _image(found, _names(project), matches and matches[media_id]) | {
         "project": project,
         "filter": filter.text(),
         "position": int(position),
@@ -295,11 +296,18 @@ _IMAGE_SELECT = """SELECT project_media.media_id, project_media.filename, projec
                    FROM project_media JOIN media ON media.id = project_media.media_id"""
 
 
-def _image(row: sqlite3.Row, class_ids: set[int], matched: set[int] | None = None) -> dict:
-    """An image row for templates and the API: its annotations (of active classes), and, when
-    the filter asks for objects, `matches`: the positions in that list of the objects it found."""
-    kept = [(i, a) for i, a in enumerate(json.loads(row["annotations"])) if a["class_id"] in class_ids]
+def _names(project: dict) -> dict[int, str]:
+    """A project's active classes: id -> name."""
+    return {c["id"]: c["name"] for c in project["classes"]}
+
+
+def _image(row: sqlite3.Row, names: dict[int, str], matched: set[int] | None = None) -> dict:
+    """An image row for templates and the API: its objects per class (by name), its annotations
+    (of active classes, `names`), and, when the filter asks for objects, `matches`: the positions
+    in that list of the objects it found."""
+    kept = [(i, a) for i, a in enumerate(json.loads(row["annotations"])) if a["class_id"] in names]
     image = {k: row[k] for k in ("media_id", "filename", "split", "width", "height")} | {
+        "objects": dict(Counter(names[a["class_id"]] for _, a in kept)),
         "annotations": [a for _, a in kept],
         "url": media.url(row["sha256"], row["ext"]),
         "thumb_url": media.thumb_url(row["sha256"]),
@@ -318,9 +326,9 @@ def images(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> d
     rows = {r["media_id"]: r for r in conn.execute(
         f"{_IMAGE_SELECT} WHERE project_media.project_id = ? AND project_media.media_id IN (SELECT value FROM json_each(?))",
         (project_id, json.dumps(media_ids)))}
-    class_ids = {c["id"] for c in project["classes"]}
+    names = _names(project)
     return {"project_id": project_id, "classes": project["classes"],
-            "images": [_image(rows[m], class_ids) for m in media_ids if m in rows]}
+            "images": [_image(rows[m], names) for m in media_ids if m in rows]}
 
 
 # An annotation `a` of the project_media row being filtered.
@@ -420,7 +428,7 @@ def stats(conn: sqlite3.Connection, project_id: int, field: str, filter: Filter 
     objects = f"FROM annotation a JOIN project_media ON {_OF_IMAGE} WHERE {where} AND ({condition})"
     params += more
     if field == "class":
-        names = {c["id"]: c["name"] for c in _project(row)["classes"]}
+        names = _names(_project(row))
         rows = conn.execute(f"SELECT a.class_id, count(*) {objects} GROUP BY a.class_id ORDER BY 2 DESC", params)
         return {"field": field, "counts": [{"class": names[k], "objects": n} for k, n in rows]}
     if field not in STAT_FIELDS:
