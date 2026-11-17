@@ -73,7 +73,9 @@ if (chat) {
           element.querySelector(".chat__tool-label").textContent = label;
           tools.set(id, element);
         }
-        element.querySelector(".chat__tool-note").textContent = note ?? "";
+        const shown = element.querySelector(".chat__tool-note");
+        shown.textContent = note ?? "";
+        shown.classList.toggle("selectable", state === "error"); // why it failed can be copied
         element.dataset.status = state;
         // The images it found, drawn by the server (partials/chat-images.html) as in a saved turn.
         if (images) {

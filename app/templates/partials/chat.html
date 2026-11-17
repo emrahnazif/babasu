@@ -13,13 +13,13 @@
 {%- endmacro %}
 
 {# A step the agent takes (a tool call): what it's doing, then what came out (its note, or why it
-   failed), and under it the images it found, or the picture it looked at. Running (spinner), done
-   (check) or error (cross): the icon follows data-status. #}
+   failed: that can be selected and copied), and under it the images it found, or the picture it
+   looked at. Running (spinner), done (check) or error (cross): the icon follows data-status. #}
 {% macro tool_part(label, note, status, shown=none, picture=none) -%}
   <div class="chat__tool" data-status="{{ status }}">
     <span class="chat__tool-icon" aria-hidden="true"><span class="chat__spinner"></span>{{ icon("check") }}{{ icon("x-mark") }}</span>
     <span class="chat__tool-label">{{ label }}</span>
-    <span class="chat__tool-note">{{ note }}</span>
+    <span class="chat__tool-note{% if status == 'error' %} selectable{% endif %}">{{ note }}</span>
     {%- if shown %}{% include "partials/chat-images.html" %}{% endif %}
     {%- if picture %}{{ picture_part(picture) }}{% endif %}
   </div>
@@ -37,8 +37,8 @@
 {%- endmacro %}
 
 {% macro note(kind, text) -%}
-  {# kind: "status" (shimmering, while working), "error" or "stopped" #}
-  <p class="chat__note chat__note--{{ kind }}">{{ text }}</p>
+  {# kind: "status" (shimmering, while working), "error" (can be selected and copied) or "stopped" #}
+  <p class="chat__note chat__note--{{ kind }}{% if kind == 'error' %} selectable{% endif %}">{{ text }}</p>
 {%- endmacro %}
 
 {% set chat = agent_chat(request, page_title) %}
