@@ -68,43 +68,20 @@ class RunOut(Answer):
     images: int = Field(description="How many images have results so far.")
 
 
-class RunResult(Answer):
-    media_id: int = Field(description="The image's id.")
-    sha256: str
-    filename: str = Field(description="Its file name in the run's project (no project: the start of its sha256).")
-    label: str = Field(description="Which of the workflow's save_to_babasu nodes kept it.")
-    result: dict[str, Any] = Field(description="mozo's annotation line: detections (bbox [x1, y1, x2, y2] in pixels, "
-                                   "class_id, class_name, confidence, mask…), width, height.")
-
-
-class RunDetail(RunOut):
-    results: list[RunResult] = Field(description="Per image and label, by media_id.")
-
-
-class SummaryObject(Answer):
-    class_: str | None = Field(alias="class", description="The class (the prompt it was found for).")
-    score: float | None = Field(description="How sure the model was, 0..1.")
-    box: list[float] | None = Field(description="x1, y1, x2, y2 in pixels.")
-
-
-class SummaryImage(Answer):
-    image: str = Field(description="Its file name.")
-    objects: list[SummaryObject]
-
-
 class ClassFound(Answer):
     objects: int = Field(description="How many objects of it were found.")
     average_score: float = Field(description="Their average score, 0..1.")
 
 
-class LabelSummary(Answer):
-    classes: dict[str, ClassFound] = Field(description="Per class name.")
-    image_count: int = Field(description="How many images have results for this label.")
-    images: list[SummaryImage] = Field(description="The first ?images= images, with their objects.")
-
-
-class RunSummary(RunOut):
-    results: dict[str, LabelSummary] = Field(description="Per label (save_to_babasu node).")
+class RunResult(Answer):
+    media_id: int = Field(description="The image's id.")
+    filename: str = Field(description="Its file name in the run's project (no project: the start of its sha256).")
+    label: str = Field(description="Which of the workflow's save_to_babasu nodes kept it.")
+    objects: dict[str, int] = Field(description="How many objects of each class were found on it.")
+    width: int | None = Field(None, description="In pixels (with ?annotations=1).")
+    height: int | None = Field(None, description="In pixels (with ?annotations=1).")
+    annotations: list[AnnotationOut] | None = Field(None, description="The objects as a project stores them, class_id "
+                                                    "(in `legend`), bbox [x, y, w, h], segments, score (with ?annotations=1).")
 
 
 class LegendClass(ClassOut):
@@ -112,21 +89,13 @@ class LegendClass(ClassOut):
     active: bool | None = Field(None, description="A project's class: always true.")
 
 
-class ResultImage(Answer):
-    media_id: int = Field(description="The image's id.")
-    filename: str
-    label: str = Field(description="Which save_to_babasu node kept it.")
-    width: int
-    height: int
-    thumb_url: str
-    annotations: list[AnnotationOut] = Field(description="Its objects as a project stores them: class_id (in "
-                                                   "`legend`), bbox [x, y, w, h], segments, score.")
-
-
-class RunAnnotations(RunOut):
-    results: list[ResultImage] = Field(description="Per image and label.")
-    legend: list[LegendClass] = Field(description="The classes to draw them with: a project's run, the project's; "
-                                      "any other, its prompts in order.")
+class RunDetail(RunOut):
+    found: dict[str, dict[str, ClassFound]] = Field(description="What it found, per label and class.")
+    page: int = Field(description="This page's number, from 1.")
+    pages: int = Field(description="How many pages its images make.")
+    results: list[RunResult] = Field(description="This page of its images' results, by image (one a label).")
+    legend: list[LegendClass] | None = Field(None, description="The classes the annotations are in: a project's run, "
+                                             "the project's; any other, its prompts in order (with ?annotations=1).")
 
 
 class RunStarted(Answer):
@@ -231,7 +200,7 @@ def api_start_run(new: NewRun, conn: DB) -> dict:
     """Starts a workflow run over images (`media_ids`, or a project's: `project_id`, `where`,
     `count`), finding `prompts` (a project's class prompts unless given); returns {run_id, job_id,
     images, downloads_first: the models it downloads before it starts}. Follow the job at
-    /api/jobs/{job_id}, read the results at /api/runs/{run_id}/summary. 422 with why it can't start."""
+    /api/jobs/{job_id}, read the results at /api/runs/{run_id}. 422 with why it can't start."""
     try:
         media_ids = new.media_ids
         if media_ids is None:
@@ -253,16 +222,17 @@ def api_runs(conn: DB, workflow_id: Annotated[str | None, Query(description="Onl
     return runs.list_all(conn, workflow_id, limit)
 
 
-@router.get("/runs/{run_id}", response_model=RunDetail)
-def api_run(run_id: int, conn: DB) -> dict:
-    """The run with its results: per image and label, mozo's annotation line."""
-    return _found(runs.get(conn, run_id))
-
-
-@router.get("/runs/{run_id}/summary", response_model=RunSummary)
-def api_run_summary(run_id: int, conn: DB, images: Annotated[int, Query(ge=0, le=1000, description="How many images' objects to show.")] = 20) -> dict:
-    """The run in brief, per label: objects per class with average score, and the first ?images= images' objects."""
-    return _found(runs.summary(conn, run_id, images))
+@router.get("/runs/{run_id}", response_model=RunDetail, response_model_exclude_unset=True)
+def api_run(run_id: int, conn: DB, page: Annotated[int, Query(ge=1, description="Which page of the results.")] = 1,
+            annotations: Annotated[bool, Query(description="Each result's objects with their boxes, outlines and "
+                                               "scores, not only how many of each class.")] = False) -> dict:
+    """The run, what it found per label (objects per class, average score), and one page of its
+    images' results, each how many objects of each class were found on the image (?annotations=1:
+    the objects themselves, and the legend of their classes)."""
+    run = _found(runs.results_page(conn, run_id, page, shapes=annotations))
+    if annotations:
+        run = annotators.annotated(conn, run)
+    return run | {"results": [{k: r[k] for k in RunResult.model_fields if k in r} for r in run["results"]]}
 
 
 @router.patch("/runs/{run_id}", status_code=204)
@@ -281,11 +251,3 @@ def api_delete_run(run_id: int, conn: DB) -> None:
         raise HTTPException(409, str(e)) from None
     if not found:
         raise HTTPException(404, "Run not found")
-
-
-@router.get("/runs/{run_id}/annotations", response_model=RunAnnotations, response_model_exclude_unset=True)
-def api_run_annotations(run_id: int, conn: DB, images: Annotated[int | None, Query(ge=1, description="Only the first few images'; empty for all.")] = None) -> dict:
-    """The run's results as annotations, per image and result label (?images= only the first
-    few images'), with `legend`: the classes to draw them with (a project's run: the project's
-    classes; any other: its prompts, in order)."""
-    return _found(annotators.results(conn, run_id, images))

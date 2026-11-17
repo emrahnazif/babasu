@@ -17,7 +17,7 @@ For one object at a time, as a person works, there's the click tool in the image
 - Objects are **added** next to the ones there, never replacing them. A new object overlapping one of its class almost entirely (90%) is already there, and left out.
 - Objects scoring below the **minimum score** are left out, beyond the auto-annotator's own threshold.
 - Each object keeps its **score**; it's removed when someone edits the object.
-- It's a background job in the gpu lane: one at a time with workflow runs and model loading. Its results are a run (GET /api/runs/ID/summary).
+- It's a background job in the gpu lane: one at a time with workflow runs and model loading. Its results are a run (GET /api/runs/ID).
 
 ## Try
 Try runs the auto-annotator on 4 images of the filter and shows what it finds, saving nothing: to find a good prompt or threshold before running. A prompt that works is saved to its class.

@@ -172,18 +172,12 @@ def try_(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), a
     return _launch(conn, project_id, annotator, "Try", media_ids, tried, runs.KIND)
 
 
-def results(conn: sqlite3.Connection, run_id: int, images: int | None = None) -> dict | None:
-    """A run with its results as annotations: per image and result label, the image (media id,
-    file name, width, height, thumbnail) and its objects with their scores; and `legend`, the
-    classes to draw them with (id, name, colour). A run made from a project's classes (auto-
-    annotate, Try) uses them; any other run's classes are its prompts, in order. `images`: only the
-    first that many images' results (the others' masks aren't read). None if there's no such run."""
-    run = runs.get(conn, run_id)
-    if run is None:
-        return None
-    if images is not None:
-        first = list(dict.fromkeys(r["media_id"] for r in run["results"]))[:images]
-        run["results"] = [r for r in run["results"] if r["media_id"] in first]
+def annotated(conn: sqlite3.Connection, run: dict) -> dict:
+    """A run with its results (runs.get, or runs.results_page) as annotations: per image and
+    result label, the image (media id, file name, width, height, thumbnail), its objects per class
+    and the objects themselves with their scores; and `legend`, the classes to draw them with (id,
+    name, colour). A run made from a project's classes (auto-annotate, Try) uses them; any other
+    run's classes are its prompts, in order."""
     detections = [pf.Detections.from_dict(r["result"]["detections"]) for r in run["results"]]
     project = run["classes"] is not None and run["project_id"] and projects.get(conn, run["project_id"])
     if run["classes"] is not None:
@@ -193,7 +187,7 @@ def results(conn: sqlite3.Connection, run_id: int, images: int | None = None) ->
         names = {int(d.class_id): d.class_name for found in detections for d in found if d.class_id is not None}
         classes = list(range(max(names, default=-1) + 1))
         legend = [{"id": i, "name": names.get(i) or f"class {i}", "color": projects.PALETTE[i % len(projects.PALETTE)]} for i in classes]
-    found = [{"media_id": r["media_id"], "filename": r["filename"], "label": r["label"],
+    found = [{"media_id": r["media_id"], "filename": r["filename"], "label": r["label"], "objects": r["objects"],
               "width": r["result"]["width"], "height": r["result"]["height"], "thumb_url": media.thumb_url(r["sha256"]),
               "annotations": [a.model_dump(exclude_none=True) for a in to_annotations(d, classes)]}
              for r, d in zip(run["results"], detections, strict=True)]
@@ -201,10 +195,10 @@ def results(conn: sqlite3.Connection, run_id: int, images: int | None = None) ->
 
 
 def latest_try(conn: sqlite3.Connection, project_id: int) -> dict | None:
-    """The project's latest Try, as results() gives it; None if it has none."""
+    """The project's latest Try, with its results as annotations (annotated); None if it has none."""
     row = conn.execute("SELECT id FROM run WHERE project_id = ? AND classes IS NOT NULL AND NOT annotates "
                        "ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
-    return row and results(conn, row[0])
+    return row and annotated(conn, runs.get(conn, row[0]))
 
 
 @jobs.kind(KIND, lane="gpu", title="Auto-annotate", needs=runs.needs)

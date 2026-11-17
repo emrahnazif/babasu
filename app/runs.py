@@ -9,6 +9,7 @@ per image.
 """
 
 import json
+import math
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
@@ -313,9 +314,10 @@ def execute(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dic
                 found = {label: outputs[node] for node, label in kept.items()}
                 with conn:
                     conn.executemany(
-                        "INSERT OR REPLACE INTO run_result (run_id, media_id, label, result) VALUES (?, ?, ?, ?)",
+                        "INSERT OR REPLACE INTO run_result (run_id, media_id, label, result, objects) VALUES (?, ?, ?, ?, ?)",
                         [(run_id, image["id"], label,
-                          annotation_line(detections, label=image["sha256"], width=image["width"], height=image["height"]))
+                          annotation_line(detections, label=image["sha256"], width=image["width"], height=image["height"]),
+                          _objects(detections))
                          for label, detections in found.items()],
                     )
                     if on_image:
@@ -350,47 +352,70 @@ def _run(conn: sqlite3.Connection, run_id: int) -> dict | None:
     return row and _dict(row)
 
 
-def _results(conn: sqlite3.Connection, run_id: int) -> list[dict]:
-    """Per image and label: media id, sha256, the image's file name in the run's project (without
-    one, the start of its sha256), and the result, mozo's annotation line (detections with boxes, classes, scores
-    and masks; the image's width and height)."""
+def _objects(detections: Detections) -> str:
+    """What a result found per class (its name; "class N" without one): [how many, the sum of their
+    scores], as it's stored with the result."""
+    found: dict[str, list] = {}
+    for d in detections:
+        counted = found.setdefault(d.class_name or f"class {d.class_id}", [0, 0.0])
+        counted[0] += 1
+        counted[1] += d.confidence or 0
+    return json.dumps(found)
+
+
+PAGE_SIZE = 30  # images a page of a run (each with its results, one a label)
+
+
+def _results(conn: sqlite3.Connection, run_id: int, page: int | None = None, shapes: bool = False) -> list[dict]:
+    """Per image and label, by image (all of them, or one page of PAGE_SIZE images): media id,
+    sha256, the image's file name in the run's project (without one, the start of its sha256) and
+    the objects found per class; with `shapes`, the result too, mozo's annotation line (detections
+    with boxes, classes, scores and masks; the image's width and height)."""
+    images = "" if page is None else \
+        "AND r.media_id IN (SELECT DISTINCT media_id FROM run_result WHERE run_id = :run ORDER BY media_id LIMIT :size OFFSET :skip)"
     rows = conn.execute(
-        """SELECT r.media_id, m.sha256, coalesce(pm.filename, substr(m.sha256, 1, 12)) AS filename, r.label, r.result
-           FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
-           LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
-           WHERE r.run_id = ? ORDER BY r.media_id, r.label""",
-        (run_id,),
+        f"""SELECT r.media_id, m.sha256, coalesce(pm.filename, substr(m.sha256, 1, 12)) AS filename, r.label, r.objects
+                   {", r.result" if shapes else ""}
+            FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
+            LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
+            WHERE r.run_id = :run {images} ORDER BY r.media_id, r.label""",
+        {"run": run_id, "size": PAGE_SIZE, "skip": ((page or 1) - 1) * PAGE_SIZE},
     ).fetchall()
-    return [dict(r) | {"result": json.loads(r["result"])} for r in rows]
+    return [dict(r) | {"objects": {name: n for name, (n, _) in json.loads(r["objects"]).items()}}
+            | ({"result": json.loads(r["result"])} if shapes else {}) for r in rows]
 
 
 def get(conn: sqlite3.Connection, run_id: int) -> dict | None:
-    """The run with all its results (see _results)."""
+    """The run with all its results, shapes included (see _results)."""
     run = _run(conn, run_id)
-    return None if run is None else run | {"results": _results(conn, run_id)}
+    return None if run is None else run | {"results": _results(conn, run_id, shapes=True)}
 
 
-def summary(conn: sqlite3.Connection, run_id: int, images: int = 20) -> dict | None:
-    """The run in brief, per result label: objects found per class with their average score, and
-    for the first `images` images (`image_count`: all of them) each object's class, score and box
-    in pixels. No masks."""
+def found(conn: sqlite3.Connection, run_id: int) -> dict[str, dict[str, dict]]:
+    """What a run found, per label and class: how many objects and their average score."""
+    rows = conn.execute(
+        """SELECT r.label, o.key AS name, sum(json_extract(o.value, '$[0]')) AS objects,
+                  round(sum(json_extract(o.value, '$[1]')) / sum(json_extract(o.value, '$[0]')), 3) AS average_score
+           FROM run_result r, json_each(r.objects) o
+           WHERE r.run_id = ? GROUP BY r.label, name ORDER BY r.label, objects DESC""",
+        (run_id,),
+    )
+    by_label: dict[str, dict[str, dict]] = {}
+    for r in rows:
+        by_label.setdefault(r["label"], {})[r["name"]] = {"objects": r["objects"], "average_score": r["average_score"]}
+    return by_label
+
+
+def results_page(conn: sqlite3.Connection, run_id: int, page: int = 1, shapes: bool = False) -> dict | None:
+    """The run, what it found (`found`), and one page of its images' results (see _results). None
+    if there's no such run."""
     run = _run(conn, run_id)
     if run is None:
         return None
-    labels: dict[str, dict] = {}
-    for r in _results(conn, run_id):
-        found = [{"class": d.get("class_name"), "score": d.get("confidence"), "box": d.get("bbox")}
-                 for d in r["result"]["detections"]]
-        label = labels.setdefault(r["label"], {"scores": {}, "image_count": 0, "images": []})
-        for f in found:
-            label["scores"].setdefault(f["class"], []).append(f["score"] or 0)
-        label["image_count"] += 1
-        if len(label["images"]) < images:
-            label["images"].append({"image": r["filename"], "objects": found})
-    for label in labels.values():
-        label["classes"] = {name: {"objects": len(s), "average_score": round(sum(s) / len(s), 3)}
-                            for name, s in label.pop("scores").items()}
-    return run | {"results": labels}
+    pages = max(1, math.ceil(run["images"] / PAGE_SIZE))
+    page = min(max(page, 1), pages)
+    return run | {"found": found(conn, run_id), "page": page, "pages": pages,
+                  "results": _results(conn, run_id, page, shapes)}
 
 
 def rename(conn: sqlite3.Connection, run_id: int, name: str) -> bool:

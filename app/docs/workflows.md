@@ -11,6 +11,6 @@ Workflows are mozo graphs of models and steps; running one over images makes a r
 ## Runs
 - A run is a workflow run over images (a project's, or any by media id), as a background job in the gpu lane.
 - It finds the prompts given, or the project's class prompts.
-- Its results are per image and per label: the objects found, with class and score. /api/runs/ID/summary summarises them.
+- Its results are per image and per label: the objects found, with class and score. GET /api/runs/ID gives them: per label and class, then per image.
 - An auto-annotate run also adds its objects to the project; other runs only keep their results.
 - Deleting a workflow leaves its runs: each keeps its own copy.
