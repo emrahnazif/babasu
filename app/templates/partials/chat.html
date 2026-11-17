@@ -3,13 +3,13 @@
    macros, and chat.js clones them for a turn that is streaming. One source of markup. #}
 {% from "partials/select.html" import select %}
 {% macro user_message(text) -%}
-  <div class="chat__message chat__message--user">{{ text }}</div>
+  <div class="chat__message chat__message--user selectable">{{ text }}</div>
 {%- endmacro %}
 
 {# The agent's text: its markdown, as text; chat.js renders it (js/markdown.js). Rendered in the
    browser on purpose: saved and streaming replies share one renderer, so they can't differ. #}
 {% macro text_part(text) -%}
-  <div class="chat__text">{{ text }}</div>
+  <div class="chat__text selectable">{{ text }}</div>
 {%- endmacro %}
 
 {# A step the agent takes (a tool call): what it's doing, then what came out (its note, or why it
