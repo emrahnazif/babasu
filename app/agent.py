@@ -516,7 +516,7 @@ def run_turn(
     Once `stop` is set, the turn ends at once (a tool running ends too) and saves the reply so far
     as stopped. What the turn changes is one action in the history, named by the message.
     """
-    with closing(db.connect()) as conn, db.action("agent", text), agent_tools.turn_of(conversation_id, stop):
+    with closing(db.connect()) as conn, db.action("agent", text), agent_tools.turn_of(conversation_id, stop) as tools_turn:
         with conn:
             conn.execute(
                 "INSERT INTO message (conversation_id, role, content, page, page_title, about) VALUES (?, 'user', ?, ?, ?, ?)",
@@ -642,12 +642,10 @@ def run_turn(
                     if stop.is_set():  # the tools after it don't run, and the model isn't asked again
                         yield stopped(tool_calls[:ran + 1])
                         return
-                    if status != "done":
-                        continue
-                    found = agent_tools.TOOLS[call["name"]]
-                    if found.opens and "open" in (opened := json.loads(outcome.result)):
-                        yield {"type": "open", "url": opened["open"]}
-                    elif agent_tools.writes(call["name"], call["arguments"]):
+                    if tools_turn.changed:  # even by a call that then failed (code that wrote, then broke)
+                        tools_turn.changed = False
                         yield {"type": "changed"}
+                    if status == "done" and agent_tools.TOOLS[call["name"]].opens:
+                        yield {"type": "open", "url": json.loads(outcome.result)["open"]}
 
         yield fail(f"Stopped after {MAX_ROUNDS} rounds of tool calls without an answer.")

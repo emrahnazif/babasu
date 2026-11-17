@@ -7,8 +7,8 @@ Everything the pages can do goes through call_api, one tool for the whole API (f
 operation and its details); the other tools do what one call can't: open a page, wait, search
 across things, run code.
 A tool registered with opens=True returns {"open": "/a/page", …}: that page is shown to the person
-once the reply is done (app/agent.py, run_turn); after a tool that `writes`, the page they're on
-reloads then instead (unless one opens).
+once the reply is done (app/agent.py, run_turn); after a call that changed something through the
+API (call_api, code), the page they're on reloads then instead (unless one opens).
 
 What the person sees of a call is one line: its label, what it's doing (the `step` the model gives,
 or the tool's own label), and its note, what came out (written from the result by the tool, so it's
@@ -102,9 +102,6 @@ class Tool:
     shows: Callable[[Args, object], tuple[int, list[int]]] | None = None
     opens: bool = False  # it returns {"open": "/a/page", …}: that page is shown to the person after the reply
     vision: bool = False  # it gives the model a picture (Seen): offered only to a model that sees images
-    # It changes what pages show: the page the person is on reloads after the reply. A function of
-    # the arguments for a tool that only sometimes does (call_api: not a GET).
-    writes: bool | Callable[[BaseModel], bool] = False
 
 
 TOOLS: dict[str, Tool] = {}
@@ -116,11 +113,11 @@ class ToolError(Exception):
 
 def tool(description: str, args: type[Args], label: str, note: Callable[[Args, object], str] = lambda args, result: "",
          shows: Callable[[Args, object], tuple[int, list[int]]] | None = None, opens: bool = False,
-         vision: bool = False, writes: bool | Callable[[Args], bool] = False):
+         vision: bool = False):
     """Register a function as a tool, under its own name."""
 
     def register(func):
-        TOOLS[func.__name__] = Tool(description, args, func, label, note, shows, opens, vision, writes)
+        TOOLS[func.__name__] = Tool(description, args, func, label, note, shows, opens, vision)
         return func
 
     return register
@@ -143,21 +140,23 @@ class Seen:
     picture: bytes
 
 
-@dataclass(frozen=True)
+@dataclass
 class _Turn:
     conversation_id: int  # run_code keeps one code process per conversation, in its folder
     stop: threading.Event  # set when the person stops the turn: a tool that takes long ends at once
+    changed: bool = False  # a call changed something through the API (call_api, code): pages show it after a reload
 
 
 _turn: ContextVar[_Turn | None] = ContextVar("turn", default=None)
 
 
 @contextmanager
-def turn_of(conversation_id: int, stop: threading.Event) -> Iterator[None]:
-    """Tools called inside this are a turn of this conversation (agent.run_turn)."""
-    token = _turn.set(_Turn(conversation_id, stop))
+def turn_of(conversation_id: int, stop: threading.Event) -> Iterator[_Turn]:
+    """Tools called inside this are a turn of this conversation (agent.run_turn); it gives the turn."""
+    turn = _Turn(conversation_id, stop)
+    token = _turn.set(turn)
     try:
-        yield
+        yield turn
     finally:
         _turn.reset(token)
 
@@ -204,12 +203,6 @@ def call(conn: sqlite3.Connection, name: str, arguments: str) -> Iterator[dict]:
     shown = found.shows(args, result) if found.shows else None
     images = {"project_id": shown[0], "media_ids": shown[1]} if shown and shown[1] else None
     return Outcome(json.dumps(result, ensure_ascii=False), found.note(args, result), images, picture)
-
-
-def writes(name: str, arguments: str) -> bool:
-    """Whether this call of a tool (one that ran) changed what pages show."""
-    found = TOOLS[name]
-    return found.writes(found.args.model_validate_json(arguments or "{}")) if callable(found.writes) else found.writes
 
 
 def _problem(args: type[BaseModel], error: dict) -> str:
@@ -404,7 +397,6 @@ class CallApiArgs(Args):
     CallApiArgs,
     label="Using the app's data",
     note=lambda args, answer: f"{len(answer)} found" if isinstance(answer, list) else "",
-    writes=lambda args: args.method != "GET",
 )
 def call_api(conn: sqlite3.Connection, args: CallApiArgs) -> object:
     response = _request(args.method, args.path, args.body)
@@ -440,6 +432,8 @@ def _request(method: str, path: str, body=None):
     response = _client.request(method, path, json=body)
     if response.status_code >= 400:
         raise ToolError(_refusal(response))
+    if method != "GET":
+        _turn.get().changed = True
     return response
 
 
@@ -591,7 +585,6 @@ def _last_line(text: str) -> str:
     CodeArgs,
     label="Running code",
     note=lambda args, ran: _last_line(ran["output"]),
-    writes=True,
 )
 def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
     code = _path(args.file, "file").read_text() if args.file else args.code
