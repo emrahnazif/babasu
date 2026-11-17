@@ -29,7 +29,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Any, Literal, get_args
+from typing import Any, Literal
 
 import pixelflow as pf
 from fastapi import FastAPI
@@ -40,7 +40,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from app import code as code_mode  # `code` is run_code's argument
 from app import config, jobs, media, projects, runs
 from app.formatting import plural
-from app.routes import UI_ONLY
+from app.routes import UI_ONLY, fields_at
 
 
 class Args(BaseModel):
@@ -173,17 +173,7 @@ def _problem(args: type[BaseModel], error: dict) -> str:
     where = ".".join(str(part) for part in error["loc"]) or "arguments"
     if error["type"] != "extra_forbidden":
         return f"{where}: {error['msg']}"
-    model = args
-    for part in error["loc"][:-1]:  # down to the object holding the unknown name, through lists and Nones
-        if isinstance(part, str):
-            model = next(t for t in _types(model.model_fields[part].annotation)
-                         if isinstance(t, type) and issubclass(t, BaseModel))
-    return f"{where}: not an argument here; it takes {', '.join(model.model_fields)}"
-
-
-def _types(annotation) -> list:
-    """The types an annotation is made of: list[ClassEdit] | None -> [list, ClassEdit, None]."""
-    return [annotation, *(t for arg in get_args(annotation) for t in _types(arg))]
+    return f"{where}: not an argument here; it takes {', '.join(fields_at(args, error['loc'][:-1]))}"
 
 
 # --- The app's API: everything the pages can do ---

@@ -3,8 +3,12 @@
 import random
 import sqlite3
 from collections.abc import Iterator
+from typing import get_args
 
 from fastapi import HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app import media
@@ -43,6 +47,39 @@ def known_query(request: Request) -> None:
     if unknown := sorted(set(request.query_params) - taken):
         raise HTTPException(422, f"Not a parameter of {route.path}: {', '.join(unknown)}; it takes "
                                  + (", ".join(sorted(taken)) or "none"))
+
+
+def fields_at(annotation, loc: tuple) -> list[str]:
+    """The fields of the object at `loc` (field names and list indexes) in a model: those an
+    unknown name there could have been. KeyError or StopIteration if `loc` isn't in it."""
+    model = _model(annotation)
+    for part in loc:
+        if isinstance(part, str):
+            model = _model(model.model_fields[part].annotation)
+    return list(model.model_fields)
+
+
+def _model(annotation) -> type[BaseModel]:
+    """The model an annotation holds: list[ClassEdit] | None -> ClassEdit."""
+    def types(a) -> list:
+        return [a, *(t for arg in get_args(a) for t in types(arg))]
+    return next(t for t in types(annotation) if isinstance(t, type) and issubclass(t, BaseModel))
+
+
+async def refused(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """A request whose body or parameters don't fit (422), as FastAPI answers it, except that a field
+    the body doesn't take says which it does, as a parameter it doesn't take says (known_query): a
+    made-up one is a mistake to correct, and the fields are how."""
+    body = getattr(request.scope.get("route"), "body_field", None)
+    errors = []
+    for error in exc.errors():
+        if error["type"] == "extra_forbidden" and error["loc"][:1] == ("body",) and body is not None:
+            try:
+                error = error | {"msg": f"not a field here; it takes {', '.join(fields_at(body.field_info.annotation, error['loc'][1:-1]))}"}
+            except (KeyError, StopIteration):
+                pass
+        errors.append(error)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 
 class Answer(BaseModel):
