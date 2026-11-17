@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components.html" as ui %}
-{% from "projects/macros.html" import downloads, no_classes %}
+{% from "projects/macros.html" import downloads, image_tiles, no_classes %}
 {% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
 {% set params = {"where": project.filter} %}  {# these links keep the filter #}
@@ -152,14 +152,7 @@
 {% block content %}
   {% call ui.region("project-images", on="job-ended", when="projectId=" ~ project.id) %}
   {% if project.images %}
-    {% set tiles = namespace(list=[]) %}
-    {% for image in project.images %}
-      {% set tiles.list = tiles.list + [{"src": image.thumb_url, "width": image.width, "height": image.height, "caption": image.filename,
-                                         "href": "/projects/" ~ project.id ~ "/images/" ~ image.media_id ~ query(params),
-                                         "annotations": image.annotations, "matches": image.matches,
-                                         "badge": {"text": "Labelled", "icon": "check-circle"} if image.annotations}] %}
-    {% endfor %}
-    {{ ui.tiles(tiles.list, classes=project.classes) }}
+    {{ image_tiles(project.id, project.images, project.classes, query=query(params), badges=true) }}
     {% if project.pages > 1 %}
       {{ ui.pagination(project.page, project.pages, note=project.match_count | plural("image"),
                        previous=query(params, page=project.page - 1) if project.page > 1,
