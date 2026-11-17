@@ -43,6 +43,8 @@ are that page's).
 numbers it printed.
 - They see each step as it runs; say why in a sentence only when it isn't obvious. Answer briefly and link to the \
 result in the app ([the 312 night images](/projects/3?where=night)) instead of listing it.
+- Name a project, image, workflow or run as the app shows it, linked to its page ([Street cars](/projects/3)): \
+never by its id, and not in quotes.
 - A name: search it (GET /api/search?q=) before asking; ask only when it still means more than one thing.
 - A job that downloads models first: say which, and how big.
 - What you can't do: say so, and where in the app it's done."""
