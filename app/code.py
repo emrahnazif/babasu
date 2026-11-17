@@ -129,8 +129,10 @@ def _child(pipe, folder: str) -> None:
         code, file = pipe.recv()  # file: the folder's file the code was read from; None for a snippet
         name, shown, error = file or "<code>", -1, None
         try:
-            with contextlib.redirect_stdout(printed):
+            with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(printed):  # warnings too
                 exec(compile(code, name, "exec"), names)
+        except SystemExit as e:  # sys.exit() ends the run, not the process
+            error = None if e.code in (None, 0) else f"It exited with {e.code}."
         except Exception as e:
             lines = [f.lineno for f in traceback.extract_tb(e.__traceback__) if f.filename == name]
             where = ""
@@ -153,6 +155,7 @@ class Session:
         self._process.start()
         there.close()  # the child's end is the child's: once it ends, reading here sees that at once
         self.used = time.monotonic()
+        self.running = False  # a run is under way: the process isn't ended to make room for another
 
     @property
     def alive(self) -> bool:
@@ -175,14 +178,17 @@ class Session:
         "done", "total"}; returns {output: what it printed (cut when long), error: why it stopped,
         or None}. A run left before the code is done (the app failed to answer one of its calls,
         or the turn ended) ends the process: the code would wait for an answer that never comes."""
+        self.running = True
         try:
             return (yield from self._run(code, call, stop, timeout, file))
         except BaseException:
             self.close()
             raise
+        finally:
+            self.running = False
 
     def _run(self, code: str, call: Call, stop: threading.Event, timeout: int, file: str | None) -> Iterator[dict]:
-        self.used = started = time.monotonic()
+        started = time.monotonic()
         self._pipe.send((code, file))
         kept, size = [], 0  # what's printed, up to OUTPUT_SIZE; how much in all
         while True:
@@ -221,7 +227,7 @@ class Session:
         return {"output": "".join(kept) + cut, "error": error}
 
 
-SESSIONS = 4  # conversation processes alive at once: starting another ends the least recently used
+SESSIONS = 4  # conversation processes alive at once: starting another ends the least recently used idle one
 _sessions: dict[Path, Session] = {}  # by the conversation's folder
 _lock = threading.Lock()
 
@@ -235,9 +241,10 @@ def session(folder: Path) -> Session:
                 found.close()
                 del _sessions[other]
         if folder not in _sessions:
-            if len(_sessions) >= SESSIONS:
-                _sessions.pop(min(_sessions, key=lambda k: _sessions[k].used)).close()
+            if len(_sessions) >= SESSIONS and (idle := [k for k, s in _sessions.items() if not s.running]):
+                _sessions.pop(min(idle, key=lambda k: _sessions[k].used)).close()  # one running in another chat goes on
             _sessions[folder] = Session(folder)
+        _sessions[folder].used = time.monotonic()  # the most recently used now, before its run starts
         return _sessions[folder]
 
 
