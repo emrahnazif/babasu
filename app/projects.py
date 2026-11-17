@@ -756,11 +756,12 @@ def set_prompts(conn: sqlite3.Connection, project_id: int, prompts: dict[int, st
     _touch(conn, project_id)
 
 
-def set_classes(conn: sqlite3.Connection, project_id: int, classes: list[ClassChange]) -> None:
+def set_classes(conn: sqlite3.Connection, project_id: int, classes: list[ClassChange]) -> list[dict]:
     """Set the project's class list to these, in this order (product.md "Classes"): a class left
     out becomes inactive (its annotations stay, hidden); a new one named like an inactive class
     brings that one back; any other new one gets the next id, never one used before. A class
-    without a colour keeps its own, or gets the first palette colour no class has. Caller commits.
+    without a colour keeps its own, or gets the first palette colour no class has. Returns the
+    classes as set, with the new ones' ids. Caller commits.
 
     Raises FrozenError, or ValueError for a repeated name or an id the project doesn't have."""
     current = {c["id"]: c for c in json.loads(_editable(conn, project_id)["classes"])}
@@ -769,12 +770,13 @@ def set_classes(conn: sqlite3.Connection, project_id: int, classes: list[ClassCh
     taken = {c["color"] for c in current.values()} | {c.color.lower() for c in classes if c.color}
     free = [p for p in PALETTE if p not in taken]
     next_id = max(current, default=-1) + 1
-    listed, seen = [], set()
+    listed, seen = [], {}
     for c in classes:
         name = c.name.casefold()
-        if name in seen:
-            raise ValueError(f"Two classes are named {c.name}")
-        seen.add(name)
+        if first := seen.get(name):
+            raise ValueError(f"There's a class named {first.name} already (id {first.id})" if first.id is not None
+                             else f"Two classes are named {c.name}")
+        seen[name] = c
         if c.id is None:
             id = inactive.pop(name, None)
             if id is None:
@@ -786,18 +788,20 @@ def set_classes(conn: sqlite3.Connection, project_id: int, classes: list[ClassCh
             raise ValueError(f"unknown class id: {c.id}")
         color = c.color or current.get(id, {}).get("color") or (free.pop(0) if free else PALETTE[id % len(PALETTE)])
         listed.append({"id": id, "name": c.name, "prompt": c.prompt or c.name, "color": color.lower(), "active": True})
+    active = [{k: v for k, v in c.items() if k != "active"} for c in listed]
     kept = {c["id"] for c in listed}
     listed += [c | {"active": False} for i, c in current.items() if i not in kept]
     conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(listed), project_id))
     _touch(conn, project_id)
+    return active
 
 
 def edit_classes(conn: sqlite3.Connection, project_id: int, add: list[NewClass] = (),
-                 change: list[ClassEdit] = (), remove: list[ClassRef] = ()) -> None:
+                 change: list[ClassEdit] = (), remove: list[ClassRef] = ()) -> list[dict]:
     """Add, change and remove some of the project's classes; the others stay as they are. Added
     ones go last; set_classes's rules hold (a removed class becomes inactive, one added by an
     inactive class's name brings it back). A prompt that is the class's name stays "the name", so
-    it follows a rename. Caller commits.
+    it follows a rename. Returns the classes as set_classes does. Caller commits.
 
     Raises FrozenError, or ValueError for a class it doesn't have (saying which it has) or as set_classes."""
     classes = _project(_editable(conn, project_id))["classes"]
@@ -819,8 +823,8 @@ def edit_classes(conn: sqlite3.Connection, project_id: int, add: list[NewClass] 
         row["name"] = e.new_name or (e.name if e.id is not None and e.name else row["name"])
     for ref in remove:
         del rows[find(ref)]
-    set_classes(conn, project_id, [ClassChange(**r) for r in rows.values()]
-                + [ClassChange(**c.model_dump()) for c in add])
+    return set_classes(conn, project_id, [ClassChange(**r) for r in rows.values()]
+                       + [ClassChange(**c.model_dump()) for c in add])
 
 
 def _check_active(project: sqlite3.Row, class_ids: set[int]) -> set[int]:

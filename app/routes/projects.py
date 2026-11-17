@@ -844,14 +844,23 @@ def api_set_prompts(project_id: int, prompts: Annotated[dict[int, Prompt], Body(
         raise HTTPException(422, str(e)) from None
 
 
-@router.put("/api/projects/{project_id}/classes", status_code=204)
-def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: DB) -> None:
+@router.get("/api/projects/{project_id}/classes", response_model=list[ClassOut])
+def api_classes(project_id: int, conn: DB) -> list[dict]:
+    """The project's classes, in order: as PUT …/classes takes them back."""
+    if (project := projects.get(conn, project_id)) is None:
+        raise HTTPException(404, "Project not found")
+    return project["classes"]
+
+
+@router.put("/api/projects/{project_id}/classes", response_model=list[ClassOut])
+def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: DB) -> list[dict]:
     """Sets the project's whole class list, in order: classes with an id are kept (renamed,
     recoloured), without one added, those left out removed (their annotations hidden, back if a
-    class by that name returns). To change a few, PATCH …/classes instead."""
+    class by that name returns); returns the classes, with the new ones' ids. To change a few,
+    PATCH …/classes instead."""
     try:
         with _writing(conn, project_id):
-            projects.set_classes(conn, project_id, classes)
+            return projects.set_classes(conn, project_id, classes)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
 
@@ -866,13 +875,13 @@ class ClassEdits(BaseModel):
                                             "hidden, not deleted, and come back if a class by that name is added again.")
 
 
-@router.patch("/api/projects/{project_id}/classes", status_code=204)
-def api_edit_classes(project_id: int, edits: ClassEdits, conn: DB) -> None:
-    """Adds, changes and removes some of the project's classes; the others stay. 422 with why
-    (an unknown class, a name taken)."""
+@router.patch("/api/projects/{project_id}/classes", response_model=list[ClassOut])
+def api_edit_classes(project_id: int, edits: ClassEdits, conn: DB) -> list[dict]:
+    """Adds, changes and removes some of the project's classes; the others stay. Returns the
+    classes, with the new ones' ids; 422 with why (an unknown class, a name taken)."""
     try:
         with _writing(conn, project_id):
-            projects.edit_classes(conn, project_id, edits.add, edits.change, edits.remove)
+            return projects.edit_classes(conn, project_id, edits.add, edits.change, edits.remove)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
 

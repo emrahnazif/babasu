@@ -32,12 +32,12 @@ A run that's stopped (time) or crashes ends the process, and so do 30 minutes wi
 
 An image from `api.images` has `media_id`, `filename`, `width`, `height`, `objects` (how many of each class) and `annotations`: objects with `class_id` and `bbox` [x, y, w, h] in pixels, `segments` (an outline) or `keypoints`, and `score` on a model's. Write an image's objects back with `PUT /api/projects/{id}/images/{media_id}/annotations` and the whole list: leave out what goes, change what changes.
 
-A class is known by its id in its project: read them with `GET /api/projects/{id}?images=0` (`classes`: id, name, prompt, color).
+A class is known by its id in its project: read them with `GET /api/projects/{id}/classes` (id, name, prompt, color). Adding or changing classes (`PATCH` …/classes) answers them too, with the new ones' ids.
 
 ## Delete one class's objects
 ```python
 project_id = 1
-classes = api.get(f"/api/projects/{project_id}?images=0")["classes"]
+classes = api.get(f"/api/projects/{project_id}/classes")
 star = next(c["id"] for c in classes if c["name"] == "star")
 changed = removed = 0
 for image in api.images(project_id):
@@ -53,7 +53,7 @@ The objects of triangle become squares, then the triangle class goes.
 
 ```python
 project_id = 1
-classes = {c["name"]: c["id"] for c in api.get(f"/api/projects/{project_id}?images=0")["classes"]}
+classes = {c["name"]: c["id"] for c in api.get(f"/api/projects/{project_id}/classes")}
 source, target = classes["triangle"], classes["square"]
 moved = 0
 for image in api.images(project_id):
@@ -70,10 +70,10 @@ The images of two projects that have a circle go into a new project, each with o
 
 ```python
 new_id = api.post("/api/projects", {"name": "Circles", "task": "detection", "classes": [{"name": "circle"}]})["id"]
-circle_here = api.get(f"/api/projects/{new_id}?images=0")["classes"][0]["id"]
+circle_here = api.get(f"/api/projects/{new_id}/classes")[0]["id"]
 added = 0
 for project_id in (1, 6):
-    classes = {c["name"]: c["id"] for c in api.get(f"/api/projects/{project_id}?images=0")["classes"]}
+    classes = {c["name"]: c["id"] for c in api.get(f"/api/projects/{project_id}/classes")}
     circle = classes["circle"]
     for image in api.images(project_id, "circle"):  # only reading: the filter is safe here
         circles = [a | {"class_id": circle_here} for a in image["annotations"] if a["class_id"] == circle]
