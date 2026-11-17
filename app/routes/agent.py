@@ -12,7 +12,7 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app import agent, db, projects
 from app.routes import UI_ONLY, safe_next
@@ -23,6 +23,7 @@ DB = Annotated[sqlite3.Connection, Depends(db.get)]
 
 
 class NewMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20000)]
     # The page it was written on (path and browser tab title), for a chat that starts with this
     # message: page loads record it from then on (templating.agent_chat).
@@ -104,6 +105,7 @@ def history(request: Request, conn: DB, q: str = ""):
 
 
 class OpenConversation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     conversation_id: int | None  # null: a new chat
 
 
@@ -117,6 +119,7 @@ def open_conversation(change: OpenConversation, conn: DB) -> None:
 
 
 class ConversationAgent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     agent_id: str
 
 

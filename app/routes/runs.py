@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from mozo.workflow import WorkflowError
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app import annotators, db, runs, vision
 from app.filters import WHERE, Filter
@@ -193,6 +193,7 @@ class NewRun(BaseModel):
     prompted node (e.g. ["car", "person"]); `overrides`: parameter values as mozo's run takes
     them, by name or one node's (e.g. {"dino.threshold": 0.4})."""
 
+    model_config = ConfigDict(extra="forbid")
     workflow_id: str | None = Field(None, description="The workflow, an id from GET /api/workflows; or give `workflow`.")
     workflow: dict[str, Any] | None = Field(None, description="Instead of workflow_id: a workflow not saved yet (its "
                                             "document, as POST /api/workflows takes it), to try it on a few images.")
@@ -209,6 +210,7 @@ class NewRun(BaseModel):
 class RunChanges(BaseModel):
     """A run's new name."""
 
+    model_config = ConfigDict(extra="forbid")
     name: Name = Field(description="Its name, e.g. night shift.")
 
 

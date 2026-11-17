@@ -115,6 +115,7 @@ class ProjectFields(BaseModel):
 class NewProject(ProjectFields):
     """A new project, with its classes; it gets the annotator suggested for its type."""
 
+    model_config = ConfigDict(extra="forbid")
     classes: list[projects.ClassChange] = Field([], description="The kinds of objects to annotate, in order (no ids: all new).")
 
 
@@ -158,6 +159,7 @@ class ProjectForm(ProjectChanges):
 class AutoAnnotate(BaseModel):
     """Which of the project's images to auto-annotate, and how (see annotators.start)."""
 
+    model_config = ConfigDict(extra="forbid")
     where: str = Field("", max_length=2000, description=WHERE)
     count: int | None = Field(None, ge=1, description="How many of the images, picked at random among those with work left; empty for all.")
     annotator: annotators.Finder | None = Field(None, description=ANNOTATOR)
@@ -183,6 +185,7 @@ class AutoAnnotateForm(BaseModel):
 class TryAnnotator(BaseModel):
     """Which images to try the annotator on, and with what (see annotators.try_)."""
 
+    model_config = ConfigDict(extra="forbid")
     where: str = Field("", max_length=2000, description=WHERE)
     annotator: annotators.Finder | None = Field(None, description=ANNOTATOR)
     class_ids: list[int] | None = Field(None, description=CLASS_IDS)
@@ -192,6 +195,7 @@ class TryAnnotator(BaseModel):
 class ImageImport(BaseModel):
     """Files and folders on this computer or a NAS. Blank entries (an empty path field) are ignored."""
 
+    model_config = ConfigDict(extra="forbid")
     paths: list[str] = Field(description="Image files and folders (searched with their subfolders), e.g. [\"~/Desktop/potholes\"].")
 
     @field_validator("paths")
@@ -714,6 +718,7 @@ def api_update_project(project_id: int, changes: ProjectPatch, conn: DB) -> None
 class Duplicate(BaseModel):
     """The copy's name."""
 
+    model_config = ConfigDict(extra="forbid")
     name: projects.Name | None = Field(None, description='Its name; empty: "<the project\'s name> copy".')
 
 
@@ -868,6 +873,7 @@ def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: 
 class ClassEdits(BaseModel):
     """Classes to add, change and remove; the others stay (projects.edit_classes)."""
 
+    model_config = ConfigDict(extra="forbid")
     add: list[projects.NewClass] = Field([], description="New classes, added after the others.")
     change: list[projects.ClassEdit] = Field([], description="Classes to rename, or to give another prompt or colour, "
                                              "e.g. [{\"name\": \"car\", \"new_name\": \"vehicle\"}].")

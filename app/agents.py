@@ -4,7 +4,7 @@ is app/agent.py. Every change is checked by the Settings model; problems raise V
 message for people.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import agent, settings
 from app.settings import Agent, Model, Settings, slug
@@ -24,6 +24,7 @@ class ModelForm(BaseModel):
 class AgentForm(BaseModel):
     """An agent: who answers in the chat."""
 
+    model_config = ConfigDict(extra="forbid")
     name: str = Field(description="Its name, e.g. Assistant.")
     model_id: str = Field(description="The model it runs on, an id from GET /api/models.")
     instructions: str = Field("", description="Its role and rules, e.g. Answer from the app's real data.")
