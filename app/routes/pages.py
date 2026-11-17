@@ -15,8 +15,10 @@ DB = Annotated[sqlite3.Connection, Depends(db.get)]
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    """Where the app opens: the way into Studio, the way into making a project, and examples to try."""
-    return templates.TemplateResponse(request, "pages/home.html")
+    """Where the app opens: drop images and ask about them (they go with the chat's next message),
+    and the models the first find downloads, said before anyone asks."""
+    return templates.TemplateResponse(request, "pages/home.html", {
+        "finder": annotators.FINDERS[runs.FINDER], "to_download": runs.to_download(runs.FINDER)})
 
 
 @router.get("/runs/{run_id}", response_class=HTMLResponse)

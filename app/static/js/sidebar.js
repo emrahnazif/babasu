@@ -54,3 +54,9 @@ toggle?.addEventListener("click", () => {
   toggle.setAttribute("aria-expanded", String(!collapsed));
   saveSidebar({ sidebar_collapsed: collapsed });
 });
+
+// Something in the sidebar asks to be seen (a "reveal" event: a field filled from the page, say):
+// a collapsed sidebar opens.
+document.querySelector(".app__sidebar")?.addEventListener("reveal", () => {
+  if (app.classList.contains("app--collapsed")) toggle.click();
+});

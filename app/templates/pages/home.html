@@ -1,27 +1,23 @@
 {% extends "base.html" %}
 {% import "components.html" as ui %}
 
-{# Where the app opens: the two ways in, by what someone wants (answers from images now, or a
-   dataset of their own), and examples that open a Studio page with images and a prompt filled in.
-   The examples' links are placeholders until Studio takes them. #}
-{% set examples = ["Count cars in a parking lot", "Find people on a street", "Count products on a shelf"] %}
+{# Where the app opens: drop images and ask about them. The drop zone attaches them to the chat's
+   next message (the chat's form, wherever the chat is); the buttons start a question in its field,
+   to finish and send. The first find downloads its models: said here, before anyone asks. #}
 
 {% block content %}
   {% call ui.center() %}
-    {{ ui.heading("Welcome to babasu", "Bring your images, describe the objects in words, and let models find them. "
+    {{ ui.heading("What's in your images?", "Drop them here and ask: find, count or describe what's in them. "
                   ~ "Everything runs on this computer, and your images never leave it.") }}
-    {% call ui.columns() %}
-      {% call ui.card("Find and count things", "Drop images in, say what to look for, and see what's found. Nothing to set up.") %}
-        {{ ui.actions([ui.button("Open Studio", href="/studio")]) }}
-      {% endcall %}
-      {% call ui.card("Build a dataset", "Bring your images, let a model annotate them, then review and fix what it found.") %}
-        {{ ui.actions([ui.button("New project", href="/projects/new")]) }}
-      {% endcall %}
-    {% endcall %}
-    {% call ui.section("Try an example") %}
-      {% call ui.actions(variant="start") %}
-        {% for example in examples %}{{ ui.button(example, href="/studio", variant="secondary") }}{% endfor %}
-      {% endcall %}
-    {% endcall %}
+    {{ ui.dropzone("attach", "paths", "Drop images here, or click to choose them", accept=image_suffixes, large=true,
+                   form="chat-form") }}
+    {{ ui.actions([ui.button("Find all…", variant="secondary", fill=("chat-input", "Find all ")),
+                   ui.button("Count…", variant="secondary", fill=("chat-input", "Count the ")),
+                   ui.button("What's in these?", variant="secondary", fill=("chat-input", "What's in these images?"))],
+                  variant="start") }}
+    {% if to_download %}
+      {{ ui.text("Finding things uses " ~ finder ~ ": the first time, it downloads " ~ to_download | sum(attribute="size") | filesize ~ ".", muted=true) }}
+    {% endif %}
+    {{ ui.text(["A dataset of your own to annotate?", ui.link("Make a project", "/projects/new")], muted=true) }}
   {% endcall %}
 {% endblock %}

@@ -142,7 +142,7 @@
    label. What it does, else nothing yet: `popover`, open the dialog or menu with that id;
    `close`, close it; `submit`, send its form; `post`, send a form of its own to that address
    (`background`: without leaving the page, as form() does), e.g. Undo. #}
-{% macro button(label, href=none, variant=none, icon=none, popover=none, close=none, submit=false, post=none, background=false) -%}
+{% macro button(label, href=none, variant=none, icon=none, popover=none, close=none, submit=false, post=none, background=false, fill=none) -%}
   {%- if post -%}
     {{ form(post, background=background, children=button(label, variant=variant, icon=icon, submit=true)) }}
   {%- else -%}
@@ -154,7 +154,8 @@
     <a class="{{ class }}" href="{{ href }}"{{ named }}>{{ inside }}</a>
   {%- else -%}
     <button class="{{ class }}" type="{{ 'submit' if submit else 'button' }}"
-      {{- {"popovertarget": popover or close, "popovertargetaction": "hide" if close else none} | xmlattr }}{{ named }}>{{ inside }}</button>
+      {{- {"popovertarget": popover or close, "popovertargetaction": "hide" if close else none,
+           "data-fill": fill[0] if fill else none, "value": fill[1] if fill else none} | xmlattr }}{{ named }}>{{ inside }}</button>
   {%- endif -%}
   {%- endif -%}
 {%- endmacro %}
