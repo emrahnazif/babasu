@@ -364,7 +364,8 @@ def _shown(args, answer) -> tuple[int, list[int]] | None:
     if not isinstance(answer, dict):
         return None
     if found := re.match(r"/api/projects/(\d+)", args.path):
-        ids = answer.get("examples") or [i["media_id"] for i in answer.get("images", [])] or \
+        images = answer.get("images")  # a page of images; in some answers, how many (a Try's)
+        ids = answer.get("examples") or ([i["media_id"] for i in images] if isinstance(images, list) else []) or \
             ([answer["media_id"]] if "media_id" in answer else [])
         return int(found[1]), ids[:SHOWN]
     if re.match(r"/api/runs/\d+", args.path) and answer.get("project_id"):
