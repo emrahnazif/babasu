@@ -2,8 +2,8 @@
 
 SQLite triggers keep every write to the user's tables (db.HISTORY_TABLES) under the action that
 made it: one request, job or agent turn (db.action). Files are kept too: a deleted image's file
-stays in place while an entry can put its row back; a deleted view or workflow moves to the trash.
-Not kept: settings.json (models, agents, nav) and a saved workflow written over.
+stays in place while an entry can put its row back; a deleted workflow moves to the trash.
+Not kept: settings.json (models, agents) and a saved workflow written over.
 """
 
 import json
@@ -23,7 +23,7 @@ class Refused(Exception):
 
 
 def trash(conn: sqlite3.Connection, path: Path) -> Path:
-    """Move a file or folder in the workspace to the trash, under the current action, which undoing
+    """Move a file in the workspace to the trash, under the current action, which undoing
     moves it back; returns where it went. Caller commits (a move whose entry isn't committed is
     removed by purge)."""
     moved = config.TRASH_DIR / db.current_action().id / path.relative_to(config.DATA_DIR)
@@ -62,7 +62,7 @@ def _where(key: dict) -> tuple[str, dict]:
 # How the history page and the agent name what an action changed.
 _NAMES = {"project": ("project", "projects"), "project_media": ("image in a project", "images in projects"),
           "media": ("stored image", "stored images"), "run": ("run", "runs"), "run_result": ("run result", "run results"),
-          "view_media": ("image of a view", "images of views"), "file": ("file", "files")}
+          "file": ("file", "files")}
 _DONE = {"insert": "added", "update": "changed", "delete": "deleted", "trash": "moved to the trash",
          "untrash": "back from the trash"}
 

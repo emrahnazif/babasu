@@ -1,5 +1,5 @@
 /*
-  Progress bar, a component for any region (main area, agent views, the jobs drawer):
+  Progress bar, a component for any region (main area, the chat, the jobs drawer):
   <div class="progress" role="progressbar" style="--value: 0.56" aria-valuenow="56" aria-valuemax="100"></div>
   --value goes from 0 to 1, and the bar glides to each new value. Variant "progress indeterminate"
   while the total is unknown: a stripe slides along the track.

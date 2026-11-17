@@ -2,15 +2,17 @@
 
 Each tool's arguments are a pydantic model, so the JSON schema the model sees is generated, never
 written by hand. Tools that change things don't ask for confirmation: what they change in the
-database, and the views and workflows they delete, can be undone for 30 days (app/history.py).
+database, and the workflows they delete, can be undone for 30 days (app/history.py).
 Everything the pages can do goes through call_api, one tool for the whole API (find_api finds an
-operation and its details); the other tools do what one call can't: open a page, wait, search across things, write views.
+operation and its details); the other tools do what one call can't: open a page, wait, search
+across things, run code.
 A tool registered with opens=True returns {"open": "/a/page", …}: that page is shown to the person
 once the reply is done (app/agent.py, run_turn); after a tool that `writes`, the page they're on
 reloads then instead (unless one opens).
 """
 
 import difflib
+import html
 import inspect
 import json
 import re
@@ -25,6 +27,8 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 from urllib.parse import urlencode
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from mozo.workflow import catalogue
 from pydantic import (
     BaseModel,
@@ -36,7 +40,7 @@ from pydantic import (
 )
 
 from app import code as code_mode  # `code` is run_code's argument
-from app import config, filters, jobs, projects, runs, settings, views
+from app import config, filters, jobs, projects, runs, settings
 from app.filters import Filter
 from app.routes import UI_ONLY
 
@@ -46,10 +50,6 @@ class Args(BaseModel):
     its mistake (a misspelt field) instead of being told a change it asked for was made."""
 
     model_config = ConfigDict(extra="forbid")
-
-
-class NoArgs(Args):
-    pass
 
 
 class PageArgs(Args):
@@ -85,20 +85,6 @@ class DocsArgs(Args):
     topic: str = Field(description="A topic, from the list in read_docs' description.")
 
 
-class ViewIdArgs(Args):
-    view_id: str = Field(description="The view's id: lowercase letters, digits and dashes (e.g. model-comparison).")
-
-
-class WriteViewArgs(ViewIdArgs):
-    template: str = Field(description="The whole page: a Jinja template (see get_components).")
-    title: str | None = Field(None, description="The page's title; needed for a new view.")
-
-
-class EditViewArgs(ViewIdArgs):
-    old: str = Field(description="A piece of the view's newest template, exactly as it is, found once in it.")
-    new: str = Field(description="What replaces it (empty to remove it).")
-
-
 @dataclass(frozen=True)
 class Tool:
     description: str
@@ -117,7 +103,7 @@ class ToolError(Exception):
     """The model asked for a tool that doesn't exist, or gave arguments that don't fit."""
 
 
-def tool(description: str, args: type[BaseModel] = NoArgs, opens: bool = False,
+def tool(description: str, args: type[BaseModel], opens: bool = False,
          writes: bool | Callable[[BaseModel], bool] = False):
     """Register a function as a tool, under its own name."""
 
@@ -194,6 +180,27 @@ def _types(annotation) -> list:
 
 # --- The app's API: everything the pages can do ---
 
+_client: TestClient | None = None  # the app's API in the same process, without starting it again (no lifespan)
+
+
+def setup(app: FastAPI) -> None:
+    """Give the tools the app whose API they call (the server does, at start)."""
+    global _client
+    _client = TestClient(app, base_url="http://babasu")
+
+
+def _refusal(response) -> str:
+    """Why the API refused a request, in words: its status and `detail` (a refused body or
+    parameter, field by field)."""
+    try:
+        detail = response.json().get("detail")
+    except ValueError:
+        detail = None
+    if isinstance(detail, list):
+        detail = "; ".join(f"{'.'.join(str(p) for p in d.get('loc', []))}: {d.get('msg')}" for d in detail)
+    return f"{response.status_code}: {detail or response.reason_phrase}"
+
+
 ANSWER_SIZE = 8_000  # characters of an answer the agent gets; a longer one is cut
 
 
@@ -220,7 +227,7 @@ def operations() -> list[dict]:
     """Every /api operation the agent may call (not those only the pages use: routes.UI_ONLY), from
     the app's OpenAPI spec: its name ("PATCH /api/projects/{project_id}"), description, parameters,
     body schema and, when it has a model (routes.Answer), the fields of its answer."""
-    spec = views.openapi()
+    spec = _client.app.openapi()
     defs = spec.get("components", {}).get("schemas", {})
     found = []
     for path, item in spec["paths"].items():
@@ -363,9 +370,9 @@ def _request(method: str, path: str, body=None):
         raise ToolError(f"There's no operation at {target}; find_api finds them.")
     if method not in methods:
         raise ToolError(f"{target} takes {', '.join(methods)}, not {method}.")
-    response = views.client().request(method, path, json=body)
+    response = _client.request(method, path, json=body)
     if response.status_code >= 400:
-        raise ToolError(views.refusal(response))
+        raise ToolError(_refusal(response))
     return response
 
 
@@ -459,28 +466,23 @@ class EditArgs(Args):
 
 @tool("Change part of a file in your folder: `old`, which must be in it exactly once, becomes `new`.", EditArgs)
 def edit_file(conn: sqlite3.Connection, args: EditArgs) -> dict:
+    """`old` is found once, give or take the spaces around it; not found, the closest lines say where to look."""
     path = _path(args.path, "file")
-    settings.write_file(path, _replace_once(path.read_text(), args.old, args.new, args.path, "read_file"))
-    return {"edited": args.path}
-
-
-def _replace_once(text: str, old: str, new: str, what: str, source: str) -> str:
-    """`text` with `old`, found in it exactly once (give or take the spaces around it), replaced by
-    `new`. ToolError when it's there more than once, or not at all (with the closest lines);
-    `what` and `source` name the text and where to copy the piece from, for the agent."""
+    text, old, new = path.read_text(), args.old, args.new
     if text.count(old) == 0 and old.strip() and text.count(old.strip()) == 1:
         old, new = old.strip(), new.strip()
     found = text.count(old)
     if found > 1:
-        raise ToolError(f"That piece is in {what} {found} times; give more of it, so it's found once.")
+        raise ToolError(f"That piece is in {args.path} {found} times; give more of it, so it's found once.")
     if not found:
         lines = text.splitlines()
         first = old.strip().splitlines()[0] if old.strip() else ""
         near = difflib.get_close_matches(first, lines, n=3, cutoff=0.5)
         hint = "".join(f"\n  line {lines.index(n) + 1}: {n!r}" for n in near)
-        raise ToolError(f"That piece isn't in {what}; copy it exactly from {source}."
+        raise ToolError(f"That piece isn't in {args.path}; copy it exactly from read_file."
                         + (f" The closest lines:{hint}" if hint else ""))
-    return text.replace(old, new)
+    settings.write_file(path, text.replace(old, new))
+    return {"edited": args.path}
 
 
 class CodeArgs(Args):
@@ -532,21 +534,29 @@ def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
     "/projects/new (create one), /projects/ID (its images; ?where=FILTER for some of them), "
     "/projects/ID/images/IMAGE_ID (one image with its objects), /projects/ID/edit (its settings: name, type, "
     "annotator, classes, delete), /workflows, /workflows/new, /workflows/ID/edit (the builder), /models (vision "
-    "models), /jobs/ID (a job and its log), /views/ID (a view), "
+    "models), /jobs/ID (a job and its log), "
     "/settings/general, /settings/models and /settings/agents (the models and agents you run on).",
     PageArgs,
     opens=True,
 )
 def open_page(conn: sqlite3.Connection, args: PageArgs) -> dict:
-    try:
-        return {"open": args.path, "title": views.page_title(args.path)}
-    except views.ApiError as e:
-        raise ToolError(f"{e}. Look up what you're opening first (search, find_images): its page is in what they "
-                        "return.") from None
+    return {"open": args.path, "title": _page_title(args.path)}
+
+
+def _page_title(path: str) -> str:
+    """The title of the app's page at `path`, rendered as the browser would get it: checks it shows.
+    ToolError if there's no such page."""
+    if not path.startswith("/") or path.startswith(("//", "/api/", "/static/")):
+        raise ToolError(f"{path!r} isn't a page of the app: give its path, e.g. /projects/3")
+    response = _client.get(path, follow_redirects=False)
+    if response.status_code != 200 or not response.headers.get("content-type", "").startswith("text/html"):
+        raise ToolError(f"{path}: no page there ({response.status_code} {response.reason_phrase}). Look up what "
+                        "you're opening first (search, find_images): its page is in what they return.")
+    return html.unescape(re.search(r"<title>(.*?)</title>", response.text, re.DOTALL)[1]).strip()
 
 
 @tool(
-    "Find projects, images, workflows and views by name (part of it, ignoring case) anywhere in the app, each "
+    "Find projects, images and workflows by name (part of it, ignoring case) anywhere in the app, each "
     "with its page. Use it when the person names something without saying where it is; if more than one "
     "thing could be what they mean, ask which.",
     SearchArgs,
@@ -561,8 +571,6 @@ def search(conn: sqlite3.Connection, args: SearchArgs) -> dict:
         "image_count": found["image_count"],
         "workflows": [{"id": w["id"], "name": w["name"], "page": f"/workflows/{w['id']}/edit"}
                       for w in runs.workflows() if text in w["id"] or text in (w["name"] or "").lower()],
-        "views": [{"id": v["id"], "title": v["title"], "page": f"/views/{v['id']}"}
-                  for v in views.list_all() if text in v["id"] or text in v["title"].lower()],
     }
 
 
@@ -617,12 +625,7 @@ def wait_for_job(conn: sqlite3.Connection, args: WaitArgs) -> dict:
     return job
 
 
-# --- Views ---
-
-
-@tool("How to build a view (a page in the app you write) and the API a view can read. Read it before writing one.")
-def get_components(conn: sqlite3.Connection, args: NoArgs) -> str:
-    return views.reference()
+# --- The docs ---
 
 
 def _docs() -> dict[str, list[str]]:
@@ -644,39 +647,6 @@ def read_docs(conn: sqlite3.Connection, args: DocsArgs) -> str:
     if topic not in DOCS:
         raise ToolError(f"There is no topic {args.topic!r}; the topics: {', '.join(DOCS)}.")
     return "\n".join(DOCS[topic])
-
-
-def _view(view_id: str, version: int | None = None) -> dict:
-    view = views.get(view_id, version)
-    if view is None:
-        raise ToolError(f"There is no view {view_id!r}" + (f" version {version}." if version else "."))
-    return view
-
-
-def _opened(view: dict) -> dict:
-    return {"open": f"/views/{view['id']}", "id": view["id"], "version": view["version"]}
-
-
-@tool(
-    "Write a view: a new one, or a new version of one (its whole template). The page is checked first; if it "
-    "doesn't render you get the line and why, and nothing is saved. It opens for the person once you've answered.",
-    WriteViewArgs,
-    opens=True,
-)
-def write_view(conn: sqlite3.Connection, args: WriteViewArgs) -> dict:
-    return _opened(views.save(args.view_id, args.template, args.title))
-
-
-@tool(
-    "Change part of a view: replace one exact piece of its newest template, saved as a new version (checked first, "
-    "as write_view). Use it for small changes instead of writing the whole page again.",
-    EditViewArgs,
-    opens=True,
-)
-def edit_view(conn: sqlite3.Connection, args: EditViewArgs) -> dict:
-    template = _view(args.view_id)["template"]
-    changed = _replace_once(template, args.old, args.new, "the template", "GET /api/views/{view_id}")
-    return _opened(views.save(args.view_id, changed))
 
 
 # --- Building workflows ---

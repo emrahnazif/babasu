@@ -1,14 +1,13 @@
 # The app
 What babasu is, what it does today and what comes later, and its pages.
 
-babasu is a local computer vision app: everything runs on the person's computer, and their images stay there. A person makes projects (datasets), imports images, annotates them (by hand with a click tool, or with vision models from the class names), filters and measures them, runs workflows over them, and has pages built for what they need (views). You, the agent, work through the same functions as the app's own pages.
+babasu is a local computer vision app: everything runs on the person's computer, and their images stay there. A person makes projects (datasets), imports images, annotates them (by hand with a click tool, or with vision models from the class names), filters and measures them, and runs workflows over them. You, the agent, work through the same functions as the app's own pages.
 
 ## What it does today
 - Projects with classes; importing images from files and folders (local disk or a network drive).
 - Annotating one image in the editor: changing objects by hand, and the click tool that outlines an object from a click or a box (see annotating); auto-annotating with an auto-annotator (see auto-annotate).
 - Filtering a project's images by what's in them, and measuring them (see filters).
 - Workflows: mozo graphs of models and steps, built in the builder, run over a project's images (see workflows).
-- Views: pages written by an agent, keeping the data they showed (see views).
 - Vision models: downloaded, loaded and unloaded on the Models page (see models).
 - Background jobs for everything long (see jobs).
 - History: everything done in the last 30 days (by the person, you and jobs), each request, job or agent turn undoable as one, deleted files included.
@@ -25,5 +24,5 @@ Training models (mayaku), evaluation, exporting models, COCO import and export o
 - /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, auto-annotator, classes), Duplicate and Delete.
 - /projects/ID/images/IMAGE_ID: one image in the editor, with its objects and the click tool; stepping to the previous and next image.
 - /workflows: every workflow. /workflows/ID/edit: the builder. /studio: the workflows to use (a workflow's own Studio page isn't built yet).
-- /models: vision models. /jobs/ID: a job and its log. /views/ID: a view. /history: what was done in the last 30 days, with Undo.
+- /models: vision models. /jobs/ID: a job and its log. /history: what was done in the last 30 days, with Undo.
 - /settings/general, /settings/models, /settings/agents: the theme, and the language models and agents (you) run on.

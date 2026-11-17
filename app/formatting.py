@@ -1,6 +1,5 @@
-"""Values for people: numbers, sizes, times and icons, as the app's pages and the agent's views show
-them (components.html uses them). It imports nothing of the app but its paths, so views
-(app/views.py) can use it without the pages' templating, which imports the agent."""
+"""Values for people: numbers, sizes, times and icons, as the app's pages show them (components.html
+uses them). It imports nothing of the app but its paths."""
 
 import re
 from datetime import UTC, datetime
@@ -87,6 +86,6 @@ def period(timestamp: str) -> str:
 
 
 # What templates use them by: filters ({{ n | number }}, {{ count | plural("image") }}) and globals
-# ({{ icon("check") }}). components.html needs them, in the pages and in the agent's views alike.
+# ({{ icon("check") }}). components.html needs them.
 FILTERS = {"number": number, "plural": plural, "filesize": filesize, "counted": counted, "ago": ago, "period": period}
 GLOBALS = {"icon": icon}

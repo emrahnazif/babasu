@@ -17,7 +17,7 @@ Use run_code for what one API call doesn't do: going through many images, changi
 Each chat has a folder of its own, and your code runs in it: files open by relative paths. A `.py` file run with `file` runs like code, in the same process: the functions and variables it makes are there for the next runs, and running it again after an edit makes them anew. Keep your work there:
 - scripts you'll run again or change (write_file, then run_code with `file`; edit_file to change a line),
 - what a step finds, saved by your code (`json.dump(misses, open("results/misses.json", "w"))`),
-- drafts (views, workflows) before they're published.
+- drafts (workflows) before they're saved.
 
 list_files shows what's there; read_file reads a file in parts (to check it, not to copy data from it: read data in code).
 
@@ -31,15 +31,6 @@ Your runs in a chat share one Python process, so what a run leaves in variables 
 3. Go on with what the last step saved: no copying ids or numbers out of what was printed.
 
 A run that's stopped (time) or crashes ends the process, and so do 30 minutes without a run: its variables are gone; read the files again and go on.
-
-## A view of what your code found
-A view that shows what your code worked out reads it as `data` (get_components has how to write the template). Keep the template as a file here, and save the view from the code with the results it computed, so every number on it comes from the code:
-
-```python
-api.put("/api/views/misses", {"title": "Missed cars", "template": open("misses.html").read(), "data": {"misses": misses}})
-```
-
-The template reads `data.misses`. To change the view, edit the file and save again; a version saved without data keeps the last one's.
 
 ## A project's images
 `api.images(project_id)` goes through them all; `api.images(project_id, "car")` through those matching a filter (read docs: filters). Don't go through a filter while changing what it matches: it reads a page at a time (`GET /api/projects/{id}?page=N`), and the pages move under you. Go through all of them instead and pick in the code.

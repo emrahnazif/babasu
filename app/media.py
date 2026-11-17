@@ -85,28 +85,15 @@ def store(conn: sqlite3.Connection, data: bytes) -> int:
     ).lastrowid
 
 
-def keep(conn: sqlite3.Connection, view_id: str, media_ids: set[int]) -> None:
-    """Count these media as used by a view, so remove_unused keeps them. Caller commits."""
-    conn.execute("INSERT OR IGNORE INTO view_media (view_id, media_id) SELECT ?, id FROM media "
-                 "WHERE id IN (SELECT value FROM json_each(?))", (view_id, json.dumps(sorted(media_ids))))
-
-
-def release(conn: sqlite3.Connection, view_id: str) -> None:
-    """A view no longer uses its media (remove_unused). Caller commits."""
-    used = [r[0] for r in conn.execute("DELETE FROM view_media WHERE view_id = ? RETURNING media_id", (view_id,))]
-    remove_unused(conn, used)
-
-
 def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> None:
-    """Of these media, delete the rows no project, run or view uses any more. Caller commits.
+    """Of these media, delete the rows no project or run uses any more. Caller commits.
     Their files stay while the history can put the rows back; history.purge removes them after."""
     if not media_ids:
         return
     conn.execute(
         """DELETE FROM media WHERE id IN (SELECT value FROM json_each(?))
            AND NOT EXISTS (SELECT 1 FROM project_media WHERE media_id = media.id)
-           AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id)
-           AND NOT EXISTS (SELECT 1 FROM view_media WHERE media_id = media.id)""",
+           AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id)""",
         (json.dumps(media_ids),),
     )
 

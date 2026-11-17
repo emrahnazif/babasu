@@ -12,7 +12,7 @@ does on its own), to compare.
 --instructions: other instructions for the agent, in the copy only (to try a change before making it).
 --keep: keep the copy (its path is printed) to look at what the agent made.
 
-The copy has the database, views, workflows and settings; media and model weights are cloned
+The copy has the database, workflows and settings; media and model weights are cloned
 (copy-on-write on macOS, so instant and taking no space), so nothing the agent does reaches the
 real files. Job workers run, so the agent's runs and downloads happen.
 """
@@ -40,7 +40,7 @@ def copy_workspace(home: Path) -> None:
     target.mkdir(parents=True)
     with sqlite3.connect(REAL / "babasu.db") as source, sqlite3.connect(target / "babasu.db") as copy:
         source.backup(copy)  # consistent even while the app has the database open
-    for name in ("views", "workflows", "jobs", "conversations", "trash", "settings.json"):
+    for name in ("workflows", "jobs", "conversations", "trash", "settings.json"):
         path = REAL / name
         if path.is_dir():
             shutil.copytree(path, target / name)

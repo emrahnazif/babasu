@@ -18,7 +18,7 @@ NOW = f"strftime('{TIME}', 'now')"
 
 # The user's data: every write to these tables is kept in `history` (app/history.py) by triggers
 # migrate() makes from their columns. Not `annotation` (its triggers rebuild it from project_media).
-HISTORY_TABLES = ("project", "media", "project_media", "run", "run_result", "view_media")
+HISTORY_TABLES = ("project", "media", "project_media", "run", "run_result")
 
 
 @dataclass(frozen=True)

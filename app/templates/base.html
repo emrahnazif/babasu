@@ -4,9 +4,8 @@
 {% set collapsed = collapsible and s.sidebar_collapsed %}
 {# A page that fills the main area edge to edge (e.g. one image) sets main_bleed = true: no padding. #}
 {% set bleed = main_bleed | default(false) %}
-{# The navigation item this page is in (templating.nav), and the page's breadcrumb below it. #}
-{% set groups = nav() %}
-{% set here = section_of(request.url.path, groups) %}
+{# The navigation item this page is in (config.NAV), and the page's breadcrumb below it. #}
+{% set here = section_of(request.url.path) %}
 {% set trail = crumbs | default([]) %}
 <!doctype html>
 <html lang="en" data-theme="{{ s.theme }}">
@@ -77,7 +76,7 @@
           {% endfor %}
         </nav>
         <div id="sections" class="menu" popover>
-          {% for group in groups %}
+          {% for group in nav %}
             {% if not loop.first %}<div class="menu__separator"></div>{% endif %}
             {% for item in group %}
               <a class="menu__item" href="{{ item.href }}"{% if item == here %} aria-current="page"{% endif %}><span class="menu__check">{{ icon("check") }}</span>{{ item.label }}</a>

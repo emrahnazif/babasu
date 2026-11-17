@@ -78,7 +78,7 @@
       ui.text("This removes:"),
       ui.list([deletion.images | plural("image") ~ " and " ~ deletion.annotations | plural("annotation"),
                deletion.runs | plural("run") ~ " (auto-annotate, Try and workflow runs on its images) and their results",
-               "the image files no other project, run or view uses, from the workspace"]),
+               "the image files no other project or run uses, from the workspace"]),
       ui.text("History can undo it for 30 days.", muted=true),
     ]) }}
   {% endif %}

@@ -37,7 +37,7 @@
       {{ logo() }}
       <h2>What should we build?</h2>
       {% if chat.agents %}
-        <p>Ask the agent about your data, or to build a view.</p>
+        <p>Ask the agent about your data, or to do something with it.</p>
       {% else %}
         <p>Add a model and an agent in <a href="/settings/models?next={{ request.url.path | urlencode }}">Settings</a> to start.</p>
       {% endif %}

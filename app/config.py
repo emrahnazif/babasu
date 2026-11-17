@@ -45,9 +45,8 @@ DB_FILE = DATA_DIR / "babasu.db"
 MEDIA_DIR = DATA_DIR / "media"
 WEIGHTS_DIR = DATA_DIR / "weights"  # model weights mozo downloads
 WORKFLOWS_DIR = DATA_DIR / "workflows"  # workflows the user saved (<id>.json)
-VIEWS_DIR = DATA_DIR / "views"  # pages the agent wrote (<id>/view.json, <id>/<version>.html)
 CONVERSATIONS_DIR = DATA_DIR / "conversations"  # each conversation's working folder (<id>/): the agent's code, results, drafts
-TRASH_DIR = DATA_DIR / "trash"  # deleted views and workflows, for 30 days (<action id>/<their path>)
+TRASH_DIR = DATA_DIR / "trash"  # deleted workflows, for 30 days (<action id>/<their path>)
 
 # The device vision models run on, one default per platform: Apple silicon, else an NVIDIA GPU.
 DEVICE = "mps" if sys.platform == "darwin" else "cuda"
