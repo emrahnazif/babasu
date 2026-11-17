@@ -24,9 +24,10 @@
   </div>
 {%- endmacro %}
 
-{# Who wrote an agent turn: the agent's name, with its model on hover. #}
-{% macro by_line(agent, model) -%}
-  <p class="chat__by" title="{{ agent }} · {{ model }}">{{ agent }}</p>
+{# Who wrote an agent turn: the agent's name; on hover its model, and the tokens the model read and
+   wrote in the turn (when its server says). #}
+{% macro by_line(agent, model, tokens_in=0, tokens_out=0) -%}
+  <p class="chat__by" title="{{ agent }} · {{ model }}{% if tokens_in %} · {{ tokens_in | number }} tokens read, {{ tokens_out | number }} written{% endif %}">{{ agent }}</p>
 {%- endmacro %}
 
 {% macro note(kind, text) -%}
@@ -57,7 +58,7 @@
           {% endfor %}
           {% if turn.status == "error" %}{{ note("error", turn.error) }}{% endif %}
           {% if turn.status == "stopped" %}{{ note("stopped", "Stopped") }}{% endif %}
-          {% if turn.agent %}{{ by_line(turn.agent, turn.model) }}{% endif %}
+          {% if turn.agent %}{{ by_line(turn.agent, turn.model, turn.tokens_in, turn.tokens_out) }}{% endif %}
         </div>
       {% endif %}
     {% endfor %}

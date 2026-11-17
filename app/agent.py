@@ -262,6 +262,7 @@ def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bo
     the model reads them, and only this turn's (`results`); the others are left out."""
     rows = conn.execute(
         """SELECT role, tool_calls, tool_call_id, status, error, label, note, images, agent, model, page, page_title, about,
+                  tokens_in, tokens_out,
                   CASE WHEN role = 'tool' AND NOT (:results AND id > (
                       SELECT max(id) FROM message WHERE conversation_id = :id AND role = 'user'))
                   THEN '' ELSE content END AS content
@@ -274,7 +275,8 @@ def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bo
 def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
     """The conversation as the chat shows it: the person's turns, and each agent turn as one
     entry with its parts in order (its text, and the tool calls that ran: each its label, note,
-    status and the images it found, {"project_id", "media_ids"}) and how it ended."""
+    status and the images it found, {"project_id", "media_ids"}), how it ended, and the tokens its
+    model read and wrote in all."""
     messages = _messages(conn, conversation_id)
     answers = {m["tool_call_id"]: m for m in messages if m["role"] == "tool"}
     result: list[dict] = []
@@ -283,7 +285,8 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
             result.append({"role": "user", "text": m["content"]})
         elif m["role"] == "assistant":
             if not result or result[-1]["role"] != "agent":
-                result.append({"role": "agent", "parts": [], "status": "done", "error": None, "agent": None, "model": None})
+                result.append({"role": "agent", "parts": [], "status": "done", "error": None, "agent": None, "model": None,
+                               "tokens_in": 0, "tokens_out": 0})
             turn = result[-1]
             if m["content"]:
                 turn["parts"].append({"kind": "text", "text": m["content"]})
@@ -293,6 +296,8 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
                                       "images": json.loads(answer["images"]) if answer["images"] else None})
             turn["status"], turn["error"] = m["status"], m["error"]
             turn["agent"], turn["model"] = m["agent"] or turn["agent"], m["model"] or turn["model"]
+            turn["tokens_in"] += m["tokens_in"] or 0
+            turn["tokens_out"] += m["tokens_out"] or 0
     return result
 
 
@@ -476,6 +481,7 @@ def run_turn(
       {"type": "call", "id", "name", "delta": "..."}        a tool call's arguments as the model writes them
       {"type": "output", "text": "..."}                     what the running tool prints (run_code)
       {"type": "progress", "done": 3, "total": 10}          how far the running tool is
+      {"type": "usage", "tokens_in", "tokens_out"}          what a call of the model read and wrote
       {"type": "open", "url": "/projects/3?where=car"}      a page to show once the reply is done
       {"type": "changed"}                                   a tool changed what pages show: once the
                                                             reply is done, reload (unless one opens)
@@ -524,12 +530,15 @@ def run_turn(
                 text_parts: list[str] = []
                 calls: dict[int, dict] = {}  # by index in the stream: {"id", "name", "arguments"}
                 ended = None  # why the model stopped writing: "stop", "tool_calls", "length"…
+                usage = None  # what the server counted, in the stream's last chunk
 
                 def finish(status: str, error: str | None = None, tool_calls: list | None = None) -> None:
                     with conn:
                         conn.execute(
-                            "UPDATE message SET content = ?, tool_calls = ?, status = ?, error = ? WHERE id = ?",
-                            ("".join(text_parts), json.dumps(tool_calls) if tool_calls else None, status, error, reply_id),
+                            "UPDATE message SET content = ?, tool_calls = ?, status = ?, error = ?, tokens_in = ?, "
+                            "tokens_out = ? WHERE id = ?",
+                            ("".join(text_parts), json.dumps(tool_calls) if tool_calls else None, status, error,
+                             usage and usage.prompt_tokens, usage and usage.completion_tokens, reply_id),
                         )
 
                 def stopped(ran: list | None = None) -> dict:
@@ -540,7 +549,9 @@ def run_turn(
                 messages = _history(conn, conversation_id, agent)
                 try:
                     for chunk in _streamed(lambda: model_client.chat.completions.create(
-                            model=model.model, messages=messages, tools=agent_tools.schemas(), stream=True), stop):
+                            model=model.model, messages=messages, tools=agent_tools.schemas(), stream=True,
+                            stream_options={"include_usage": True}), stop):
+                        usage = chunk.usage or usage
                         if not chunk.choices:
                             continue
                         ended = chunk.choices[0].finish_reason or ended
@@ -561,6 +572,8 @@ def run_turn(
                     finish("error", describe(exc, model))
                     yield {"type": "error", "message": describe(exc, model)}
                     return
+                if usage:
+                    yield {"type": "usage", "tokens_in": usage.prompt_tokens, "tokens_out": usage.completion_tokens}
                 if stop.is_set():
                     yield stopped()
                     return

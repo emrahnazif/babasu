@@ -37,6 +37,8 @@ if (chat) {
     let part = null; // the text part being written: { element, markdown }; a tool call ends it
     let frame = 0; // a render of that part waiting for the next frame
     let byLine = null; // who answers; added under everything else when the turn ends
+    let who = ""; // the agent and its model, the by-line's title
+    const tokens = { read: 0, written: 0 }; // what the model's calls in this turn read and wrote
     const tools = new Map();
     let running = {}; // what the running tool shows under it: { output, bar }
 
@@ -98,10 +100,14 @@ if (chat) {
         running.bar.setAttribute("aria-valuenow", Math.round(value * 100));
       },
       by(agent, model) {
-        const line = clone("chat-by");
-        line.textContent = agent;
-        line.title = `${agent} · ${model}`;
-        byLine = line;
+        byLine = clone("chat-by");
+        byLine.textContent = agent;
+        byLine.title = who = `${agent} · ${model}`;
+      },
+      usage({ tokens_in, tokens_out }) {
+        tokens.read += tokens_in;
+        tokens.written += tokens_out;
+        byLine.title = `${who} · ${tokens.read.toLocaleString("en")} tokens read, ${tokens.written.toLocaleString("en")} written`;
       },
       end(state, message) {
         if (frame) draw();
@@ -207,6 +213,7 @@ if (chat) {
           }
           else if (event.type === "output") turn.output(event);
           else if (event.type === "progress") turn.progress(event);
+          else if (event.type === "usage") turn.usage(event);
           else if (event.type === "open") open = event.url;
           else if (event.type === "changed") changed = true;
           else if (event.type === "done") (turn.end("done"), (ended = true));

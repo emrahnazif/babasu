@@ -26,6 +26,9 @@ import time
 from pathlib import Path
 
 
+HEAD = {"id": "fake", "object": "chat.completion.chunk", "created": 0, "model": "fake"}  # every chunk's
+
+
 def text(content: str) -> dict:
     return {"content": content}
 
@@ -48,10 +51,13 @@ class Script:
         deltas = self.rounds[n] if n < len(self.rounds) else [text("(the script has no more answers)")]
         reason = self.finish.get(n, "tool_calls" if any("tool_calls" in d for d in deltas) else "stop")
         for delta, end in [*((d, None) for d in deltas), ({}, reason)]:
-            chunk = {"id": "fake", "object": "chat.completion.chunk", "created": 0, "model": "fake",
-                     "choices": [{"index": 0, "delta": delta, "finish_reason": end}]}
-            yield f"data: {json.dumps(chunk)}\n\n"
+            yield f"data: {json.dumps(HEAD | {'choices': [{'index': 0, 'delta': delta, 'finish_reason': end}]})}\n\n"
             time.sleep(0.01)
+        # What it read and wrote, as servers count it when asked (stream_options.include_usage): about
+        # four characters a token.
+        read, written = len(json.dumps(self.requests[n])) // 4, len(json.dumps(deltas)) // 4
+        usage = {"prompt_tokens": read, "completion_tokens": written, "total_tokens": read + written}
+        yield f"data: {json.dumps(HEAD | {'choices': [], 'usage': usage})}\n\n"
         yield "data: [DONE]\n\n"
 
 
