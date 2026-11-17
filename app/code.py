@@ -170,7 +170,15 @@ class Session:
         `call` (here, in this thread), for at most `timeout` seconds. Yields what it shows as it
         comes, {"type": "output", "text"} (as much as the agent gets) and {"type": "progress",
         "done", "total"}; returns {output: what it printed (cut when long), error: why it stopped,
-        or None}."""
+        or None}. A run left before the code is done (the app failed to answer one of its calls,
+        or the turn ended) ends the process: the code would wait for an answer that never comes."""
+        try:
+            return (yield from self._run(code, call, timeout, file))
+        except BaseException:
+            self.close()
+            raise
+
+    def _run(self, code: str, call: Call, timeout: int, file: str | None) -> Iterator[dict]:
         self.used = started = time.monotonic()
         self._pipe.send((code, file))
         kept, size = [], 0  # what's printed, up to OUTPUT_SIZE; how much in all
