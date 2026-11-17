@@ -671,9 +671,11 @@ def show_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
 
 @tool("Wait for a background job to end (or for `seconds` to pass), then show it as GET /api/jobs/{job_id} does.", WaitArgs,
       label="Waiting for a job", note=lambda args, job: f"{job['title']} {job['status']}" + (f": {job['summary']}" if job["summary"] else ""))
-def wait_for_job(conn: sqlite3.Connection, args: WaitArgs) -> dict:
+def wait_for_job(conn: sqlite3.Connection, args: WaitArgs) -> Iterator[dict]:
     deadline, stop = time.monotonic() + args.seconds, _turn.get().stop
     while (job := jobs.get(conn, args.job_id)) and job["status"] in jobs.ACTIVE and time.monotonic() < deadline:
+        if job["total"]:  # the chat shows the job's bar under the step
+            yield {"type": "progress", "done": job["done"], "total": job["total"]}
         if stop.wait(1):
             break
     if job is None:
