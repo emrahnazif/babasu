@@ -387,7 +387,7 @@ def _read_note(args: ReadArgs, answer) -> str:
         return ""
     if "items" in answer:
         return f"{answer['count']} found"
-    if "match_count" in answer:
+    if "image_count" in answer and "match_count" in answer:  # a project's images (an image's own answer has its place)
         return f"{answer['match_count']:,} of {plural(answer['image_count'], 'image')}"
     return ""
 
