@@ -597,21 +597,21 @@ def add_images(conn: sqlite3.Connection, project_id: int, images: list[dict]) ->
     return added
 
 
-def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[Annotation]) -> bool:
+def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[Annotation]) -> str | None:
     """Replace an image's annotations with these, as the editor and the agent see them: of active
-    classes. Those of inactive classes are shown nowhere, so they're kept as they are. Returns
-    False if the image isn't in the project. Caller commits.
+    classes. Those of inactive classes are shown nowhere, so they're kept as they are. Returns the
+    image's file name; None if the image isn't in the project. Caller commits.
 
     Raises FrozenError, or ValueError for a class the project doesn't have (or has deleted)."""
     active = _check_active(_editable(conn, project_id), {a.class_id for a in annotations})
     row = conn.execute(
-        "SELECT annotations FROM project_media WHERE project_id = ? AND media_id = ?", (project_id, media_id)
+        "SELECT filename, annotations FROM project_media WHERE project_id = ? AND media_id = ?", (project_id, media_id)
     ).fetchone()
     if row is None:
-        return False
+        return None
     kept = [a for a in json.loads(row["annotations"]) if a["class_id"] not in active]
     _save_objects(conn, project_id, media_id, [a.model_dump(exclude_none=True) for a in annotations] + kept)
-    return True
+    return row["filename"]
 
 
 Change = Literal["delete_objects", "set_class", "remove_images", "copy_images", "move_images"]

@@ -6,7 +6,7 @@ from pydantic import Field
 
 from app import agent, agents, settings
 from app.agents import AgentForm, ModelForm
-from app.routes import Answer, message
+from app.routes import READS, Answer, Done, message
 
 router = APIRouter(prefix="/api")
 
@@ -46,22 +46,33 @@ def list_models() -> list[dict]:
     return [agents.shown_model(m) for m in settings.get().models]
 
 
-@router.post("/models", status_code=201, response_model=ModelOut)
+class ModelAdded(ModelOut, Done):
+    pass
+
+
+class AgentAdded(AgentOut, Done):
+    pass
+
+
+@router.post("/models", status_code=201, response_model=ModelAdded)
 def add_model(form: ModelForm) -> dict:
     """Adds a language model; returns it with its id. 409 with why (e.g. a name taken)."""
-    return agents.shown_model(_do(lambda: agents.add_model(form)))
+    model = agents.shown_model(_do(lambda: agents.add_model(form)))
+    return model | {"did": f"Added model {model['name']} (id {model['id']})"}
 
 
-@router.put("/models/{model_id}", status_code=204)
-def edit_model(model_id: str, form: ModelForm) -> None:
+@router.put("/models/{model_id}", response_model=Done)
+def edit_model(model_id: str, form: ModelForm) -> dict:
     """Changes a language model (all its fields; a blank api_key keeps the saved one)."""
     _do(lambda: agents.update_model(model_id, form))
+    return {"did": f"Changed model {form.name}"}
 
 
-@router.delete("/models/{model_id}", status_code=204)
-def delete_model(model_id: str) -> None:
+@router.delete("/models/{model_id}", response_model=Done)
+def delete_model(model_id: str) -> dict:
     """Deletes a language model. 409 while an agent uses it. Not undone by History (settings)."""
     _do(lambda: agents.delete_model(model_id))
+    return {"did": f"Deleted model {model_id}"}
 
 
 class ModelDraft(ModelForm):
@@ -70,7 +81,7 @@ class ModelDraft(ModelForm):
     model_id: str = Field("", description="When changing a saved model: its id, so a blank api_key means its saved key.")
 
 
-@router.post("/models/test")
+@router.post("/models/test", tags=[READS])
 def test_draft(draft: ModelDraft) -> dict:
     """Test a model before saving it (the Test button in the Add and Edit dialogs)."""
     try:
@@ -80,7 +91,7 @@ def test_draft(draft: ModelDraft) -> dict:
     return {"ok": ok, "message": result}
 
 
-@router.post("/models/{model_id}/test")
+@router.post("/models/{model_id}/test", tags=[READS])
 def test_model(model_id: str) -> dict:
     """Checks a saved model answers: {ok, message}."""
     model = settings.find_model(model_id)
@@ -97,27 +108,30 @@ def list_agents() -> list[dict]:
     return [agents.shown_agent(a, s.default_agent) for a in s.agents]
 
 
-@router.post("/agents", status_code=201, response_model=AgentOut)
+@router.post("/agents", status_code=201, response_model=AgentAdded)
 def add_agent(form: AgentForm) -> dict:
     """Adds an agent; returns it with its id. 409 with why (e.g. an unknown model)."""
-    new = _do(lambda: agents.add_agent(form))
-    return agents.shown_agent(new, settings.get().default_agent)
+    new = agents.shown_agent(_do(lambda: agents.add_agent(form)), settings.get().default_agent)
+    return new | {"did": f"Added agent {new['name']} (id {new['id']})"}
 
 
-@router.put("/agents/{agent_id}", status_code=204)
-def edit_agent(agent_id: str, form: AgentForm) -> None:
+@router.put("/agents/{agent_id}", response_model=Done)
+def edit_agent(agent_id: str, form: AgentForm) -> dict:
     """Changes an agent (all its fields)."""
     _do(lambda: agents.update_agent(agent_id, form))
+    return {"did": f"Changed agent {form.name}"}
 
 
-@router.delete("/agents/{agent_id}", status_code=204)
-def delete_agent(agent_id: str) -> None:
+@router.delete("/agents/{agent_id}", response_model=Done)
+def delete_agent(agent_id: str) -> dict:
     """Deletes an agent; its chats go on with the default one. 409 for the default agent. Not undone by
     History (settings)."""
     _do(lambda: agents.delete_agent(agent_id))
+    return {"did": f"Deleted agent {agent_id}"}
 
 
-@router.post("/agents/{agent_id}/default", status_code=204)
-def default_agent(agent_id: str) -> None:
+@router.post("/agents/{agent_id}/default", response_model=Done)
+def default_agent(agent_id: str) -> dict:
     """Makes an agent the default for new chats."""
     _do(lambda: agents.set_default(agent_id))
+    return {"did": f"New chats start with agent {agent_id}"}

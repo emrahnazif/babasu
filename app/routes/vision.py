@@ -11,7 +11,8 @@ from mozo import weights
 from pydantic import Field
 
 from app import config, db, vision
-from app.routes import Answer
+from app.formatting import filesize, plural
+from app.routes import Answer, Done, Started, started
 from app.templating import templates
 
 router = APIRouter()
@@ -150,23 +151,38 @@ def api_model_family(family: str, conn: DB) -> dict:
     return found[0]
 
 
-@router.post("/api/vision/models/{family}/{variant}/download", status_code=202)
+class Freed(Done):
+    freed: int = Field(description="Bytes deleted.")
+
+
+class Unloaded(Done):
+    unloaded: int = Field(description="How many models it unloaded.")
+
+
+@router.post("/api/vision/models/{family}/{variant}/download", status_code=202, response_model=Started,
+             response_model_exclude_unset=True)
 def api_download(family: str, variant: str, conn: DB) -> dict:
     """Starts a job that downloads the model's files; follow it at /api/jobs/{job_id}."""
     _exists(family, variant)
-    return {"job_id": vision.start_download(conn, family, variant)}
+    size = weights.download_size(family, variant, device=config.DEVICE)
+    job_id = vision.start_download(conn, family, variant)
+    return {"job_id": job_id, "did": f"Started downloading {family} {variant} ({filesize(size)})" if size
+                                      else f"{family} {variant} is downloaded already"}
 
 
-@router.delete("/api/vision/models/{family}/{variant}/weights")
+@router.delete("/api/vision/models/{family}/{variant}/weights", response_model=Freed)
 def api_remove(family: str, variant: str) -> dict:
     """Deletes the model's downloaded files; 409 while it's downloading."""
-    return {"freed": _remove(family, variant)}
+    freed = _remove(family, variant)
+    return {"freed": freed, "did": f"Deleted {family} {variant}'s files ({filesize(freed)})"}
 
 
-@router.post("/api/vision/models/{family}/{variant}/load", status_code=202)
+@router.post("/api/vision/models/{family}/{variant}/load", status_code=202, response_model=Started,
+             response_model_exclude_unset=True)
 def api_load(family: str, variant: str, conn: DB) -> dict:
     """Starts a job that loads the model, after downloading it if it isn't downloaded."""
-    return {"job_id": _start_load(conn, family, variant)}
+    job_id = _start_load(conn, family, variant)
+    return {"job_id": job_id} | started(conn, job_id, f"Started loading {family} {variant}")
 
 
 @router.get("/api/vision/loaded", response_model=list[LoadedModel])
@@ -175,13 +191,15 @@ def api_loaded() -> list[dict]:
     return vision.loaded()
 
 
-@router.delete("/api/vision/loaded/{family}/{variant}")
+@router.delete("/api/vision/loaded/{family}/{variant}", response_model=Unloaded)
 def api_unload(family: str, variant: str) -> dict:
-    """Unloads a model from memory (it loads again when something uses it); {unloaded: true/false}."""
-    return {"unloaded": vision.unload(family, variant)}
+    """Unloads a model from memory (it loads again when something uses it)."""
+    unloaded = int(vision.unload(family, variant))
+    return {"unloaded": unloaded, "did": f"Unloaded {family} {variant}" if unloaded else f"{family} {variant} wasn't loaded"}
 
 
-@router.delete("/api/vision/loaded")
+@router.delete("/api/vision/loaded", response_model=Unloaded)
 def api_unload_all() -> dict:
-    """Unloads every model from memory, e.g. to free it for something else; {unloaded: how many}."""
-    return {"unloaded": vision.unload_all()}
+    """Unloads every model from memory, e.g. to free it for something else."""
+    unloaded = vision.unload_all()
+    return {"unloaded": unloaded, "did": f"Unloaded {plural(unloaded, 'model')}"}

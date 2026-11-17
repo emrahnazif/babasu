@@ -7,8 +7,9 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from mozo.workflow import WorkflowError
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from app import annotators, db, runs, vision
-from app.routes import IMAGES, AnnotationOut, Answer, ClassOut, Images, ToDownload
+from app import annotators, db, runs
+from app.formatting import plural
+from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, Started, started
 
 router = APIRouter(prefix="/api")
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -43,6 +44,10 @@ class WorkflowListed(Answer):
     to_download: int | None = Field(None, description="Bytes of models it downloads before its first run (0: ready).")
     models: list[ModelUse] | None = Field(None, description="The models it uses.")
     error: str | None = Field(None, description="Instead of models: why it doesn't load.")
+
+
+class WorkflowSaved(WorkflowListed, Done):
+    pass
 
 
 class MissingFile(Answer):
@@ -102,13 +107,6 @@ class RunDetail(RunOut):
                                              "the project's; any other, its prompts in order (with ?annotations=1).")
 
 
-class RunStarted(Answer):
-    run_id: int
-    job_id: int = Field(description="Follow it at /api/jobs/{job_id}.")
-    images: int = Field(description="How many images it runs on.")
-    downloads_first: list[ToDownload] = Field(description="The models it downloads before it starts.")
-
-
 @router.get("/workflows", response_model=list[WorkflowListed], response_model_exclude_unset=True)
 def api_workflows() -> list[dict]:
     """Every workflow: what it does, whether it takes prompts, what a run keeps, what it still
@@ -149,17 +147,18 @@ def api_workflow(workflow_id: str) -> dict:
     return runs.detail(workflow_id, workflow)
 
 
-@router.post("/workflows", status_code=201)
+@router.post("/workflows", status_code=201, response_model=WorkflowSaved, response_model_exclude_unset=True)
 def api_create_workflow(document: Document) -> dict:
     """Saves a new workflow document, its id made from its name (unique), and returns it as the
     list shows it. 422 with why if it has no name, doesn't load or keeps nothing."""
     try:
-        return runs.create_workflow(document)
+        saved = runs.create_workflow(document)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+    return saved | {"did": f"Saved workflow {saved['name']} (id {saved['id']})"}
 
 
-@router.post("/workflows/check")
+@router.post("/workflows/check", tags=[READS])
 def api_check_workflow(document: Document) -> dict:
     """Checks a workflow document without saving it: what a run keeps, which parameters take the
     prompts, its models and missing files. 422 with why if it doesn't load."""
@@ -169,21 +168,23 @@ def api_check_workflow(document: Document) -> dict:
         raise HTTPException(422, str(e)) from None
 
 
-@router.put("/workflows/{workflow_id}")
+@router.put("/workflows/{workflow_id}", response_model=WorkflowSaved, response_model_exclude_unset=True)
 def api_save_workflow(workflow_id: str, document: Document) -> dict:
     """Saves a workflow document (new, or replacing a saved one; a built-in's id is refused). 422
     with why if it doesn't load or keeps nothing."""
     try:
-        return runs.save_workflow(workflow_id, document)
+        saved = runs.save_workflow(workflow_id, document)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+    return saved | {"did": f"Saved workflow {saved['name']} (id {saved['id']})"}
 
 
-@router.delete("/workflows/{workflow_id}", status_code=204)
-def api_delete_workflow(workflow_id: str) -> None:
+@router.delete("/workflows/{workflow_id}", response_model=Done)
+def api_delete_workflow(workflow_id: str) -> dict:
     """Deletes a saved workflow (built-ins can't be); its runs keep their copy."""
     if not runs.delete_workflow(workflow_id):
         raise HTTPException(404, "No such saved workflow (built-ins can't be deleted)")
+    return {"did": f"Deleted workflow {workflow_id} (its runs keep their copy)"}
 
 
 # --- Runs ---
@@ -222,7 +223,7 @@ def _found(run: dict | None) -> dict:
     return run
 
 
-@router.post("/runs", status_code=202, response_model=RunStarted)
+@router.post("/runs", status_code=202, response_model=Started)
 def api_start_run(new: NewRun, conn: DB) -> dict:
     """Starts a workflow run over images, finding `prompts` (a project's class prompts unless
     given); returns {run_id, job_id, images, downloads_first: the models it downloads before it
@@ -230,12 +231,13 @@ def api_start_run(new: NewRun, conn: DB) -> dict:
     at /runs/{run_id}. 422 with why it can't start."""
     try:
         media_ids = [i["media_id"] for i in new.images.resolve(conn)]
-        run_id, job_id = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.images.project_id, new.name,
-                                    new.prompts, new.workflow)
+        run_id, job_id, name = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.images.project_id, new.name,
+                                          new.prompts, new.workflow)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    return {"run_id": run_id, "job_id": job_id, "images": len(media_ids),
-            "downloads_first": vision.downloads_first(conn, job_id)}
+    finding = f", finding {', '.join(new.prompts)}" if new.prompts else ""
+    return {"run_id": run_id, "job_id": job_id, "images": len(media_ids)} \
+        | started(conn, job_id, f"Started run {name}{finding}")
 
 
 @router.get("/runs", response_model=list[RunOut])
@@ -259,19 +261,20 @@ def api_run(run_id: int, conn: DB, page: Annotated[int, Query(ge=1, description=
     return run | {"results": [{k: r[k] for k in RunResult.model_fields if k in r} for r in run["results"]]}
 
 
-@router.patch("/runs/{run_id}", status_code=204)
-def api_rename_run(run_id: int, changes: RunChanges, conn: DB) -> None:
+@router.patch("/runs/{run_id}", response_model=Done)
+def api_rename_run(run_id: int, changes: RunChanges, conn: DB) -> dict:
     """Renames a run."""
     if not runs.rename(conn, run_id, changes.name):
         raise HTTPException(404, "Run not found")
+    return {"did": f"Renamed the run to {changes.name}"}
 
 
-@router.delete("/runs/{run_id}", status_code=204)
-def api_delete_run(run_id: int, conn: DB) -> None:
-    """Deletes the run and its results, and the images no project or run uses any more; 409 while its job runs."""
+@router.delete("/runs/{run_id}", response_model=Done)
+def api_delete_run(run_id: int, conn: DB) -> dict:
+    """Deletes the run and its results, and the images no project, run or message uses any more;
+    409 while its job runs."""
     try:
-        found = runs.delete(conn, run_id)
+        run = _found(runs.delete(conn, run_id))
     except ValueError as e:
         raise HTTPException(409, str(e)) from None
-    if not found:
-        raise HTTPException(404, "Run not found")
+    return {"did": f"Deleted run {run['name']} and its results on {plural(run['images'], 'image')}"}

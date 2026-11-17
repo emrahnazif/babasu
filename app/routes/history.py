@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import Field
 
 from app import db, history
-from app.routes import Answer
+from app.routes import Answer, Done
 from app.templating import templates
 
 router = APIRouter()
@@ -57,14 +57,19 @@ def api_history(conn: DB, limit: Annotated[int, Query(ge=1, le=500, description=
     return history.actions(conn, limit)
 
 
-@router.post("/api/history/{action_id}/undo", response_model=ActionOut)
+class Undone(ActionOut, Done):
+    pass
+
+
+@router.post("/api/history/{action_id}/undo", response_model=Undone)
 def api_undo(action_id: str, conn: DB) -> dict:
     """Undoes an action: the rows it wrote go back as they were, the files it deleted come back.
     The undo is an action too (undoing it does the action again). Returns it as /api/history shows
     it. 404 if there's no such action; 409 with why if a later action changed the same things
     (undo that first) or something can't go back."""
     try:
-        return history.undo(conn, action_id)
+        undo = history.undo(conn, action_id)
+        return undo | {"did": f"Undid {undo['label']}: {undo['changed'] or 'nothing to put back'}"}
     except LookupError as e:
         raise HTTPException(404, str(e)) from None
     except history.Refused as e:

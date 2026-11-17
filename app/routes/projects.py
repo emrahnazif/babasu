@@ -9,9 +9,10 @@ from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, Reques
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
-from app import annotators, db, imports, jobs, projects, runs, segment, vision
+from app import annotators, db, imports, jobs, projects, runs, segment
 from app.filters import WHERE, Filter, FilterError, ObjectCondition, Range
-from app.routes import IMAGES, AnnotationOut, Answer, ClassOut, Images, ToDownload
+from app.formatting import plural
+from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, Started, ToDownload, started
 from app.templating import query, templates
 
 router = APIRouter()
@@ -326,8 +327,17 @@ class AnnotateOverview(Answer):
     to_download: list[ToDownload] = Field(description="The annotator's models still to download (a run downloads them first).")
 
 
-class Created(Answer):
+class Created(Done):
     id: int = Field(description="The new project's id.")
+
+
+class ProjectCreated(Created):
+    classes: list[ClassOut] = Field(description="Its classes, with their ids.")
+
+
+class ClassesOut(Done):
+    classes: list[ClassOut] = Field(description="The project's classes now, in order, with their ids.")
+
 
 
 def _detail(conn: sqlite3.Connection, project_id: int, page: int, filter: Filter, page_size: int = projects.PAGE_SIZE) -> dict:
@@ -433,14 +443,16 @@ def _form_page(request: Request, conn: sqlite3.Connection, project_id: int | Non
     )
 
 
-def _set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[projects.Annotation]) -> None:
+def _set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[projects.Annotation]) -> str:
+    """Set an image's annotations; its file name. 404 if the project hasn't the image, 422 for a class it hasn't."""
     try:
         with _writing(conn, project_id):
-            found = projects.set_annotations(conn, project_id, media_id, annotations)
+            filename = projects.set_annotations(conn, project_id, media_id, annotations)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    if not found:
+    if filename is None:
         raise HTTPException(404, "Image not found")
+    return filename
 
 
 def _start_import(conn: sqlite3.Connection, project_id: int, request: ImageImport) -> int:
@@ -616,7 +628,7 @@ class ProjectChange(BaseModel):
                           "nothing; false to change it.")
 
 
-class ChangeOut(Answer):
+class ChangeOut(Done):
     action: str
     dry_run: bool = Field(description="Nothing was changed: this is what would be.")
     images: int = Field(description="How many images it changes (only those that change).")
@@ -634,10 +646,24 @@ def api_change(project_id: int, change: ProjectChange, conn: DB) -> dict:
     first images). History undoes a change whole."""
     with _writing(conn, project_id, dry_run=change.dry_run):
         try:
-            return projects.change(conn, project_id, Filter.parse(change.where), change.action, change.class_id,
-                                   change.to_project_id) | {"dry_run": change.dry_run}
+            changed = projects.change(conn, project_id, Filter.parse(change.where), change.action, change.class_id,
+                                      change.to_project_id)
         except ValueError as e:
             raise HTTPException(422, str(e)) from None
+        return changed | {"dry_run": change.dry_run, "did": _change_done(conn, change, changed)}
+
+
+def _change_done(conn: sqlite3.Connection, change: ProjectChange, changed: dict) -> str:
+    """What a change did, or would (a preview): "Deleted 44 objects on 5 images"."""
+    images, objects = plural(changed["images"], "image"), plural(changed.get("objects") or 0, "object")
+    target = change.to_project_id and projects.get(conn, change.to_project_id)
+    to = f" to {target['name']}" if target else ""
+    would, did, what = {"delete_objects": ("delete", "Deleted", f"{objects} on {images}"),
+                        "set_class": ("change the class of", "Changed the class of", f"{objects} on {images}"),
+                        "remove_images": ("remove", "Removed", images),
+                        "copy_images": ("copy", "Copied", images + to),
+                        "move_images": ("move", "Moved", images + to)}[change.action]
+    return f"Would {would} {what} (a preview: dry_run false changes it)" if change.dry_run else f"{did} {what}"
 
 
 @router.get("/api/search", response_model=Found)
@@ -660,11 +686,11 @@ def api_project_list(conn: DB) -> list[dict]:
     return [{k: p[k] for k in ProjectListed.model_fields} for p in projects.list_all(conn)]
 
 
-@router.post("/api/projects", status_code=201, response_model=Created)
+@router.post("/api/projects", status_code=201, response_model=ProjectCreated)
 def api_create_project(new: NewProject, conn: DB) -> dict:
     """Creates a project with its classes and images; it gets the annotator suggested for its type.
-    Returns its id. 422 with why (a class given twice, a colour that isn't one, images that aren't
-    there)."""
+    Returns its id and classes. 422 with why (a class given twice, a colour that isn't one, images
+    that aren't there)."""
     try:
         images = new.images.resolve(conn) if new.images else []
         with conn:
@@ -672,7 +698,11 @@ def api_create_project(new: NewProject, conn: DB) -> dict:
             projects.add_images(conn, project_id, images)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    return {"id": project_id}
+    classes = projects.get(conn, project_id)["classes"]
+    named = f": {', '.join(c['name'] for c in classes)}" if classes else ""
+    return {"id": project_id, "classes": classes,
+            "did": f"Created project {new.name} ({new.task}) with {plural(len(images), 'image')} and "
+                    f"{plural(len(classes), 'class')}{named}"}
 
 
 # What an image in the project's answer has: enough to know it and what's in it; with ?annotations=1
@@ -710,15 +740,17 @@ def api_stats(project_id: int, conn: DB, where: Where = "",
     return result
 
 
-@router.patch("/api/projects/{project_id}", status_code=204)
-def api_update_project(project_id: int, changes: ProjectPatch, conn: DB) -> None:
+@router.patch("/api/projects/{project_id}", response_model=Done)
+def api_update_project(project_id: int, changes: ProjectPatch, conn: DB) -> dict:
     """Changes a project's name, description, type or annotator: only the fields given (classes:
     PATCH /api/projects/{id}/classes). 409 if it's frozen."""
     project = projects.get(conn, project_id)
     if project is None:
         raise HTTPException(404, "Project not found")
-    fields = {k: project[k] for k in ProjectChanges.model_fields} | changes.model_dump(exclude_unset=True)
-    _update(conn, project_id, ProjectChanges(**fields))
+    given = changes.model_dump(exclude_unset=True)
+    _update(conn, project_id, ProjectChanges(**{k: project[k] for k in ProjectChanges.model_fields} | given))
+    changed = [f"{k} {v or 'none'}" for k, v in given.items() if v != project[k]]
+    return {"did": f"Changed {project['name']}: {', '.join(changed)}" if changed else f"{project['name']} already had those"}
 
 
 class Duplicate(BaseModel):
@@ -731,7 +763,9 @@ class Duplicate(BaseModel):
 @router.post("/api/projects/{project_id}/duplicate", status_code=201, response_model=Created)
 def api_duplicate_project(project_id: int, conn: DB, body: Duplicate | None = None) -> dict:
     """A new project with this one's classes, images and annotations (not its runs), named `name` or "<its name> copy"."""
-    return {"id": _duplicate(conn, project_id, body.name if body else None)}
+    new_id = _duplicate(conn, project_id, body.name if body else None)
+    copy = projects.get(conn, new_id)
+    return {"id": new_id, "did": f"Made {copy['name']}, with {plural(projects.image_count(conn, new_id), 'image')}"}
 
 
 @router.get("/api/projects/{project_id}/deletion", response_model=Deletion)
@@ -742,11 +776,17 @@ def api_deletion(project_id: int, conn: DB) -> dict:
     return projects.deletion(conn, project_id)
 
 
-@router.delete("/api/projects/{project_id}", status_code=204)
-def api_delete_project(project_id: int, conn: DB) -> None:
+@router.delete("/api/projects/{project_id}", response_model=Done)
+def api_delete_project(project_id: int, conn: DB) -> dict:
     """Deletes a project with its images (from it), their annotations and its runs; History can
     undo it for 30 days. 409 while one of its jobs is queued or running."""
+    project = projects.get(conn, project_id)
+    if project is None:
+        raise HTTPException(404, "Project not found")
+    gone = projects.deletion(conn, project_id)
     _delete(conn, project_id)
+    return {"did": f"Deleted project {project['name']} with {plural(gone['images'], 'image')}, "
+                    f"{plural(gone['annotations'], 'object')} and {plural(gone['runs'], 'run')}"}
 
 
 @router.get("/api/projects/{project_id}/images/{media_id}", response_model=ImageDetail, response_model_exclude_unset=True)
@@ -763,7 +803,7 @@ class ImagesAdd(BaseModel):
     images: Images = Field(description=IMAGES)
 
 
-class ImagesAdded(Answer):
+class ImagesAdded(Done):
     added: int = Field(description="How many it added.")
     already_there: int = Field(description="How many the project had already (left as they are).")
     image_count: int = Field(description="How many images the project has now.")
@@ -780,14 +820,17 @@ def api_add_images(project_id: int, body: ImagesAdd, conn: DB) -> dict:
             added = projects.add_images(conn, project_id, images)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    return {"added": added, "already_there": len(images) - added, "image_count": projects.image_count(conn, project_id)}
+    there, name = len(images) - added, projects.get(conn, project_id)["name"]
+    return {"added": added, "already_there": there, "image_count": projects.image_count(conn, project_id),
+            "did": f"Added {plural(added, 'image')} to {name}" + (f" ({there} there already)" if there else "")}
 
 
-@router.put("/api/projects/{project_id}/images/{media_id}/annotations", status_code=204)
-def api_set_annotations(project_id: int, media_id: int, annotations: list[projects.Annotation], conn: DB) -> None:
+@router.put("/api/projects/{project_id}/images/{media_id}/annotations", response_model=Done)
+def api_set_annotations(project_id: int, media_id: int, annotations: list[projects.Annotation], conn: DB) -> dict:
     """Replaces the image's annotations with this list (read them with GET …/images/{media_id},
     change the list, send it back: to remove one, leave it out). 422 for an unknown class."""
-    _set_annotations(conn, project_id, media_id, annotations)
+    filename = _set_annotations(conn, project_id, media_id, annotations)
+    return {"did": f"{filename} has {plural(len(annotations), 'object')} now"}
 
 
 @contextmanager
@@ -803,7 +846,28 @@ def _clicking(conn: sqlite3.Connection, project_id: int, media_id: int):
         raise HTTPException(409, f"{e}: choose one (PUT /api/click-tool) and it downloads") from None
 
 
-@router.get("/api/click-tool")
+class ClickModel(Answer):
+    id: str = Field(description="What PUT /api/click-tool's model takes.")
+    name: str
+    license: str = Field(description="Its licence.")
+    downloaded: bool
+    downloading: bool
+    to_download: int = Field(description="Bytes it would download (0: downloaded).")
+
+
+class ClickTool(Answer):
+    on: bool = Field(description="The editor's click to segment tool is on.")
+    model: str = Field(description="The model chosen.")
+    in_use: str | None = Field(description="The model it uses: the chosen one, or while that downloads one that's downloaded.")
+    loaded: bool = Field(description="The one in use is in memory.")
+    models: list[ClickModel] = Field(description="The models it can use.")
+
+
+class ClickToolChanged(ClickTool, Done):
+    pass
+
+
+@router.get("/api/click-tool", response_model=ClickTool)
 def api_click_tool(conn: DB) -> dict:
     """The image editor's click to segment tool: on or off, the model chosen, the one in use (the
     chosen one, or while it downloads another that's downloaded), and each model with its licence
@@ -811,25 +875,28 @@ def api_click_tool(conn: DB) -> dict:
     return segment.tool(conn)
 
 
-@router.put("/api/click-tool")
+@router.put("/api/click-tool", response_model=ClickToolChanged)
 def api_change_click_tool(change: segment.Change, conn: DB) -> dict:
     """Turns the click tool on or off and/or chooses its model. A model that isn't downloaded starts
     downloading (a job); until it's done, the first downloaded one answers. Returns the tool as GET
-    does."""
-    return segment.change(conn, change)
+    does, and what changed (`did`)."""
+    tool = segment.change(conn, change)
+    return tool | {"did": f"The click tool is {'on' if tool['on'] else 'off'}, with {tool['model']}"
+                           + ("" if tool["in_use"] == tool["model"] else f" (downloading; meanwhile {tool['in_use'] or 'none is ready'})")}
 
 
-@router.post("/api/projects/{project_id}/images/{media_id}/prepare", status_code=204)
-def api_prepare_image(project_id: int, media_id: int, conn: DB) -> None:
+@router.post("/api/projects/{project_id}/images/{media_id}/prepare", response_model=Done)
+def api_prepare_image(project_id: int, media_id: int, conn: DB) -> dict:
     """Gets the image ready for click to segment: encodes it now (the slow half, a fraction of a
     second), so each segment call on it afterwards takes milliseconds. Optional: the first segment
     call prepares it too. 409 while the click model loads, with its job (`loading`: id, status, and
     `ahead`, the job it waits behind): it's loaded by that job, never by this call."""
     with _clicking(conn, project_id, media_id) as image:
         segment.prepare(conn, image["path"])
+    return {"did": "Ready for click to segment"}
 
 
-@router.post("/api/projects/{project_id}/images/{media_id}/segment", response_model=projects.Annotation | None)
+@router.post("/api/projects/{project_id}/images/{media_id}/segment", response_model=projects.Annotation | None, tags=[READS])
 def api_segment(project_id: int, media_id: int, prompt: segment.Prompt, conn: DB):
     """The object at some points and/or in a box, found by the click model in use, as an
     annotation of the class given, ready to add to the image's annotations: its box, and in a
@@ -846,16 +913,18 @@ def api_segment(project_id: int, media_id: int, prompt: segment.Prompt, conn: DB
             return Response(status_code=204)
 
 
-@router.patch("/api/projects/{project_id}/classes/prompts", status_code=204)
+@router.patch("/api/projects/{project_id}/classes/prompts", response_model=ClassesOut)
 def api_set_prompts(project_id: int, prompts: Annotated[dict[int, Prompt], Body(
         description="Prompts by class id, e.g. {\"3\": \"hole in the road surface\"}; empty: the class's name.")],
-                    conn: DB) -> None:
-    """Changes some classes' prompts: what annotators look for."""
+                    conn: DB) -> dict:
+    """Changes some classes' prompts: what annotators look for. Returns the classes."""
     try:
         with _writing(conn, project_id):
             projects.set_prompts(conn, project_id, prompts)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+    classes = projects.get(conn, project_id)["classes"]
+    return {"classes": classes, "did": "Changed the prompts of " + ", ".join(c["name"] for c in classes if c["id"] in prompts)}
 
 
 @router.get("/api/projects/{project_id}/classes", response_model=list[ClassOut])
@@ -866,17 +935,18 @@ def api_classes(project_id: int, conn: DB) -> list[dict]:
     return project["classes"]
 
 
-@router.put("/api/projects/{project_id}/classes", response_model=list[ClassOut])
-def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: DB) -> list[dict]:
+@router.put("/api/projects/{project_id}/classes", response_model=ClassesOut)
+def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: DB) -> dict:
     """Sets the project's whole class list, in order: classes with an id are kept (renamed,
     recoloured), without one added, those left out removed (their annotations hidden, back if a
     class by that name returns); returns the classes, with the new ones' ids. To change a few,
     PATCH …/classes instead."""
     try:
         with _writing(conn, project_id):
-            return projects.set_classes(conn, project_id, classes)
+            now = projects.set_classes(conn, project_id, classes)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+    return {"classes": now, "did": f"Set {plural(len(now), 'class')}" + (f": {', '.join(c['name'] for c in now)}" if now else "")}
 
 
 class ClassEdits(BaseModel):
@@ -890,15 +960,23 @@ class ClassEdits(BaseModel):
                                             "hidden, not deleted, and come back if a class by that name is added again.")
 
 
-@router.patch("/api/projects/{project_id}/classes", response_model=list[ClassOut])
-def api_edit_classes(project_id: int, edits: ClassEdits, conn: DB) -> list[dict]:
+@router.patch("/api/projects/{project_id}/classes", response_model=ClassesOut)
+def api_edit_classes(project_id: int, edits: ClassEdits, conn: DB) -> dict:
     """Adds, changes and removes some of the project's classes; the others stay. Returns the
     classes, with the new ones' ids; 422 with why (an unknown class, a name taken)."""
+    project = projects.get(conn, project_id)
+    before = {c["id"]: c for c in project["classes"]} if project else {}  # none: _writing answers 404
     try:
         with _writing(conn, project_id):
-            return projects.edit_classes(conn, project_id, edits.add, edits.change, edits.remove)
+            now = projects.edit_classes(conn, project_id, edits.add, edits.change, edits.remove)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+    after = {c["id"]: c for c in now}
+    words = [f"added {c['name']} (id {i})" for i, c in after.items() if i not in before]
+    words += [f"renamed {before[i]['name']} to {c['name']}" for i, c in after.items() if i in before and c["name"] != before[i]["name"]]
+    words += [f"changed {c['name']}" for i, c in after.items() if i in before and c["name"] == before[i]["name"] and c != before[i]]
+    words += [f"removed {c['name']}" for i, c in before.items() if i not in after]
+    return {"classes": now, "did": ("Classes: " + "; ".join(words)) if words else "The classes were already so"}
 
 
 @router.get("/api/projects/{project_id}/annotate", response_model=AnnotateOverview)
@@ -911,7 +989,7 @@ def api_auto_annotate_overview(project_id: int, conn: DB, where: Where = "") -> 
     return found
 
 
-@router.post("/api/projects/{project_id}/annotate", status_code=202)
+@router.post("/api/projects/{project_id}/annotate", status_code=202, response_model=Started, response_model_exclude_unset=True)
 def api_auto_annotate(project_id: int, request: AutoAnnotate, conn: DB) -> dict:
     """Starts auto-annotating the images matching `where` with the project's annotator (or the one
     given): each class is found from its prompt and the objects are added next to the ones there
@@ -919,22 +997,26 @@ def api_auto_annotate(project_id: int, request: AutoAnnotate, conn: DB) -> dict:
     running again does only what's new (a class or images added since; `again` does them again).
     Returns {run_id, job_id, images, downloads_first: the models it downloads before it starts};
     follow the job at /api/jobs/{job_id}. 422 with why it can't start (no classes, no annotator)."""
-    started = _started(lambda: annotators.start(conn, project_id, Filter.parse(request.where), request.count,
-                                                request.annotator, request.class_ids, request.min_score, request.again,
-                                                request.media_ids))
-    return started | {"downloads_first": vision.downloads_first(conn, started["job_id"])}
+    begun = _started(lambda: annotators.start(conn, project_id, Filter.parse(request.where), request.count,
+                                              request.annotator, request.class_ids, request.min_score, request.again,
+                                              request.media_ids))
+    classes = [c["name"] for c in projects.get(conn, project_id)["classes"]
+               if request.class_ids is None or c["id"] in request.class_ids]
+    return begun | started(conn, begun["job_id"], f"Started auto-annotating {plural(begun['images'], 'image')} for {', '.join(classes)}")
 
 
-@router.post("/api/projects/{project_id}/try", status_code=202)
+@router.post("/api/projects/{project_id}/try", status_code=202, response_model=Started, response_model_exclude_unset=True)
 def api_try_annotator(project_id: int, request: TryAnnotator, conn: DB) -> dict:
     """Starts a Try: the annotator on a few images, nothing written to the project. Follow the job
     at /api/jobs/{job_id}, then read the run at /api/runs/{run_id}."""
-    return _started(lambda: annotators.try_(conn, project_id, Filter.parse(request.where), request.annotator,
-                                            request.class_ids, request.prompts))
+    begun = _started(lambda: annotators.try_(conn, project_id, Filter.parse(request.where), request.annotator,
+                                             request.class_ids, request.prompts))
+    return begun | started(conn, begun["job_id"], f"Started a Try on {plural(begun['images'], 'image')}")
 
 
-@router.post("/api/projects/{project_id}/import", status_code=202)
+@router.post("/api/projects/{project_id}/import", status_code=202, response_model=Started, response_model_exclude_unset=True)
 def api_import_images(project_id: int, request: ImageImport, conn: DB) -> dict:
     """Starts importing images into the project from files and folders on this computer; returns
     {job_id}: follow it at /api/jobs/{job_id} (its result says what was imported and skipped)."""
-    return {"job_id": _start_import(conn, project_id, request)}
+    return {"job_id": _start_import(conn, project_id, request),
+            "did": f"Started importing images from {plural(len(request.paths), 'path')} (the job says what it finds)"}

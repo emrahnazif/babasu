@@ -9,14 +9,19 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from app import media
 from app.filters import WHERE, Filter
+from app.formatting import filesize
 
-# Not `from app import projects` (nor runs): in this package those names are route modules.
+# Not `from app import projects` (nor runs, vision): in this package those names are route modules.
 from app.projects import PROMPT, Annotation
 from app.runs import found_on, on_project
+from app.vision import downloads_first
 
 # The tag of API operations only the app's own pages use (the chat's, uploads): the agent's list
 # of operations leaves them out (agent_tools.operations).
 UI_ONLY = "ui-only"
+# The tag of POST operations that only read (a check, a test, a suggestion): they answer their
+# result, not what they did (Done; check_writes).
+READS = "reads"
 
 
 def _query_parameters(dependant) -> Iterator[str]:
@@ -69,6 +74,49 @@ class AnnotationOut(Answer):
     score: float | None = Field(None, description=_said("score"))
 
 
+class Done(Answer):
+    """What a write answers: what it did, in a sentence (`did`), so whoever made it (the agent too)
+    knows what happened; with what a next step needs (an id, the classes). Not `done`: a job's
+    answer has that (how much of it is done)."""
+
+    did: str = Field(description="What it did, e.g. “Added 8 images to Sandwiches (2 there already)”.")
+
+
+class ToDownload(Answer):
+    model: str = Field(description="The model: its family and variant, e.g. \"sam3 base\".")
+    size: int = Field(description="Bytes still to download.")
+
+
+class Started(Done):
+    """A write that starts a job: what it does is the job's (follow it, or its run)."""
+
+    job_id: int = Field(description="Follow it at /api/jobs/{job_id}.")
+    run_id: int | None = Field(None, description="Its run: GET /api/runs/{run_id}, the page /runs/{run_id}.")
+    images: int | None = Field(None, description="How many images it runs on.")
+    downloads_first: list[ToDownload] | None = Field(None, description="The models it downloads before it starts.")
+
+
+def started(conn: sqlite3.Connection, job_id: int, did: str) -> dict:
+    """A Started answer's end: the models the job downloads before it starts, and what was done,
+    saying so."""
+    first = downloads_first(conn, job_id)
+    size = sum(m["size"] for m in first)
+    return {"downloads_first": first, "did": did + (f"; it downloads {filesize(size)} of models first" if size else "")}
+
+
+def check_writes(openapi: dict) -> None:
+    """Every write of the API says what it did (its answer is a Done), checked when the app starts,
+    as an Answer's undeclared field is: a write that doesn't would leave whoever made it guessing."""
+    said = {name for name, schema in openapi["components"]["schemas"].items() if "did" in schema.get("properties", {})}
+    missing = [f"{method.upper()} {path}" for path, operations in openapi["paths"].items() if path.startswith("/api/")
+               for method, operation in operations.items()
+               if method != "get" and not {UI_ONLY, READS} & set(operation.get("tags", []))
+               and next(iter(operation["responses"].values())).get("content", {}).get("application/json", {})
+                   .get("schema", {}).get("$ref", "").split("/")[-1] not in said]
+    if missing:
+        raise RuntimeError(f"Writes that don't answer what they did (a Done response_model): {', '.join(missing)}")
+
+
 IMAGES = ("Which images: {\"media_ids\": [...]} (e.g. those attached to a message), {\"project_id\": 3, \"where\": "
           "\"night\", \"count\": 10} (a project's, matching a filter, some at random), or {\"run_id\": 31, \"found\": "
           "\"person\"} (those a run found that on); each with its name.")
@@ -119,11 +167,6 @@ class ClassOut(Answer):
     name: str = Field(description="Its name, e.g. car.")
     color: str = Field(description="The colour it's drawn in, #rrggbb.")
     prompt: str = Field(description=PROMPT)
-
-
-class ToDownload(Answer):
-    model: str = Field(description="The model: its family and variant, e.g. \"sam3 base\".")
-    size: int = Field(description="Bytes still to download.")
 
 
 def safe_next(next: str | None) -> str:

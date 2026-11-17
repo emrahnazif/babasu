@@ -423,16 +423,15 @@ class ChangeArgs(Args):
 
 
 def _change_note(args: ChangeArgs, answer) -> str:
-    if isinstance(answer, dict) and "dry_run" in answer:
-        counted = plural(answer["images"], "image") + (f", {plural(answer['objects'], 'object')}" if answer.get("objects") is not None else "")
-        return f"Would change {counted}" if answer["dry_run"] else f"Changed {counted}"
-    return "Done"
+    """What the write says it did (every write's answer has `did`)."""
+    return answer.get("did", "Done") if isinstance(answer, dict) else "Done"
 
 
 @tool(
     "Change anything the app's pages can: any write of its API, checked as the pages' changes are (a refusal says "
-    "why); History can undo it. The main ones: POST /api/projects (a new project with its classes and images); POST "
-    "/api/projects/ID/images (add images: a set of them, as POST /api/runs takes it); PATCH "
+    "why); its answer says what it did (did), and History can undo it. The main ones: POST /api/projects (a new "
+    "project with its classes and images); POST /api/projects/ID/images (add images: a set of them, as POST /api/runs "
+    "takes it); PATCH "
     "/api/projects/ID (name, type, annotator); PATCH /api/projects/ID/classes (add, rename, remove classes, e.g. "
     "{\"add\": [{\"name\": \"truck\"}]}); POST /api/projects/ID/annotate (auto-annotate the images matching where, "
     "for its classes or class_ids: a job); POST /api/projects/ID/try (an annotator on a few images, nothing kept); "

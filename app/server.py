@@ -82,6 +82,7 @@ app.include_router(history_routes.router)
 app.include_router(workflow_router(models=vision.load, process=False), prefix="/mozo")
 app.add_exception_handler(FilterError, projects.filter_error)
 app.add_exception_handler(segment.Loading, projects.click_loading)
+routes.check_writes(app.openapi())
 agent_tools.setup(app)
 
 

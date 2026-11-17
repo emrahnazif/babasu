@@ -260,9 +260,9 @@ def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict, proje
 
 def start(conn: sqlite3.Connection, workflow_id: str | None, media_ids: list[int], overrides: dict | None = None,
           project_id: int | None = None, name: str | None = None, prompts: list[str] | None = None,
-          document: dict | None = None) -> tuple[int, int]:
+          document: dict | None = None) -> tuple[int, int, str]:
     """Create a run of a workflow (a saved one, or a `document` not saved yet: trying a draft)
-    over stored images and start its job; returns (run id, job id).
+    over stored images and start its job; returns (run id, job id, its name).
     `prompts`: what to look for, given to every prompted node (see execute()); none given, a
     project's run of a workflow that takes prompts finds its class prompts. `overrides`:
     parameter values as mozo's run takes them, by name or one node's ("dino.threshold").
@@ -271,11 +271,12 @@ def start(conn: sqlite3.Connection, workflow_id: str | None, media_ids: list[int
     which says why."""
     media_ids = list(dict.fromkeys(media_ids))
     workflow_id, workflow = resolve(workflow_id, document)
+    name = name or run_name(workflow.name or workflow_id or "Draft", len(media_ids))
     run_id = create(conn, workflow_id, workflow, media_ids, project_id, name)
     if prompts is None and project_id is not None and workflow.prompt_parameters:
         prompts = [c["prompt"] for c in projects.get(conn, project_id)["classes"]]
     params = {"media_ids": media_ids, "overrides": overrides, "prompts": prompts}
-    return run_id, launch(conn, run_id, KIND, params, project_id)
+    return run_id, launch(conn, run_id, KIND, params, project_id), name
 
 
 def on_project(conn: sqlite3.Connection, project_id: int, filter) -> list[int]:
@@ -505,16 +506,17 @@ def rename(conn: sqlite3.Connection, run_id: int, name: str) -> bool:
         return conn.execute("UPDATE run SET name = ? WHERE id = ?", (name, run_id)).rowcount > 0
 
 
-def delete(conn: sqlite3.Connection, run_id: int) -> bool:
-    """Delete a run and its results, and the images no project or run uses any more; False if
-    there's no such run. ValueError while its job is queued or running."""
+def delete(conn: sqlite3.Connection, run_id: int) -> dict | None:
+    """Delete a run and its results, and the images nothing else uses any more (media.remove_unused);
+    the run as it was (name, images), or None if there's no such run. ValueError while its job is
+    queued or running."""
     row = _run(conn, run_id)
     if row is None:
-        return False
+        return None
     if row["status"] in jobs.ACTIVE:
         raise ValueError("The run's job is still going; cancel it first")
     with conn:
         used = [r[0] for r in conn.execute("SELECT DISTINCT media_id FROM run_result WHERE run_id = ?", (run_id,))]
         conn.execute("DELETE FROM run WHERE id = ?", (run_id,))
         media.remove_unused(conn, used)
-    return True
+    return row

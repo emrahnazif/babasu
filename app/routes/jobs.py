@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import Field
 
 from app import db, jobs
-from app.routes import Answer
+from app.routes import Answer, Done
 from app.templating import templates
 
 router = APIRouter()
@@ -90,16 +90,23 @@ def job_detail(job_id: int, conn: DB) -> dict:
     return _get(conn, job_id)
 
 
-@router.post("/api/jobs/{job_id}/cancel", response_model=JobOut)
+class JobDone(JobOut, Done):
+    pass
+
+
+@router.post("/api/jobs/{job_id}/cancel", response_model=JobDone)
 def job_cancel(job_id: int, conn: DB) -> dict:
     """Cancels a queued job, or asks a running one to stop (it stops at its next step). Returns the
     job as GET /api/jobs/{job_id} does."""
-    _get(conn, job_id)
+    before = _get(conn, job_id)
     jobs.cancel(conn, job_id)
-    return _get(conn, job_id)
+    job = _get(conn, job_id)
+    did = (f"Asked {job['title']} to stop (it stops at its next step)" if job["status"] == "running"
+           else f"Cancelled {job['title']}" if before["status"] != job["status"] else f"{job['title']} had ended already ({job['status']})")
+    return job | {"did": did}
 
 
-@router.post("/api/jobs/{job_id}/retry", status_code=201, response_model=JobOut)
+@router.post("/api/jobs/{job_id}/retry", status_code=201, response_model=JobDone)
 def job_retry(job_id: int, conn: DB) -> dict:
     """Runs a failed, cancelled or interrupted job again, as a new job with the same work (an
     import or a run skips what's already done). Returns the new job. 409 for any other job."""
@@ -107,7 +114,8 @@ def job_retry(job_id: int, conn: DB) -> dict:
     new_id = jobs.retry(conn, job_id)
     if new_id is None:
         raise HTTPException(409, "Only failed, cancelled or interrupted jobs can be retried")
-    return _get(conn, new_id)
+    job = _get(conn, new_id)
+    return job | {"did": f"Started {job['title']} again, as job {new_id}"}
 
 
 @router.get("/api/jobs/{job_id}/log", response_model=Log)
