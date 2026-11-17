@@ -44,7 +44,7 @@ def job_page(request: Request, job_id: int, conn: DB):
 # --- API ---
 
 
-class JobOut(Answer):
+class JobListed(Answer):
     id: int = Field(description="The job's id.")
     kind: str = Field(description="What it does: import, run, auto-annotate, download, load…")
     title: str = Field(description="Its kind in words.")
@@ -56,8 +56,6 @@ class JobOut(Answer):
     total: int | None = Field(description="How many items it has; null until it knows.")
     unit: str = Field(description="What its items are, e.g. images.")
     message: str = Field(description="What it's doing now.")
-    params: dict = Field(description="What it was asked to do (its kind's arguments, e.g. a run's run_id and media_ids).")
-    result: dict | None = Field(description="What it did, when it's finished (by kind, e.g. {images, failed}).")
     summary: str = Field(description="The result or the error, in one line.")
     error: str | None = Field(description="Why it failed; read the log (GET /api/jobs/{id}/log) for the details.")
     stop_reason: str | None = Field(description="user or shutdown: it was asked to stop.")
@@ -69,15 +67,21 @@ class JobOut(Answer):
     finished_at: str | None
 
 
+class JobOut(JobListed):
+    params: dict = Field(description="What it was asked to do (its kind's arguments, e.g. a run's run_id and media_ids).")
+    result: dict | None = Field(description="What it did, when it's finished (by kind, e.g. {images, failed}).")
+
+
 class Log(Answer):
     text: str = Field(description="The log from `offset` on.")
     offset: int = Field(description="Where the next read starts (pass it as ?offset=).")
 
 
-@router.get("/api/jobs", response_model=list[JobOut])
-def job_list(conn: DB) -> list[dict]:
-    """Recent background jobs, newest first: title, project, status, progress, summary."""
-    return jobs.list_recent(conn)
+@router.get("/api/jobs", response_model=list[JobListed])
+def job_list(conn: DB, limit: Annotated[int, Query(ge=1, le=50, description="How many.")] = 10) -> list[dict]:
+    """Recent background jobs, the running and waiting ones first, then the newest: title, project,
+    status, progress, summary (a job's own answer has what it was asked and what it did)."""
+    return [{k: job[k] for k in JobListed.model_fields} for job in jobs.list_recent(conn, limit)]
 
 
 @router.get("/api/jobs/{job_id}", response_model=JobOut)
