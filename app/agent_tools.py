@@ -39,8 +39,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from app import code as code_mode  # `code` is run_code's argument
 from app import config, jobs, media, projects, runs
-from app.formatting import plural
-from app.routes import UI_ONLY, fields_at
+from app.formatting import number, plural
+from app.routes import IMAGES, UI_ONLY, fields_at
 
 
 class Args(BaseModel):
@@ -420,15 +420,13 @@ def _change_note(args: ChangeArgs, answer) -> str:
 @tool(
     "Change anything the app's pages can: any write of its API, checked as the pages' changes are (a refusal says "
     "why); its answer says what it did (did), and History can undo it. The main ones: POST /api/projects (a new "
-    "project with its classes and images); POST /api/projects/ID/images (add images: a set of them, as POST /api/runs "
-    "takes it); PATCH "
-    "/api/projects/ID (name, type, annotator); PATCH /api/projects/ID/classes (add, rename, remove classes, e.g. "
+    "project with its classes and images); POST /api/projects/ID/images (add images, named as run takes them); PATCH /api/projects/ID (name, type, annotator); PATCH /api/projects/ID/classes (add, rename, remove classes, e.g. "
     "{\"add\": [{\"name\": \"truck\"}]}); POST /api/projects/ID/annotate (auto-annotate the images matching where, "
     "for its classes or class_ids: a job); POST /api/projects/ID/try (an annotator on a few images, nothing kept); "
     "PUT /api/projects/ID/images/MEDIA_ID/annotations (one image's objects); POST /api/projects/ID/changes (many "
     "images at once: delete objects, change their class, remove, copy or move images; only a preview unless "
-    "dry_run is false); POST /api/projects/ID/import (images from files and folders); POST /api/runs (a workflow "
-    "over images); POST /api/workflows (save one). find_api has what each takes, and any other.",
+    "dry_run is false); POST /api/projects/ID/import (images from files and folders); POST /api/workflows (save "
+    "one). find_api has what each takes, and any other.",
     ChangeArgs,
     label="Changing the app's data",
     note=_change_note,
@@ -566,15 +564,57 @@ class WaitArgs(Args):
       "meanwhile. Answers as GET /api/jobs/{job_id}.", WaitArgs,
       label="Waiting for a job", note=lambda args, job: f"{job['title']} {job['status']}" + (f": {job['summary']}" if job["summary"] else ""))
 def wait(conn: sqlite3.Connection, args: WaitArgs) -> Iterator[dict]:
-    deadline, stop = time.monotonic() + args.seconds, _turn.get().stop
-    while (job := jobs.get(conn, args.job_id)) and job["status"] in jobs.ACTIVE and time.monotonic() < deadline:
+    return (yield from _waited(conn, args.job_id, args.seconds))
+
+
+def _waited(conn: sqlite3.Connection, job_id: int, seconds: int) -> Iterator[dict]:
+    """Wait for a job to end, or `seconds` to pass (or the turn to stop), its bar showing meanwhile;
+    the job as it is then."""
+    deadline, stop = time.monotonic() + seconds, _turn.get().stop
+    while (job := jobs.get(conn, job_id)) and job["status"] in jobs.ACTIVE and time.monotonic() < deadline:
         if job["total"]:  # the chat shows the job's bar under the step
             yield {"type": "progress", "done": job["done"], "total": job["total"]}
         if stop.wait(1):
             break
     if job is None:
-        raise ToolError(f"There is no job {args.job_id}.")
+        raise ToolError(f"There is no job {job_id}.")
     return job
+
+
+RUN_WAIT = 60  # seconds the run tool waits for its results; a longer run goes on (wait, or its page)
+
+
+class RunArgs(Args):
+    images: dict[str, Any] = Field(description=IMAGES)  # checked by the API (routes.Images), refusals naming its fields
+    prompts: list[str] | None = Field(None, description="What to find, e.g. [\"person\", \"car\"]; empty: a project's class prompts.")
+    workflow_id: str | None = Field(None, description="Which workflow (GET /api/workflows says what each does); empty: the default.")
+
+
+def _ran_note(run: dict) -> str:
+    """What a run found, in a few words: "person 23 on 7 of 9 images; car 2 on 1"."""
+    if run["status"] in jobs.ACTIVE:
+        return f"Still running on {plural(run['images'], 'image')} (job {run['job_id']}): its page shows the results when it's done"
+    if run["status"] != "succeeded":
+        return f"The run {run['status']}" + (f": {run['error']}" if run.get("error") else "")
+    found = [(name, c) for classes in run["found"].values() for name, c in classes.items()]
+    if not found:
+        return f"Found nothing on {plural(run['images'], 'image')}"
+    first, *others = found
+    return "; ".join([f"{first[0]} {number(first[1]['objects'])} on {number(first[1]['images'])} of {plural(run['images'], 'image')}"]
+                     + [f"{name} {number(c['objects'])} on {number(c['images'])}" for name, c in others])
+
+
+@tool("Find things in images: run a workflow over them (the default finds and outlines what the prompts name) and wait "
+      "for what it found: per class, how many objects on how many images, and the run's page to link. A run not done "
+      "in a minute goes on: its page shows the results, or wait for its job.", RunArgs,
+      label="Running a workflow", note=lambda args, run: run["did"])
+def run(conn: sqlite3.Connection, args: RunArgs) -> Iterator[dict]:
+    body = {"images": args.images, "prompts": args.prompts, "workflow_id": args.workflow_id}
+    started = _request("POST", "/api/runs", {k: v for k, v in body.items() if v is not None}).json()
+    job = yield from _waited(conn, started["job_id"], RUN_WAIT)
+    ran = {"run_id": started["run_id"], "job_id": started["job_id"], "page": f"/runs/{started['run_id']}", "status": job["status"],
+           "images": started["images"], "found": runs.found(conn, started["run_id"]), "error": job["error"]}
+    return ran | {"did": _ran_note(ran)}
 
 
 # --- Looking ---
