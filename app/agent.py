@@ -12,14 +12,15 @@ a page stops nothing; stop is asked for (stop_turn), or the app closing stops ev
 
 import asyncio
 import json
+import queue
 import sqlite3
 import threading
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import closing
 
 import openai
 
-from app import agent_tools, config, db, settings
+from app import agent_tools, code, config, db, settings
 
 MAX_ROUNDS = 20  # model calls per turn; each round may run tools (work of several steps takes many)
 TITLE_LENGTH = 60
@@ -334,6 +335,42 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
 # --- One turn ---
 
 
+def _streamed(open_stream: Callable, stop: threading.Event) -> Iterator:
+    """The model's reply, chunk by chunk, read in a thread of its own so that a stop is heard at
+    once, even while the server is still reading the conversation (before its first chunk, which
+    takes long on a slow local model). Once the turn stops reading (a stop, or anything else that
+    ends it), the reader closes the stream at its next chunk."""
+    chunks: queue.Queue = queue.Queue()
+    left = threading.Event()  # the turn stopped reading
+
+    def read() -> None:
+        try:
+            with open_stream() as stream:
+                for chunk in stream:
+                    if left.is_set():
+                        return
+                    chunks.put(chunk)
+        except Exception as exc:
+            chunks.put(exc)
+        finally:
+            chunks.put(None)
+
+    threading.Thread(target=read, name="agent-reply", daemon=True).start()
+    try:
+        while not stop.is_set():
+            try:
+                chunk = chunks.get(timeout=code.STOP_CHECK)
+            except queue.Empty:
+                continue
+            if chunk is None:
+                return
+            if isinstance(chunk, Exception):
+                raise chunk
+            yield chunk
+    finally:
+        left.set()
+
+
 def start_turn(text: str, page: str | None = None, page_title: str | None = None) -> Turn:
     """Send the person's message to the current conversation (started if there is none) and run
     the turn in its own thread (see run_turn). Busy if that conversation's last turn is still running."""
@@ -413,10 +450,10 @@ def run_turn(
       {"type": "changed"}                                   a tool changed what pages show: once the
                                                             reply is done, reload (unless one opens)
       {"type": "done"}, {"type": "stopped"} or {"type": "error", "message": "..."}
-    Once `stop` is set, the turn ends at its next step (a streamed chunk or a tool) and saves the
-    reply so far as stopped. What the turn changes is one action in the history, named by the message.
+    Once `stop` is set, the turn ends at once (a tool running ends too) and saves the reply so far
+    as stopped. What the turn changes is one action in the history, named by the message.
     """
-    with closing(db.connect()) as conn, db.action("agent", text), agent_tools.turn_of(conversation_id):
+    with closing(db.connect()) as conn, db.action("agent", text), agent_tools.turn_of(conversation_id, stop):
         with conn:
             conn.execute(
                 "INSERT INTO message (conversation_id, role, content, page, page_title) VALUES (?, 'user', ?, ?, ?)",
@@ -470,31 +507,26 @@ def run_turn(
                     finish("stopped", tool_calls=ran)
                     return {"type": "stopped"}
 
+                messages = _history(conn, conversation_id, agent)
                 try:
-                    stream = model_client.chat.completions.create(
-                        model=model.model, messages=_history(conn, conversation_id, agent), tools=agent_tools.schemas(),
-                        stream=True,
-                    )
-                    with stream:
-                        for chunk in stream:
-                            if stop.is_set():
-                                break
-                            if not chunk.choices:
-                                continue
-                            ended = chunk.choices[0].finish_reason or ended
-                            delta = chunk.choices[0].delta
-                            if delta.content:
-                                text_parts.append(delta.content)
-                                yield {"type": "text", "delta": delta.content}
-                            for part in delta.tool_calls or []:
-                                call = calls.setdefault(part.index, {"id": "", "name": "", "arguments": ""})
-                                call["id"] = part.id or call["id"]
-                                if part.function:
-                                    call["name"] += part.function.name or ""
-                                    call["arguments"] += part.function.arguments or ""
-                                    if part.function.arguments:  # a page may show it as it's written
-                                        yield {"type": "call", "id": call["id"], "name": call["name"],
-                                               "delta": part.function.arguments}
+                    for chunk in _streamed(lambda: model_client.chat.completions.create(
+                            model=model.model, messages=messages, tools=agent_tools.schemas(), stream=True), stop):
+                        if not chunk.choices:
+                            continue
+                        ended = chunk.choices[0].finish_reason or ended
+                        delta = chunk.choices[0].delta
+                        if delta.content:
+                            text_parts.append(delta.content)
+                            yield {"type": "text", "delta": delta.content}
+                        for part in delta.tool_calls or []:
+                            call = calls.setdefault(part.index, {"id": "", "name": "", "arguments": ""})
+                            call["id"] = part.id or call["id"]
+                            if part.function:
+                                call["name"] += part.function.name or ""
+                                call["arguments"] += part.function.arguments or ""
+                                if part.function.arguments:  # a page may show it as it's written
+                                    yield {"type": "call", "id": call["id"], "name": call["name"],
+                                           "delta": part.function.arguments}
                 except Exception as exc:  # unreachable server, bad key, unknown model…
                     finish("error", describe(exc, model))
                     yield {"type": "error", "message": describe(exc, model)}
@@ -520,9 +552,6 @@ def run_turn(
                     return
 
                 for ran, call in enumerate(tool_calls):
-                    if stop.is_set():
-                        yield stopped(tool_calls[:ran])
-                        return
                     yield {"type": "tool", "id": call["id"], "name": call["name"], "status": "running"}
                     try:
                         # What it shows while it works (run_code's output), then its result.
@@ -537,6 +566,9 @@ def run_turn(
                             (conversation_id, result, call["id"], status, error),
                         )
                     yield {"type": "tool", "id": call["id"], "name": call["name"], "status": status}
+                    if stop.is_set():  # the tools after it don't run, and the model isn't asked again
+                        yield stopped(tool_calls[:ran + 1])
+                        return
                     if status != "done":
                         continue
                     found = agent_tools.TOOLS[call["name"]]

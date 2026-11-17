@@ -27,6 +27,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 TIMEOUT = 60  # seconds a run may take unless the agent gives more
+STOP_CHECK = 0.1  # seconds between looks at whether the agent's turn was stopped (the code, the model)
 OUTPUT_SIZE = 8_000  # characters of what the code printed that come back; the rest is cut
 
 # Makes one API call for the code: (method, path, body) -> its JSON answer; raises Refused.
@@ -165,28 +166,34 @@ class Session:
         self.close()
         return f"{why} Its variables are gone: the next run starts a new process."
 
-    def run(self, code: str, call: Call, timeout: int = TIMEOUT, file: str | None = None) -> Iterator[dict]:
+    def run(self, code: str, call: Call, stop: threading.Event, timeout: int = TIMEOUT,
+            file: str | None = None) -> Iterator[dict]:
         """Run the code (read from `file` of the folder, if it was), making its API calls with
-        `call` (here, in this thread), for at most `timeout` seconds. Yields what it shows as it
+        `call` (here, in this thread), for at most `timeout` seconds, or until `stop` is set. Yields what it shows as it
         comes, {"type": "output", "text"} (as much as the agent gets) and {"type": "progress",
         "done", "total"}; returns {output: what it printed (cut when long), error: why it stopped,
         or None}. A run left before the code is done (the app failed to answer one of its calls,
         or the turn ended) ends the process: the code would wait for an answer that never comes."""
         try:
-            return (yield from self._run(code, call, timeout, file))
+            return (yield from self._run(code, call, stop, timeout, file))
         except BaseException:
             self.close()
             raise
 
-    def _run(self, code: str, call: Call, timeout: int, file: str | None) -> Iterator[dict]:
+    def _run(self, code: str, call: Call, stop: threading.Event, timeout: int, file: str | None) -> Iterator[dict]:
         self.used = started = time.monotonic()
         self._pipe.send((code, file))
         kept, size = [], 0  # what's printed, up to OUTPUT_SIZE; how much in all
         while True:
             left = timeout - (time.monotonic() - started)
-            if left <= 0 or not self._pipe.poll(left):
+            if left <= 0:
                 error = self._ended(f"Stopped after {timeout} s; give it more time (seconds) or do less.")
                 break
+            if stop.is_set():
+                error = self._ended("Stopped by the person.")
+                break
+            if not self._pipe.poll(min(left, STOP_CHECK)):
+                continue
             try:
                 message = self._pipe.recv()
             except EOFError:

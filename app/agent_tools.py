@@ -17,6 +17,7 @@ import inspect
 import json
 import re
 import sqlite3
+import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -122,18 +123,23 @@ def schemas() -> list[dict]:
     ]
 
 
-# The conversation whose turn is calling tools: run_code keeps one code process per conversation.
-_conversation: ContextVar[int | None] = ContextVar("conversation", default=None)
+@dataclass(frozen=True)
+class _Turn:
+    conversation_id: int  # run_code keeps one code process per conversation, in its folder
+    stop: threading.Event  # set when the person stops the turn: a tool that takes long ends at once
+
+
+_turn: ContextVar[_Turn | None] = ContextVar("turn", default=None)
 
 
 @contextmanager
-def turn_of(conversation_id: int) -> Iterator[None]:
+def turn_of(conversation_id: int, stop: threading.Event) -> Iterator[None]:
     """Tools called inside this are a turn of this conversation (agent.run_turn)."""
-    token = _conversation.set(conversation_id)
+    token = _turn.set(_Turn(conversation_id, stop))
     try:
         yield
     finally:
-        _conversation.reset(token)
+        _turn.reset(token)
 
 
 def call(conn: sqlite3.Connection, name: str, arguments: str) -> Iterator[dict]:
@@ -393,10 +399,10 @@ LISTED = 300  # files list_files names at most
 
 def folder() -> Path:
     """The working folder of the conversation whose turn this is (made when first used)."""
-    conversation_id = _conversation.get()
-    if conversation_id is None:
+    turn = _turn.get()
+    if turn is None:
         raise ToolError("There's no conversation here, so no folder.")
-    found = config.CONVERSATIONS_DIR / str(conversation_id)
+    found = config.CONVERSATIONS_DIR / str(turn.conversation_id)
     found.mkdir(parents=True, exist_ok=True)
     return found.resolve()
 
@@ -518,7 +524,7 @@ class CodeArgs(Args):
 )
 def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
     code = _path(args.file, "file").read_text() if args.file else args.code
-    result = yield from code_mode.session(folder()).run(code, _for_code, args.seconds, args.file)
+    result = yield from code_mode.session(folder()).run(code, _for_code, _turn.get().stop, args.seconds, args.file)
     if result["error"]:
         raise ToolError(result["error"] + (f"\nPrinted before it:\n{result['output']}" if result["output"] else ""))
     return {"output": result["output"]}
@@ -617,9 +623,10 @@ def show_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
 
 @tool("Wait for a background job to end (or for `seconds` to pass), then show it as GET /api/jobs/{job_id} does.", WaitArgs)
 def wait_for_job(conn: sqlite3.Connection, args: WaitArgs) -> dict:
-    deadline = time.monotonic() + args.seconds
+    deadline, stop = time.monotonic() + args.seconds, _turn.get().stop
     while (job := jobs.get(conn, args.job_id)) and job["status"] in jobs.ACTIVE and time.monotonic() < deadline:
-        time.sleep(1)
+        if stop.wait(1):
+            break
     if job is None:
         raise ToolError(f"There is no job {args.job_id}.")
     return job
