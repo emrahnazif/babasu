@@ -296,6 +296,16 @@ def _on_page(message: dict) -> str:
     return f'(On the page "{message["page_title"]}": {message["page"]})\n\n'
 
 
+def _arguments(text: str) -> str:
+    """A tool call's arguments as the API takes them back: a JSON object. Ones that aren't (cut
+    off, malformed, empty) go as {}, or the server refuses the whole conversation; the call's
+    result already told the model what was wrong."""
+    try:
+        return text if isinstance(json.loads(text), dict) else "{}"
+    except ValueError:
+        return "{}"
+
+
 def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Agent) -> list[dict]:
     """The conversation as the model gets it. A tool call without a saved result (the app stopped
     in between) is left out, since the API requires every call to have its result."""
@@ -312,7 +322,7 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
             message = {"role": "assistant", "content": m["content"]}
             if calls:
                 message["tool_calls"] = [
-                    {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
+                    {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": _arguments(c["arguments"])}}
                     for c in calls
                 ]
             history.append(message)
@@ -446,6 +456,7 @@ def run_turn(
                 conn.commit()
                 text_parts: list[str] = []
                 calls: dict[int, dict] = {}  # by index in the stream: {"id", "name", "arguments"}
+                ended = None  # why the model stopped writing: "stop", "tool_calls", "length"…
 
                 def finish(status: str, error: str | None = None, tool_calls: list | None = None) -> None:
                     with conn:
@@ -468,9 +479,10 @@ def run_turn(
                         for chunk in stream:
                             if stop.is_set():
                                 break
-                            delta = chunk.choices[0].delta if chunk.choices else None
-                            if delta is None:
+                            if not chunk.choices:
                                 continue
+                            ended = chunk.choices[0].finish_reason or ended
+                            delta = chunk.choices[0].delta
                             if delta.content:
                                 text_parts.append(delta.content)
                                 yield {"type": "text", "delta": delta.content}
@@ -491,6 +503,11 @@ def run_turn(
                     yield stopped()
                     return
 
+                if ended == "length":  # cut off mid-reply: a tool call in it may be half written
+                    message = f"{model.name} reached its output limit mid-reply. Ask it to go on, or for less at once."
+                    finish("error", message)
+                    yield {"type": "error", "message": message}
+                    return
                 tool_calls = list(calls.values())
                 if not tool_calls and not text_parts:  # e.g. a model that put its tool call in its thinking and stopped
                     message = f"{model.name} answered nothing (no text, no tool call). Send it again, or try another model."
