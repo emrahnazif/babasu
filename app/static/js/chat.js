@@ -63,7 +63,7 @@ if (chat) {
         part.markdown += delta;
         frame ||= requestAnimationFrame(draw);
       },
-      tool({ id, label, note, images, status: state }) {
+      tool({ id, label, note, images, picture, status: state }) {
         if (frame) draw(); // the part ends as written
         part = null;
         clearStatus();
@@ -82,6 +82,12 @@ if (chat) {
           fetch(`/agent/images?${query}`)
             .then((response) => (response.ok ? response.text() : ""))
             .then((html) => element.insertAdjacentHTML("beforeend", html));
+        }
+        // The picture it gave the model (a crop it looked at), as the model saw it.
+        if (picture) {
+          const shown = clone("chat-picture");
+          shown.querySelector("img").src = picture;
+          element.append(shown);
         }
         running = {};
         // After a tool and between rounds, show that the agent is still working.

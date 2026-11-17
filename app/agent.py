@@ -11,6 +11,7 @@ a page stops nothing; stop is asked for (stop_turn), or the app closing stops ev
 """
 
 import asyncio
+import base64
 import json
 import queue
 import sqlite3
@@ -258,15 +259,16 @@ def set_conversation_agent(conn: sqlite3.Connection, agent_id: str) -> None:
 
 
 def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bool = False) -> list[dict]:
-    """The conversation's messages in order, tool calls parsed. Tool results can be large and only
-    the model reads them, and only this turn's (`results`); the others are left out."""
+    """The conversation's messages in order, tool calls parsed. Tool results and the pictures tools
+    gave can be large and only the model reads them, and only this turn's (`results`); the others
+    are left out."""
     rows = conn.execute(
-        """SELECT role, tool_calls, tool_call_id, status, error, label, note, images, agent, model, page, page_title, about,
-                  tokens_in, tokens_out,
-                  CASE WHEN role = 'tool' AND NOT (:results AND id > (
-                      SELECT max(id) FROM message WHERE conversation_id = :id AND role = 'user'))
-                  THEN '' ELSE content END AS content
-           FROM message WHERE conversation_id = :id ORDER BY id""",
+        """WITH turn AS (SELECT max(id) AS started FROM message WHERE conversation_id = :id AND role = 'user')
+           SELECT id, role, tool_calls, tool_call_id, status, error, label, note, images, agent, model, page, page_title,
+                  about, tokens_in, tokens_out, length(picture) IS NOT NULL AS has_picture,  -- length() doesn't read it
+                  CASE WHEN role = 'tool' AND NOT (:results AND id > turn.started) THEN '' ELSE content END AS content,
+                  CASE WHEN :results AND id > turn.started THEN picture END AS picture
+           FROM message, turn WHERE conversation_id = :id ORDER BY id""",
         {"id": conversation_id, "results": results},
     ).fetchall()
     return [dict(row) | {"tool_calls": json.loads(row["tool_calls"] or "[]")} for row in rows]
@@ -275,8 +277,8 @@ def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bo
 def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
     """The conversation as the chat shows it: the person's turns, and each agent turn as one
     entry with its parts in order (its text, and the tool calls that ran: each its label, note,
-    status and the images it found, {"project_id", "media_ids"}), how it ended, and the tokens its
-    model read and wrote in all."""
+    status, the images it found, {"project_id", "media_ids"}, and the picture it gave the model, its
+    address), how it ended, and the tokens its model read and wrote in all."""
     messages = _messages(conn, conversation_id)
     answers = {m["tool_call_id"]: m for m in messages if m["role"] == "tool"}
     result: list[dict] = []
@@ -293,12 +295,28 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
             for answer in filter(None, (answers.get(call["id"]) for call in m["tool_calls"])):
                 turn["parts"].append({"kind": "tool", "label": answer["label"] or "", "note": answer["note"] or "",
                                       "status": answer["status"],
-                                      "images": json.loads(answer["images"]) if answer["images"] else None})
+                                      "images": json.loads(answer["images"]) if answer["images"] else None,
+                                      "picture": picture_url(answer["id"]) if answer["has_picture"] else None})
             turn["status"], turn["error"] = m["status"], m["error"]
             turn["agent"], turn["model"] = m["agent"] or turn["agent"], m["model"] or turn["model"]
             turn["tokens_in"] += m["tokens_in"] or 0
             turn["tokens_out"] += m["tokens_out"] or 0
     return result
+
+
+def picture_url(message_id: int) -> str:
+    """Where the picture a tool call gave the model is shown (routes/agent.py)."""
+    return f"/agent/pictures/{message_id}"
+
+
+def _seen(pictures: list[tuple[str, bytes]]) -> dict:
+    """The pictures this turn's tool calls gave the model, as a message of the person's: the API
+    takes images there, not in a tool's result."""
+    parts = [{"type": "text", "text": "(Not from the person: the pictures you asked to look at, in order: "
+              + "; ".join(what for what, _ in pictures) + ". Go on with what they asked.)"}]
+    parts += [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()}}
+              for _, jpeg in pictures]
+    return {"role": "user", "content": parts}
 
 
 def _on_page(message: dict, current: bool) -> str:
@@ -323,6 +341,7 @@ def _arguments(text: str) -> str:
 
 
 LONG = 200  # characters of an argument an earlier call keeps; a longer one (code, a file) is left out
+PICTURES = 4  # pictures of this turn the model gets at most, the latest; it read the others in their round
 
 
 def _shortened(text: str) -> str:
@@ -339,11 +358,14 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
     The model works with a whole result only in the turn it comes in. An earlier turn's calls keep
     what they were called on and what came out (their note): what the model concluded is in its
     reply, data that has to last is in its folder's files, and it can call again. So a long chat
-    doesn't push its start (the instructions) out of a small context."""
+    doesn't push its start (the instructions) out of a small context. Pictures tools gave go only
+    with this turn, its latest PICTURES."""
     messages = _messages(conn, conversation_id, results=True)
     answered = {m["tool_call_id"] for m in messages if m["role"] == "tool"}
     this_turn = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=0)
+    latest = {m["id"] for m in [m for m in messages if m["picture"]][-PICTURES:]}
     history = [{"role": "system", "content": system_prompt(agent)}]
+    pictures: list[tuple[str, bytes]] = []  # sent after the results of the calls that gave them
     for i, m in enumerate(messages):
         earlier = i < this_turn
         if m["role"] == "user":
@@ -363,6 +385,11 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
         else:
             content = f"(An earlier result, shortened) {m['note'] or m['status']}" if earlier else m["content"]
             history.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": content})
+            if m["id"] in latest:
+                pictures.append((m["note"], m["picture"]))
+            if pictures and (i + 1 == len(messages) or messages[i + 1]["role"] != "tool"):
+                history.append(_seen(pictures))  # after the last result of these calls
+                pictures = []
     return history
 
 
@@ -477,7 +504,7 @@ def run_turn(
     was left; `about`: what that page showed, in its own words) to the conversation's agent and yield what happens, for the chat to show as it streams:
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
-      {"type": "tool", "id", "label", "status": "running" | "done" | "error", "note", "images"}
+      {"type": "tool", "id", "label", "status": "running" | "done" | "error", "note", "images", "picture"}
       {"type": "call", "id", "name", "delta": "..."}        a tool call's arguments as the model writes them
       {"type": "output", "text": "..."}                     what the running tool prints (run_code)
       {"type": "progress", "done": 3, "total": 10}          how far the running tool is
@@ -549,7 +576,7 @@ def run_turn(
                 messages = _history(conn, conversation_id, agent)
                 try:
                     for chunk in _streamed(lambda: model_client.chat.completions.create(
-                            model=model.model, messages=messages, tools=agent_tools.schemas(), stream=True,
+                            model=model.model, messages=messages, tools=agent_tools.schemas(model.sees_images), stream=True,
                             stream_options={"include_usage": True}), stop):
                         usage = chunk.usage or usage
                         if not chunk.choices:
@@ -599,26 +626,26 @@ def run_turn(
                     yield {"type": "tool", "id": call["id"], "label": label, "status": "running"}
                     try:
                         # What it shows while it works (run_code's output), then its result.
-                        (result, note, images), status, error = \
-                            (yield from agent_tools.call(conn, call["name"], call["arguments"])), "done", None
+                        outcome, status, error = (yield from agent_tools.call(conn, call["name"], call["arguments"])), "done", None
                     except Exception as exc:  # the model sees the error and can correct itself
                         error = str(exc)
-                        result, note, images, status = json.dumps({"error": error}), error.partition("\n")[0], None, "error"
+                        outcome, status = agent_tools.Outcome(json.dumps({"error": error}), error.partition("\n")[0]), "error"
                     with conn:
-                        conn.execute(
+                        answer_id = conn.execute(
                             "INSERT INTO message (conversation_id, role, content, tool_call_id, status, error, label, note, "
-                            "images) VALUES (?, 'tool', ?, ?, ?, ?, ?, ?, ?)",
-                            (conversation_id, result, call["id"], status, error, label, note,
-                             json.dumps(images) if images else None),
-                        )
-                    yield {"type": "tool", "id": call["id"], "label": label, "status": status, "note": note, "images": images}
+                            "images, picture) VALUES (?, 'tool', ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (conversation_id, outcome.result, call["id"], status, error, label, outcome.note,
+                             json.dumps(outcome.images) if outcome.images else None, outcome.picture),
+                        ).lastrowid
+                    yield {"type": "tool", "id": call["id"], "label": label, "status": status, "note": outcome.note,
+                           "images": outcome.images, "picture": picture_url(answer_id) if outcome.picture else None}
                     if stop.is_set():  # the tools after it don't run, and the model isn't asked again
                         yield stopped(tool_calls[:ran + 1])
                         return
                     if status != "done":
                         continue
                     found = agent_tools.TOOLS[call["name"]]
-                    if found.opens and "open" in (opened := json.loads(result)):
+                    if found.opens and "open" in (opened := json.loads(outcome.result)):
                         yield {"type": "open", "url": opened["open"]}
                     elif agent_tools.writes(call["name"], call["arguments"]):
                         yield {"type": "changed"}

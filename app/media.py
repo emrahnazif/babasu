@@ -110,6 +110,23 @@ def _thumbnail(image: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
+PICTURE_SIZE = 768  # pixels a picture for a model is at most on its longer side: enough to judge, few tokens
+
+
+def picture(path: Path, box: tuple[float, float, float, float] | None = None) -> bytes:
+    """An image, or a part of it (box: x1, y1, x2, y2 in its pixels), scaled to fit PICTURE_SIZE, as
+    a JPEG: what a model is shown."""
+    image = Image.open(path)
+    if box is None:
+        image.draft("RGB", (PICTURE_SIZE, PICTURE_SIZE))  # decoded small, as for thumbnails
+    else:
+        image = image.crop(box)
+    image.thumbnail((PICTURE_SIZE, PICTURE_SIZE))
+    buffer = io.BytesIO()
+    image.convert("RGB").save(buffer, format="JPEG", quality=85)
+    return buffer.getvalue()
+
+
 def _write(path: Path, data: bytes) -> None:
     """Write via a temporary file, so a crash never leaves a half-written file."""
     path.parent.mkdir(parents=True, exist_ok=True)

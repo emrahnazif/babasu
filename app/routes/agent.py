@@ -60,6 +60,16 @@ def step_images(request: Request, conn: DB, project_id: int, media_ids: Annotate
     return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": shown})
 
 
+@router.get("/agent/pictures/{message_id}")
+def step_picture(message_id: int, conn: DB) -> Response:
+    """The picture a step of the agent gave its model (a crop it looked at), shown in that step."""
+    row = conn.execute("SELECT picture FROM message WHERE id = ? AND picture IS NOT NULL", (message_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "No such picture")
+    # A step's picture never changes, and message ids are never reused: the browser keeps it.
+    return Response(row["picture"], media_type="image/jpeg", headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
 @router.get("/api/agent/turn", response_model=None)
 def follow_turn(conn: DB) -> StreamingResponse | Response:
     """Follow the current conversation's latest turn: its events from the first, then live until it

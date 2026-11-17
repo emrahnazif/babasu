@@ -216,7 +216,7 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
         f"""{_IMAGE_SELECT} WHERE {where} ORDER BY project_media.filename, project_media.media_id LIMIT ? OFFSET ?""",
         (*params, page_size, (page - 1) * page_size),
     ).fetchall()
-    names = _names(project)
+    names = class_names(project)
     matches = _matches(conn, row, filter, [r["media_id"] for r in rows])
     return project | {
         "image_count": image_count,
@@ -281,7 +281,7 @@ def image(conn: sqlite3.Connection, project_id: int, media_id: int, filter: Filt
     ).fetchone()
     project = _project(row)
     matches = _matches(conn, row, filter, [media_id])
-    return _image(found, _names(project), matches and matches[media_id]) | {
+    return _image(found, class_names(project), matches and matches[media_id]) | {
         "project": project,
         "filter": filter.text(),
         "position": int(position),
@@ -296,7 +296,7 @@ _IMAGE_SELECT = """SELECT project_media.media_id, project_media.filename, projec
                    FROM project_media JOIN media ON media.id = project_media.media_id"""
 
 
-def _names(project: dict) -> dict[int, str]:
+def class_names(project: dict) -> dict[int, str]:
     """A project's active classes: id -> name."""
     return {c["id"]: c["name"] for c in project["classes"]}
 
@@ -326,7 +326,7 @@ def images(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> d
     rows = {r["media_id"]: r for r in conn.execute(
         f"{_IMAGE_SELECT} WHERE project_media.project_id = ? AND project_media.media_id IN (SELECT value FROM json_each(?))",
         (project_id, json.dumps(media_ids)))}
-    names = _names(project)
+    names = class_names(project)
     return {"project_id": project_id, "classes": project["classes"],
             "images": [_image(rows[m], names) for m in media_ids if m in rows]}
 
@@ -428,7 +428,7 @@ def stats(conn: sqlite3.Connection, project_id: int, field: str, filter: Filter 
     objects = f"FROM annotation a JOIN project_media ON {_OF_IMAGE} WHERE {where} AND ({condition})"
     params += more
     if field == "class":
-        names = _names(_project(row))
+        names = class_names(_project(row))
         rows = conn.execute(f"SELECT a.class_id, count(*) {objects} GROUP BY a.class_id ORDER BY 2 DESC", params)
         return {"field": field, "counts": [{"class": names[k], "objects": n} for k, n in rows]}
     if field not in STAT_FIELDS:
@@ -602,7 +602,7 @@ def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, an
 DUPLICATE_IOU = 0.9  # an added object whose box overlaps one of its class this much is already there
 
 
-def _box(a: dict) -> tuple[float, float, float, float] | None:
+def corners(a: dict) -> tuple[float, float, float, float] | None:
     """An annotation's box as corners: its bbox, or its polygon's bounds; None without either."""
     if a.get("bbox"):
         x, y, w, h = a["bbox"]
@@ -635,11 +635,11 @@ def add_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, an
     if row is None:
         return None
     objects = json.loads(row["annotations"])
-    boxes = [(a["class_id"], _box(a)) for a in objects]
+    boxes = [(a["class_id"], corners(a)) for a in objects]
     added = 0
     for a in annotations:
         new = a.model_dump(exclude_none=True)
-        box = _box(new)
+        box = corners(new)
         if box and any(c == a.class_id and b and _iou(box, b) >= DUPLICATE_IOU for c, b in boxes):
             continue
         objects.append(new)

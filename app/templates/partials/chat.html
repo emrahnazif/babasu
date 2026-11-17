@@ -13,15 +13,21 @@
 {%- endmacro %}
 
 {# A step the agent takes (a tool call): what it's doing, then what came out (its note, or why it
-   failed), and the images it found under it. Running (spinner), done (check) or error (cross): the
-   icon follows data-status. #}
-{% macro tool_part(label, note, status, shown=none) -%}
+   failed), and under it the images it found, or the picture it looked at. Running (spinner), done
+   (check) or error (cross): the icon follows data-status. #}
+{% macro tool_part(label, note, status, shown=none, picture=none) -%}
   <div class="chat__tool" data-status="{{ status }}">
     <span class="chat__tool-icon" aria-hidden="true"><span class="chat__spinner"></span>{{ icon("check") }}{{ icon("x-mark") }}</span>
     <span class="chat__tool-label">{{ label }}</span>
     <span class="chat__tool-note">{{ note }}</span>
     {%- if shown %}{% include "partials/chat-images.html" %}{% endif %}
+    {%- if picture %}{{ picture_part(picture) }}{% endif %}
   </div>
+{%- endmacro %}
+
+{# The picture a step gave the agent's model, as the model saw it. #}
+{% macro picture_part(src) -%}
+  <div class="chat__picture"><img src="{{ src }}" alt="What the agent looked at" loading="lazy"></div>
 {%- endmacro %}
 
 {# Who wrote an agent turn: the agent's name; on hover its model, and the tokens the model read and
@@ -54,7 +60,7 @@
       {% else %}
         <div class="chat__message chat__message--agent" data-status="{{ turn.status }}">
           {% for part in turn.parts %}
-            {% if part.kind == "text" %}{{ text_part(part.text) }}{% else %}{{ tool_part(part.label, part.note, part.status, part.shown) }}{% endif %}
+            {% if part.kind == "text" %}{{ text_part(part.text) }}{% else %}{{ tool_part(part.label, part.note, part.status, part.shown, part.picture) }}{% endif %}
           {% endfor %}
           {% if turn.status == "error" %}{{ note("error", turn.error) }}{% endif %}
           {% if turn.status == "stopped" %}{{ note("stopped", "Stopped") }}{% endif %}
@@ -85,6 +91,7 @@
   <template id="chat-agent"><div class="chat__message chat__message--agent" data-status="streaming"></div></template>
   <template id="chat-text">{{ text_part("") }}</template>
   <template id="chat-tool">{{ tool_part("", "", "running") }}</template>
+  <template id="chat-picture">{{ picture_part("") }}</template>
   {# While a tool runs (run_code): what it prints, and how far it is (progress(done, total)). #}
   <template id="chat-output"><pre class="chat__output"></pre></template>
   <template id="chat-progress"><div class="progress chat__progress" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"></div></template>

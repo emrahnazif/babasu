@@ -21,6 +21,7 @@ class ModelOut(Answer):
     base_url: str = Field(description=_said(ModelForm, "base_url"))
     model: str = Field(description=_said(ModelForm, "model"))
     has_api_key: bool = Field(description="Whether an API key is saved (keys are never returned).")
+    sees_images: bool = Field(description=_said(ModelForm, "sees_images"))
 
 
 class AgentOut(Answer):

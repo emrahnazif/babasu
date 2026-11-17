@@ -45,7 +45,7 @@ from pydantic import (
 )
 
 from app import code as code_mode  # `code` is run_code's argument
-from app import config, filters, jobs, projects, runs, settings
+from app import config, filters, jobs, media, projects, runs, settings
 from app.filters import Filter
 from app.routes import UI_ONLY
 
@@ -101,6 +101,7 @@ class Tool:
     # The images it found, for the person to see in its row: a project's id and a few media ids.
     shows: Callable[[Args, object], tuple[int, list[int]]] | None = None
     opens: bool = False  # it returns {"open": "/a/page", …}: that page is shown to the person after the reply
+    vision: bool = False  # it gives the model a picture (Seen): offered only to a model that sees images
     # It changes what pages show: the page the person is on reloads after the reply. A function of
     # the arguments for a tool that only sometimes does (call_api: not a GET).
     writes: bool | Callable[[BaseModel], bool] = False
@@ -115,22 +116,31 @@ class ToolError(Exception):
 
 def tool(description: str, args: type[Args], label: str, note: Callable[[Args, object], str] = lambda args, result: "",
          shows: Callable[[Args, object], tuple[int, list[int]]] | None = None, opens: bool = False,
-         writes: bool | Callable[[Args], bool] = False):
+         vision: bool = False, writes: bool | Callable[[Args], bool] = False):
     """Register a function as a tool, under its own name."""
 
     def register(func):
-        TOOLS[func.__name__] = Tool(description, args, func, label, note, shows, opens, writes)
+        TOOLS[func.__name__] = Tool(description, args, func, label, note, shows, opens, vision, writes)
         return func
 
     return register
 
 
-def schemas() -> list[dict]:
-    """The tool list, in the chat completions API's format."""
+def schemas(sees_images: bool) -> list[dict]:
+    """The tool list, in the chat completions API's format; those that give the model a picture
+    only for a model that sees images."""
     return [
         {"type": "function", "function": {"name": name, "description": t.description, "parameters": t.args.model_json_schema()}}
-        for name, t in TOOLS.items()
+        for name, t in TOOLS.items() if sees_images or not t.vision
     ]
+
+
+@dataclass(frozen=True)
+class Seen:
+    """What a tool that looks gives back: its result, and the picture the model looks at (a JPEG)."""
+
+    result: dict
+    picture: bytes
 
 
 @dataclass(frozen=True)
@@ -164,11 +174,21 @@ def label(name: str, arguments: str) -> str:
     return step.strip() if isinstance(step, str) and step.strip() else found.label
 
 
+@dataclass(frozen=True)
+class Outcome:
+    """A call that ran (or failed): its result for the model (JSON text), and what the person sees
+    of it: its note, the images it found ({"project_id", "media_ids"}) and the picture it gave the model."""
+
+    result: str
+    note: str
+    images: dict | None = None
+    picture: bytes | None = None
+
+
 def call(conn: sqlite3.Connection, name: str, arguments: str) -> Iterator[dict]:
     """Run a tool with the model's JSON arguments. Yields what it shows while it works (a tool
     that's a generator: {"type": "output", "text"}, {"type": "progress", "done", "total"});
-    returns its result for the model (JSON text), its note and the images it found ({"project_id",
-    "media_ids"}, or None). Raises ToolError."""
+    returns its Outcome. Raises ToolError."""
     if name not in TOOLS:
         raise ToolError(f"There is no tool named {name!r}.")
     found = TOOLS[name]
@@ -180,9 +200,10 @@ def call(conn: sqlite3.Connection, name: str, arguments: str) -> Iterator[dict]:
     result = found.func(conn, args)
     if inspect.isgenerator(result):
         result = yield from result
+    result, picture = (result.result, result.picture) if isinstance(result, Seen) else (result, None)
     shown = found.shows(args, result) if found.shows else None
     images = {"project_id": shown[0], "media_ids": shown[1]} if shown and shown[1] else None
-    return json.dumps(result, ensure_ascii=False), found.note(args, result), images
+    return Outcome(json.dumps(result, ensure_ascii=False), found.note(args, result), images, picture)
 
 
 def writes(name: str, arguments: str) -> bool:
@@ -692,6 +713,52 @@ def wait_for_job(conn: sqlite3.Connection, args: WaitArgs) -> Iterator[dict]:
     if job is None:
         raise ToolError(f"There is no job {args.job_id}.")
     return job
+
+
+# --- Looking ---
+
+MARGIN = 0.15  # of an object's size, kept around its crop: what's next to it helps to judge it
+
+
+class LookArgs(ProjectArgs):
+    media_id: int = Field(description="The image's id (media_id).")
+    object: int | None = Field(None, ge=0, description="One of its objects to look at closely: its place (#0, #1… "
+                               "in the image's annotations).")
+    box: list[float] | None = Field(None, min_length=4, max_length=4, description="Or a part of it: [x, y, w, h] in pixels.")
+
+
+@tool(
+    "Look at an image of a project, or closely at one of its objects or a part of it, to check what's there: "
+    "whether an object really is what it's labelled, what a model missed. The picture comes after the results.",
+    LookArgs,
+    label="Looking at an image",
+    note=lambda args, seen: seen["looked_at"],
+    vision=True,
+)
+def look_at(conn: sqlite3.Connection, args: LookArgs) -> Seen:
+    found = projects.images(conn, args.project_id, [args.media_id])
+    if not found or not found["images"]:
+        raise ToolError(f"Project {args.project_id} has no image {args.media_id}: an image's id is its media_id, as "
+                        "its page says (/projects/ID/images/MEDIA_ID) and find_images gives them.")
+    image, part = found["images"][0], None
+    what = image["filename"]
+    if args.object is not None:
+        objects = image["annotations"]
+        if args.object >= len(objects):
+            raise ToolError(f"{image['filename']} has no object #{args.object}: its objects are #0 to #{len(objects) - 1}, "
+                            "as its page lists them." if objects else f"{image['filename']} has no objects.")
+        annotation = objects[args.object]
+        what, part = f"{projects.class_names(found)[annotation['class_id']]} (#{args.object}) on {image['filename']}", \
+            projects.corners(annotation)
+    elif args.box:
+        x, y, w, h = args.box
+        what, part = f"part of {image['filename']}", (x, y, x + w, y + h)
+    if part:
+        x1, y1, x2, y2 = part
+        dx, dy = (x2 - x1) * MARGIN, (y2 - y1) * MARGIN
+        part = (max(0, x1 - dx), max(0, y1 - dy), min(image["width"], x2 + dx), min(image["height"], y2 + dy))
+    path = projects.image_file(conn, args.project_id, args.media_id)["path"]
+    return Seen({"looked_at": what}, media.picture(path, part))
 
 
 # --- The docs ---
