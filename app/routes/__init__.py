@@ -1,12 +1,18 @@
 """Route modules (one per area), plus what they share."""
 
+import random
+import sqlite3
 from collections.abc import Iterator
 
 from fastapi import HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-# Not `from app import projects`: in this package that name is the projects route module.
+from app import media
+from app.filters import WHERE, Filter
+
+# Not `from app import projects` (nor runs): in this package those names are route modules.
 from app.projects import PROMPT, Annotation
+from app.runs import found_on, on_project
 
 # The tag of API operations only the app's own pages use (the chat's, uploads): the agent's list
 # of operations leaves them out (agent_tools.operations).
@@ -61,6 +67,51 @@ class AnnotationOut(Answer):
     segments: list[tuple[float, float]] | None = Field(None, description=_said("segments"))
     keypoints: list[KeypointOut] | None = Field(None, description=_said("keypoints"))
     score: float | None = Field(None, description=_said("score"))
+
+
+IMAGES = ("Which images: {\"media_ids\": [...]} (e.g. those attached to a message), {\"project_id\": 3, \"where\": "
+          "\"night\", \"count\": 10} (a project's, matching a filter, some at random), or {\"run_id\": 31, \"found\": "
+          "\"person\"} (those a run found that on); each with its name.")
+
+
+class Images(BaseModel):
+    """Which images, one way: by id; a project's (those matching a filter); or a run's (those it
+    found a class on). Any of them, some at random (count)."""
+
+    model_config = ConfigDict(extra="forbid")
+    media_ids: list[int] | None = Field(None, description="By id, e.g. those attached to a message.")
+    project_id: int | None = Field(None, description="A project's images (with where).")
+    where: str = Field("", max_length=2000, description=WHERE)
+    run_id: int | None = Field(None, description="A run's images (with found: those it found that on).")
+    found: str | None = Field(None, description="With run_id: a class name; only the images the run found it on.")
+    count: int | None = Field(None, ge=1, description="That many of them, picked at random; empty for all.")
+
+    @model_validator(mode="after")
+    def _one_way(self):
+        if sum(given is not None for given in (self.media_ids, self.project_id, self.run_id)) != 1:
+            raise ValueError("Name the images one way: media_ids, project_id (with where) or run_id (with found)")
+        if self.where and self.project_id is None:
+            raise ValueError("where filters a project's images: give project_id with it")
+        if self.found and self.run_id is None:
+            raise ValueError("found picks a run's images: give run_id with it")
+        return self
+
+    def resolve(self, conn: sqlite3.Connection) -> list[dict]:
+        """The images, as media.listed has them (named as their project names them, if they're a
+        project's or a run of one's). ValueError saying why there are none."""
+        project_id = self.project_id
+        if self.media_ids is not None:
+            ids = list(dict.fromkeys(self.media_ids))
+        elif self.project_id is not None:
+            ids = on_project(conn, self.project_id, Filter.parse(self.where))
+        else:
+            project_id, ids = found_on(conn, self.run_id, self.found)
+        if self.count is not None and self.count < len(ids):
+            ids = sorted(random.sample(ids, self.count))
+        images = media.listed(conn, ids, project_id)
+        if missing := sorted(set(ids) - {i["media_id"] for i in images}):
+            raise ValueError(f"No stored images {missing}")
+        return images
 
 
 class ClassOut(Answer):

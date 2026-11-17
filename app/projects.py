@@ -195,6 +195,10 @@ def _count(conn: sqlite3.Connection, where: str, params: list) -> int:
     return conn.execute(f"SELECT count(*) FROM project_media WHERE {where}", params).fetchone()[0]
 
 
+def image_count(conn: sqlite3.Connection, project_id: int) -> int:
+    return _count(conn, "project_media.project_id = ?", [project_id])
+
+
 def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Filter = Filter(),
            page_size: int = PAGE_SIZE) -> dict | None:
     """A project with one page of the images matching `filter` (by file name, `page_size` a page;
@@ -207,9 +211,9 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     counts = annotation_counts(conn, project_id)
     project = _project(row)
     project["classes"] = [c | {"annotation_count": counts.get(c["id"], 0)} for c in project["classes"]]
-    image_count = _count(conn, "project_media.project_id = ?", [project_id])
+    total = image_count(conn, project_id)
     where, params = _where(row, filter)
-    match_count = image_count if filter == Filter() else _count(conn, where, params)
+    match_count = total if filter == Filter() else _count(conn, where, params)
     pages = max(1, math.ceil(match_count / page_size)) if page_size else 1
     page = min(max(page, 1), pages)
     rows = conn.execute(
@@ -219,7 +223,7 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     names = class_names(project)
     matches = _matches(conn, row, filter, [r["media_id"] for r in rows])
     return project | {
-        "image_count": image_count,
+        "image_count": total,
         "labelled_count": _labelled_count(conn, row),
         "filter": filter.text(),
         "match_count": match_count,
@@ -573,6 +577,21 @@ def add_image(
            VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""",
         (project_id, media_id, filename, split, json.dumps([o.model_dump(exclude_none=True) for o in objects])),
     ).rowcount == 1
+    if added:
+        _touch(conn, project_id)
+    return added
+
+
+def add_images(conn: sqlite3.Connection, project_id: int, images: list[dict]) -> int:
+    """Add stored media files to a project without objects, each under its name ({"media_id",
+    "name"}, as media.listed has them); one it has already stays as it is. Returns how many it
+    added. Caller commits. Raises FrozenError."""
+    _editable(conn, project_id)
+    added = conn.execute(
+        """INSERT INTO project_media (project_id, media_id, filename, annotations)
+           SELECT ?, value ->> 'media_id', value ->> 'name', '[]' FROM json_each(?) WHERE true ON CONFLICT DO NOTHING""",
+        (project_id, json.dumps([{"media_id": i["media_id"], "name": i["name"]} for i in images])),
+    ).rowcount
     if added:
         _touch(conn, project_id)
     return added

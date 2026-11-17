@@ -11,7 +11,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_valida
 
 from app import annotators, db, imports, jobs, projects, runs, segment, vision
 from app.filters import WHERE, Filter, FilterError, ObjectCondition, Range
-from app.routes import AnnotationOut, Answer, ClassOut, ToDownload
+from app.routes import IMAGES, AnnotationOut, Answer, ClassOut, Images, ToDownload
 from app.templating import query, templates
 
 router = APIRouter()
@@ -113,10 +113,11 @@ class ProjectFields(BaseModel):
 
 
 class NewProject(ProjectFields):
-    """A new project, with its classes; it gets the annotator suggested for its type."""
+    """A new project, with its classes and images; it gets the annotator suggested for its type."""
 
     model_config = ConfigDict(extra="forbid")
     classes: list[projects.ClassChange] = Field([], description="The kinds of objects to annotate, in order (no ids: all new).")
+    images: Images | None = Field(None, description="Images to start with. " + IMAGES)
 
 
 Prompt = projects.Prompt
@@ -409,9 +410,8 @@ def _duplicate(conn: sqlite3.Connection, project_id: int, name: str | None) -> i
 
 
 def _create(conn: sqlite3.Connection, new: ProjectFields, classes: list[projects.ClassChange]) -> int:
-    """Create the project with its classes. Raises ValueError (see projects.set_classes)."""
-    with conn:
-        return projects.create(conn, new.name, new.description, new.task, annotators.SUGGESTED[new.task], classes)
+    """Create the project with its classes. Raises ValueError (see projects.set_classes). Caller commits."""
+    return projects.create(conn, new.name, new.description, new.task, annotators.SUGGESTED[new.task], classes)
 
 
 def _form_page(request: Request, conn: sqlite3.Connection, project_id: int | None = None,
@@ -466,7 +466,8 @@ def new_project_page(request: Request, conn: DB):
 @router.post("/projects")
 def create_project(request: Request, form: Annotated[ProjectForm, Form()], conn: DB):
     try:
-        project_id = _create(conn, form, form.classes())
+        with conn:
+            project_id = _create(conn, form, form.classes())
     except ValueError as e:
         return _form_page(request, conn, form=form, error=str(e))
     return RedirectResponse(f"/projects/{project_id}", status_code=303)
@@ -661,12 +662,17 @@ def api_project_list(conn: DB) -> list[dict]:
 
 @router.post("/api/projects", status_code=201, response_model=Created)
 def api_create_project(new: NewProject, conn: DB) -> dict:
-    """Creates a project with its classes; it gets the annotator suggested for its type. Returns its id.
-    422 with why if a class is given twice or a colour isn't one."""
+    """Creates a project with its classes and images; it gets the annotator suggested for its type.
+    Returns its id. 422 with why (a class given twice, a colour that isn't one, images that aren't
+    there)."""
     try:
-        return {"id": _create(conn, new, new.classes)}
+        images = new.images.resolve(conn) if new.images else []
+        with conn:
+            project_id = _create(conn, new, new.classes)
+            projects.add_images(conn, project_id, images)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
+    return {"id": project_id}
 
 
 # What an image in the project's answer has: enough to know it and what's in it; with ?annotations=1
@@ -750,28 +756,31 @@ def api_image(project_id: int, media_id: int, conn: DB, where: Where = "") -> di
     return _image(conn, project_id, media_id, Filter.parse(where))
 
 
-class ImageAdd(BaseModel):
-    """An image already stored (in another project or a run) to add to this one."""
+class ImagesAdd(BaseModel):
+    """Stored images to add to this project (attached to a message, another project's, a run's)."""
 
     model_config = ConfigDict(extra="forbid")
-    media_id: int = Field(description="The image's id, e.g. from GET /api/projects/{id} (its media_id).")
-    filename: str = Field(min_length=1, max_length=500, description="Its file name in this project, e.g. the one it has elsewhere.")
-    annotations: list[projects.Annotation] = Field([], description="Its objects here, with this project's class ids.")
+    images: Images = Field(description=IMAGES)
 
 
-@router.post("/api/projects/{project_id}/images", status_code=201)
-def api_add_image(project_id: int, image: ImageAdd, conn: DB) -> dict:
-    """Adds an image that's already stored to the project, with its objects (class ids of this
-    project). The file isn't copied: projects share it. {added: false} if it's there already.
-    422 for an unknown image or class; 409 if the project is frozen."""
-    if conn.execute("SELECT 1 FROM media WHERE id = ?", (image.media_id,)).fetchone() is None:
-        raise HTTPException(422, f"No image {image.media_id}")
+class ImagesAdded(Answer):
+    added: int = Field(description="How many it added.")
+    already_there: int = Field(description="How many the project had already (left as they are).")
+    image_count: int = Field(description="How many images the project has now.")
+
+
+@router.post("/api/projects/{project_id}/images", status_code=201, response_model=ImagesAdded)
+def api_add_images(project_id: int, body: ImagesAdd, conn: DB) -> dict:
+    """Adds stored images to the project, without objects (their files aren't copied: projects
+    share them); one it has already stays as it is. 422 with why (images that aren't there); 409
+    if the project is frozen."""
     try:
+        images = body.images.resolve(conn)
         with _writing(conn, project_id):
-            added = projects.add_image(conn, project_id, image.media_id, image.filename, image.annotations)
+            added = projects.add_images(conn, project_id, images)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    return {"added": added}
+    return {"added": added, "already_there": len(images) - added, "image_count": projects.image_count(conn, project_id)}
 
 
 @router.put("/api/projects/{project_id}/images/{media_id}/annotations", status_code=204)

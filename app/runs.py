@@ -278,15 +278,29 @@ def start(conn: sqlite3.Connection, workflow_id: str | None, media_ids: list[int
     return run_id, launch(conn, run_id, KIND, params, project_id)
 
 
-def on_project(conn: sqlite3.Connection, project_id: int, filter, count: int | None) -> list[int]:
-    """The images of a project a run takes: those matching `filter` (`count` at random). ValueError
-    if there's no such project or none match."""
-    media_ids = projects.sample(conn, project_id, filter, count)
+def on_project(conn: sqlite3.Connection, project_id: int, filter) -> list[int]:
+    """A project's images matching `filter`. ValueError if there's no such project or none match."""
+    media_ids = projects.sample(conn, project_id, filter)
     if media_ids is None:
         raise ValueError(f"There is no project {project_id}")
     if not media_ids:
         raise ValueError("No images match that filter")
     return media_ids
+
+
+def found_on(conn: sqlite3.Connection, run_id: int, found: str | None = None) -> tuple[int | None, list[int]]:
+    """A run's project (None: images given by id) and its images: those it found `found` on (a
+    class name, any case), or all it has results for. ValueError if there's no such run or none."""
+    run = conn.execute("SELECT project_id FROM run WHERE id = ?", (run_id,)).fetchone()
+    if run is None:
+        raise ValueError(f"There is no run {run_id}")
+    media_ids = [r[0] for r in conn.execute(
+        """SELECT DISTINCT media_id FROM run_result r WHERE run_id = :run AND (:found IS NULL OR EXISTS
+           (SELECT 1 FROM json_each(r.objects) WHERE lower(key) = lower(:found))) ORDER BY media_id""",
+        {"run": run_id, "found": found})]
+    if not media_ids:
+        raise ValueError(f"Run {run_id} found no {found}" if found else f"Run {run_id} has no results yet")
+    return run["project_id"], media_ids
 
 
 def _kept(workflow: Workflow) -> dict[str, str]:

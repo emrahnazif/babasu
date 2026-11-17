@@ -8,8 +8,7 @@ from mozo.workflow import WorkflowError
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app import annotators, db, runs, vision
-from app.filters import WHERE, Filter
-from app.routes import AnnotationOut, Answer, ClassOut, ToDownload
+from app.routes import IMAGES, AnnotationOut, Answer, ClassOut, Images, ToDownload
 
 router = APIRouter(prefix="/api")
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -194,22 +193,19 @@ Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 
 
 class NewRun(BaseModel):
-    """A run of a workflow over stored images: `media_ids`, or a project's images (`project_id`,
-    `where`: its filter, `count`: that many at random). `prompts`: what to look for, given to every
-    prompted node (e.g. ["car", "person"]); `overrides`: parameter values as mozo's run takes
-    them, by name or one node's (e.g. {"dino.threshold": 0.4})."""
+    """A run of a workflow over stored images. `prompts`: what to look for, given to every prompted
+    node (e.g. ["car", "person"]); `overrides`: parameter values as mozo's run takes them, by name
+    or one node's (e.g. {"dino.threshold": 0.4})."""
 
     model_config = ConfigDict(extra="forbid")
-    workflow_id: str | None = Field(None, description="The workflow, an id from GET /api/workflows; or give `workflow`.")
+    workflow_id: str | None = Field(None, description="The workflow, an id from GET /api/workflows; empty: the default "
+                                    "one, which finds and outlines what the prompts name; or give `workflow`.")
     workflow: dict[str, Any] | None = Field(None, description="Instead of workflow_id: a workflow not saved yet (its "
                                             "document, as POST /api/workflows takes it), to try it on a few images.")
-    media_ids: list[int] | None = Field(None, description="The images to run on, by id; or give project_id.")
-    where: str = Field("", max_length=2000, description=WHERE)
-    count: int | None = Field(None, ge=1, description="How many of the project's matching images, picked at random; empty for all.")
+    images: Images = Field(description=IMAGES + " A project's run draws with its classes.")
     prompts: list[str] | None = Field(None, description="What to find, as text prompts, e.g. [\"car\", \"person\"]; "
                                       "empty: a project's class prompts.")
     overrides: dict[str, Any] = Field({}, description="Parameter values by name, or one node's, e.g. {\"dino.threshold\": 0.4}.")
-    project_id: int | None = Field(None, description="Run on this project's images (with where and count); its results are drawn with its classes.")
     name: Name | None = Field(None, description="A name for the run; empty for one made from the workflow and the image count.")
 
 
@@ -228,18 +224,14 @@ def _found(run: dict | None) -> dict:
 
 @router.post("/runs", status_code=202, response_model=RunStarted)
 def api_start_run(new: NewRun, conn: DB) -> dict:
-    """Starts a workflow run over images (`media_ids`, or a project's: `project_id`, `where`,
-    `count`), finding `prompts` (a project's class prompts unless given); returns {run_id, job_id,
-    images, downloads_first: the models it downloads before it starts}. Follow the job at
-    /api/jobs/{job_id}, read the results at /api/runs/{run_id}. 422 with why it can't start."""
+    """Starts a workflow run over images, finding `prompts` (a project's class prompts unless
+    given); returns {run_id, job_id, images, downloads_first: the models it downloads before it
+    starts}. Follow the job at /api/jobs/{job_id}, read the results at /api/runs/{run_id}, see them
+    at /runs/{run_id}. 422 with why it can't start."""
     try:
-        media_ids = new.media_ids
-        if media_ids is None:
-            if new.project_id is None:
-                raise ValueError("Give media_ids, or a project_id to run on its images")
-            media_ids = runs.on_project(conn, new.project_id, Filter.parse(new.where), new.count)
-        run_id, job_id = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.project_id, new.name, new.prompts,
-                                    new.workflow)
+        media_ids = [i["media_id"] for i in new.images.resolve(conn)]
+        run_id, job_id = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.images.project_id, new.name,
+                                    new.prompts, new.workflow)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
     return {"run_id": run_id, "job_id": job_id, "images": len(media_ids),

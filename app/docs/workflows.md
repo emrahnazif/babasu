@@ -9,7 +9,8 @@ Workflows are mozo graphs of models and steps; running one over images makes a r
 - The models it needs that aren't downloaded are downloaded first: the run waits for the download.
 
 ## Runs
-- A run is a workflow run over images (a project's, or any by media id), as a background job in the gpu lane.
+- A run is a workflow run over images, as a background job in the gpu lane. Its images: `{"media_ids": [...]}` (e.g. those attached to a message), `{"project_id": 3, "where": "night", "count": 10}`, or `{"run_id": 31, "found": "person"}` (those another run found a person on).
+- With no workflow named, a run runs the default one (the list marks it), which finds and outlines what the prompts name.
 - It finds the prompts given, or the project's class prompts.
 - Its results are per image and per label: the objects found, with class and score. GET /api/runs/ID gives them: per label and class, then per image.
 - An auto-annotate run also adds its objects to the project; other runs only keep their results.
@@ -18,6 +19,6 @@ Workflows are mozo graphs of models and steps; running one over images makes a r
 ## Building one
 1. The nodes it needs: GET /api/workflows/nodes, then ?names= for those in full.
 2. Write it, then check it without saving: POST /api/workflows/check (what it keeps, its models, what's wrong).
-3. Try it on 2–4 images before saving: POST /api/runs with `workflow` (the document) and a project's images (`count`); wait for its job.
+3. Try it on 2–4 images before saving: POST /api/runs with `workflow` (the document) and `images` (`{"project_id": 3, "count": 4}`); wait for its job.
 4. Look at what it found: look with the run_id and an image (drawn), or read GET /api/runs/ID.
 5. Fix and try again; then save it: POST /api/workflows (new) or PUT /api/workflows/ID.

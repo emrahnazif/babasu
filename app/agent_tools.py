@@ -431,7 +431,8 @@ def _change_note(args: ChangeArgs, answer) -> str:
 
 @tool(
     "Change anything the app's pages can: any write of its API, checked as the pages' changes are (a refusal says "
-    "why); History can undo it. The main ones: POST /api/projects (a new project with its classes); PATCH "
+    "why); History can undo it. The main ones: POST /api/projects (a new project with its classes and images); POST "
+    "/api/projects/ID/images (add images: a set of them, as POST /api/runs takes it); PATCH "
     "/api/projects/ID (name, type, annotator); PATCH /api/projects/ID/classes (add, rename, remove classes, e.g. "
     "{\"add\": [{\"name\": \"truck\"}]}); POST /api/projects/ID/annotate (auto-annotate the images matching where, "
     "for its classes or class_ids: a job); POST /api/projects/ID/try (an annotator on a few images, nothing kept); "
