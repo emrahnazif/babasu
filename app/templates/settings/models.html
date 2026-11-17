@@ -15,7 +15,7 @@
                             ("https://api.anthropic.com/v1/", "Anthropic")]),
       ui.input("model", "Model", m.model if m, required=true, placeholder="claude-opus-5-5",
                note="The server's name for the model. It must support tool calling."),
-      ui.input("api_key", "API key", kind="password", autocomplete="off",
+      ui.input("api_key", "API key", type="password", autocomplete="off",
                placeholder="Saved, leave blank to keep it" if m and m.has_api_key else "Not needed for most local servers",
                note="For testing only, keys are saved in plain text in the workspace's settings file."),
       ui.hidden("model_id", m.id) if m,

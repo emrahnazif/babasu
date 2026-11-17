@@ -277,7 +277,7 @@
         ui.input("name", "Name", value="street signs", maxlength=200),
         ui.textarea("description", "Description", maxlength=2000),
         ui.select("task", "Type", [("detection", "Object detection"), ("segmentation", "Segmentation"), ("keypoints", "Keypoint detection"), (none, "Classification (later)")], "detection", id="demo-type"),
-        ui.input("min_score", "Minimum score", kind="number", note="0 keeps everything the auto-annotator finds", min=0, max=1, step=0.05, value=0),
+        ui.input("min_score", "Minimum score", type="number", note="0 keeps everything the auto-annotator finds", min=0, max=1, step=0.05, value=0),
         ui.range("Object width", ["w_min", "w_max"], note="(px)", min=0),
         ui.segmented("edge", "Objects", [("true", "Touching the edge"), ("false", "Not touching")], "true"),
         ui.checkbox("again", "Also images already done for a class"),

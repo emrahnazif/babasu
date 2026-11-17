@@ -1,31 +1,23 @@
 {#
-  The components the app's pages are built from (pages/components.html shows each one).
-
-  A component as JSON is its macro's name and arguments: {"type": "card", "title": "Models",
-  "children": […]} draws as card(title="Models", children=[…]), so render() draws a page given as
-  JSON with these same macros. A container's content is its `children`, or what a page writes
-  between {% call %} and {% endcall %}.
+  The components the app's pages are built from (pages/components.html shows each one). The comment
+  right before each macro says what it draws. A container's content is its `children`, or what a
+  page writes between {% call %} and {% endcall %}.
 
   What a component is given, it shows: to leave a part out, don't give it (an empty text or list
   counts as not given; 0 is a value). An argument it doesn't take is an error.
-
-  The agent's views are built from them too (app/views.py, as `ui`). The comment right before each
-  macro says what it draws: it's what the agent reads about it (views.reference).
 #}
 
 {% from "partials/select.html" import select as _select %}  {# the app's pages call it directly until they're on these #}
 {% set _icon = icon %}  {# the app's icon(), the bare SVG; `icon` here is the component, or a macro's argument #}
 
-{# Anything a component holds: a component as JSON, a list of them (spaced like words, so buttons
-   in a line don't touch; parts not given, e.g. `x if y` when y is false, are left out), or text
-   (escaped, unless it's HTML a macro made). #}
+{# Anything a component holds: text (escaped, unless it's HTML a macro made), a number, or a list
+   of them (spaced like words, so buttons in a line don't touch; parts not given, e.g. `x if y`
+   when y is false, are left out). #}
 {% macro render(content) -%}
   {%- if content is string -%}
     {{ content }}
   {%- elif content is number -%}
     {{ content | number }}
-  {%- elif content is mapping -%}
-    {{ _types[content.type](**dict(content.items() | rejectattr("0", "equalto", "type"))) }}
   {%- elif content is iterable -%}
     {%- for part in content if part is number or part %}{{ render(part) }}{{ " " if not loop.last else "" }}{% endfor -%}
   {%- endif -%}
@@ -55,7 +47,7 @@
 {% macro divider() %}<hr>{% endmacro %}
 
 {# A paragraph; `note` is a quieter line under it (a name, then what it is). Either can hold
-   components too, in the line: ["SAM 3", {"type": "badge", "text": "Built in"}]. `muted`: the
+   components too, in the line: ["SAM 3", badge("Built in")]. `muted`: the
    paragraph is quieter too; `error`: it reports a failure. #}
 {% macro text(text, note=none, muted=false, error=false) -%}
   <p{{ {"class": "error" if error else "muted" if muted} | xmlattr }}>{{ render(text) }}
@@ -193,8 +185,7 @@
 {# An icon (its name, from static/icons) in a muted square, e.g. at the start of a table row. #}
 {% macro icon(name) %}<span class="icon">{{ _icon(name) }}</span>{% endmacro %}
 
-{# A link in a line of text: ["An agent runs on a model:", {"type": "link", "label": "add one",
-   "href": "/settings/models"}]. #}
+{# A link in a line of text: ["An agent runs on a model:", link("add one", "/settings/models")]. #}
 {% macro link(label, href) %}<a href="{{ href }}">{{ label }}</a>{% endmacro %}
 
 {# A list of points, each text or components. #}
@@ -423,16 +414,15 @@
 {# A field's label, its `note` (a hint) after it, quieter. #}
 {% macro _label(label, note) %}{{ label }}{% if note %} <span class="muted">{{ note }}</span>{% endif %}{% endmacro %}
 
-{# A field to type in, with its label. `kind`: text if not given, number, password, search, color…
-   (HTML's type, which JSON can't name here: "type" is the component's); the rest are the field's
-   own (min, max and step for a number). `suggestions`: values offered as it's
+{# A field to type in, with its label. `type`: text if not given, number, password, search, color…;
+   the rest are the field's own (min, max and step for a number). `suggestions`: values offered as it's
    typed, as (value, label) pairs, e.g. servers by name; their list's id is the field's `id`
    (from the name if not given) and "-suggestions". #}
-{% macro input(name, label, value=none, kind=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false, autofocus=false, autocomplete=none, id=none, suggestions=none) -%}
+{% macro input(name, label, value=none, type=none, note=none, placeholder=none, min=none, max=none, step=none, maxlength=none, required=false, autofocus=false, autocomplete=none, id=none, suggestions=none) -%}
   {%- set suggested = (id or "input-" ~ name) ~ "-suggestions" if suggestions -%}
   <label class="field">
     {{ _label(label, note) }}
-    <input{{ {"type": kind, "id": id, "name": name, "value": value, "placeholder": placeholder, "min": min, "max": max, "step": step,
+    <input{{ {"type": type, "id": id, "name": name, "value": value, "placeholder": placeholder, "min": min, "max": max, "step": step,
               "maxlength": maxlength, "required": "required" if required else none, "autofocus": "autofocus" if autofocus else none,
               "autocomplete": autocomplete, "list": suggested} | xmlattr }}>
     {%- if suggestions %}
@@ -552,16 +542,3 @@
     {%- endfor %}
   </div>
 {%- endmacro %}
-
-{# The macro each JSON type draws with. #}
-{% set _types = {
-  "heading": heading, "section": section, "divider": divider, "text": text, "columns": columns,
-  "stack": stack, "grid": grid, "center": center, "region": region, "row": row, "card": card,
-  "button": button, "actions": actions, "badge": badge, "time": time, "icon": icon, "link": link,
-  "code": code, "list": list, "table": table, "annotated": annotated, "gallery": gallery,
-  "tiles": tiles, "image": image, "progress": progress, "stat": stat, "stats": stats, "item": item,
-  "bars": bars, "area": area, "empty": empty, "pagination": pagination, "form": form,
-  "fields": fields, "input": input, "hidden": hidden, "textarea": textarea, "select": select,
-  "segmented": segmented, "range": range, "checkbox": checkbox, "dropzone": dropzone,
-  "dialog": dialog, "menu": menu,
-} %}
