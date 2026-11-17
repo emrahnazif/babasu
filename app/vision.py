@@ -30,8 +30,13 @@ def setup() -> None:
     weights.configure(cache=config.WEIGHTS_DIR)
 
 
-def catalogue(conn) -> list[dict]:
-    """Every model mozo publishes, by family: its task and description, and for each variant
+def tasks() -> list[str]:
+    """What mozo's models do (object_detection, depth_estimation…)."""
+    return sorted({info["task_type"] for info in MODEL_REGISTRY.values()})
+
+
+def catalogue(conn, task: str | None = None, family: str | None = None) -> list[dict]:
+    """Every model mozo publishes (for one task, or one family), by family: its task and description, and for each variant
     its licence, the size of its weights, the bytes still to download for config.DEVICE (the
     weights and their small companions: licence, labels; 0 once downloaded), and its state:
     "downloading" or "loading" (a job is under way), "loaded", "downloaded" or "not downloaded".
@@ -40,12 +45,13 @@ def catalogue(conn) -> list[dict]:
     in_memory = {(m["family"], m["variant"]) for m in loaded()}
     return [
         {
-            "family": family,
+            "family": name,
             "task": info["task_type"],
             "description": info["description"],
-            "variants": [_variant(family, variant, under_way, in_memory) for variant in info["variants"]],
+            "variants": [_variant(name, variant, under_way, in_memory) for variant in info["variants"]],
         }
-        for family, info in MODEL_REGISTRY.items()
+        for name, info in MODEL_REGISTRY.items()
+        if task in (None, info["task_type"]) and family in (None, name)
     ]
 
 

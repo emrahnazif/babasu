@@ -5,7 +5,7 @@ import sqlite3
 from typing import Annotated, Literal
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from mozo import weights
 from pydantic import Field
@@ -21,18 +21,25 @@ DB = Annotated[sqlite3.Connection, Depends(db.get)]
 # --- What the API answers ---
 
 
-class ModelVariant(Answer):
+class VariantListed(Answer):
     variant: str = Field(description="Which of the family's models, e.g. tiny.")
-    license: str = Field(description="Its licence.")
-    size: int = Field(description="Its weights, in bytes.")
-    to_download: int = Field(description="Bytes still to download for this computer (0 once downloaded).")
     state: Literal["not downloaded", "downloading", "downloaded", "loading", "loaded"] = Field(
         description="downloading and loading: a job is under way.")
+    to_download: int = Field(description="Bytes still to download for this computer (0 once downloaded).")
 
 
-class ModelFamily(Answer):
+class ModelVariant(VariantListed):
+    license: str = Field(description="Its licence.")
+    size: int = Field(description="Its weights, in bytes.")
+
+
+class FamilyListed(Answer):
     family: str = Field(description="The model family, e.g. grounding_dino.")
     task: str = Field(description="What it does, e.g. object_detection.")
+    variants: list[VariantListed]
+
+
+class ModelFamily(FamilyListed):
     description: str = Field(description="What it is and how it works, as mozo describes it.")
     variants: list[ModelVariant]
 
@@ -121,10 +128,26 @@ def unload_all():
 # --- API ---
 
 
-@router.get("/api/vision/models", response_model=list[ModelFamily])
-def api_models(conn: DB) -> list[dict]:
-    """Every model mozo publishes, by family, with each variant's licence, size, bytes left to download and state."""
-    return vision.catalogue(conn)
+@router.get("/api/vision/models", response_model=list[FamilyListed])
+def api_models(conn: DB, task: Annotated[str | None, Query(description="Only the models for one task, e.g. object_detection.")] = None) -> list[dict]:
+    """Every model mozo publishes (?task= those for one task), by family, with each variant's state
+    and bytes left to download (a family's answer has what it is, and each variant's licence and
+    size). 422 for a task none is for, naming the tasks."""
+    if task is not None and task not in vision.tasks():
+        raise HTTPException(422, f"No model is for {task!r}; the tasks: {', '.join(vision.tasks())}")
+    return [{"family": f["family"], "task": f["task"],
+             "variants": [{k: v[k] for k in VariantListed.model_fields} for v in f["variants"]]}
+            for f in vision.catalogue(conn, task)]
+
+
+@router.get("/api/vision/models/{family}", response_model=ModelFamily)
+def api_model_family(family: str, conn: DB) -> dict:
+    """One model family: what it is and how it works, its task, and each variant's licence, size,
+    state and bytes left to download."""
+    found = vision.catalogue(conn, family=family)
+    if not found:
+        raise HTTPException(404, "mozo publishes no such model family")
+    return found[0]
 
 
 @router.post("/api/vision/models/{family}/{variant}/download", status_code=202)
