@@ -23,6 +23,7 @@ Training models (mayaku), evaluation, exporting models, COCO import and export o
 - /projects: every project. /projects/new: create one.
 - /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, auto-annotator, classes), Duplicate and Delete.
 - /projects/ID/images/IMAGE_ID: one image in the editor, with its objects and the click tool; stepping to the previous and next image.
+- /runs/ID: a run: what it found per class, and its images with what it found drawn.
 - /workflows: every workflow. /workflows/ID/edit: the builder. /studio: the workflows to use (a workflow's own Studio page isn't built yet).
 - /models: vision models. /jobs/ID: a job and its log. /history: what was done in the last 30 days, with Undo.
 - /settings/general, /settings/models, /settings/agents: the theme, and the language models and agents (you) run on.

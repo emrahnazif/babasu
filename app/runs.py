@@ -451,9 +451,10 @@ def get(conn: sqlite3.Connection, run_id: int) -> dict | None:
 
 
 def found(conn: sqlite3.Connection, run_id: int) -> dict[str, dict[str, dict]]:
-    """What a run found, per label and class: how many objects and their average score."""
+    """What a run found, per label and class: how many objects, on how many images, and their
+    average score."""
     rows = conn.execute(
-        """SELECT r.label, o.key AS name, sum(json_extract(o.value, '$[0]')) AS objects,
+        """SELECT r.label, o.key AS name, sum(json_extract(o.value, '$[0]')) AS objects, count(DISTINCT r.media_id) AS images,
                   round(sum(json_extract(o.value, '$[1]')) / sum(json_extract(o.value, '$[0]')), 3) AS average_score
            FROM run_result r, json_each(r.objects) o
            WHERE r.run_id = ? GROUP BY r.label, name ORDER BY r.label, objects DESC""",
@@ -461,7 +462,8 @@ def found(conn: sqlite3.Connection, run_id: int) -> dict[str, dict[str, dict]]:
     )
     by_label: dict[str, dict[str, dict]] = {}
     for r in rows:
-        by_label.setdefault(r["label"], {})[r["name"]] = {"objects": r["objects"], "average_score": r["average_score"]}
+        by_label.setdefault(r["label"], {})[r["name"]] = {"objects": r["objects"], "images": r["images"],
+                                                          "average_score": r["average_score"]}
     return by_label
 
 

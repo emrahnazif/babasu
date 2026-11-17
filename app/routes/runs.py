@@ -70,6 +70,7 @@ class RunOut(Answer):
 
 class ClassFound(Answer):
     objects: int = Field(description="How many objects of it were found.")
+    images: int = Field(description="On how many images.")
     average_score: float = Field(description="Their average score, 0..1.")
 
 

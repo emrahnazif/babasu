@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% import "components.html" as ui %}
+{# A run (routes/pages.py): what it found per class (per label, when its workflow keeps several),
+   and a page of its images with what it found drawn. While its job runs, the page refreshes when
+   the job ends. #}
+{% set crumbs = [("Runs", None), (run.name, None)] %}
+{% block about %}Run {{ run.name }} (id {{ run.id }}) of {{ workflow }} on {{ run.images | plural("image") }}, {{ run.status or "done" }}.
+{%- for label, classes in run.found.items() %} {{ label }} found: {% for name, c in classes.items() %}{{ name }} {{ c.objects }} (average score {{ c.average_score }}){{ ", " if not loop.last }}{% endfor %}.{% else %} Nothing found yet.{% endfor %}{% endblock %}
+
+{% block content %}
+  <div id="run" data-refresh-on="job-ended" data-refresh-if="id={{ run.job_id }}">
+    {{ ui.text([workflow, "· " ~ run.images | plural("image"), ["· started", ui.time(run.created_at)]], muted=true) }}
+    {% if run.status in ("queued", "running") %}
+      {{ ui.text("Running: the results appear when it's done.", muted=true) }}
+    {% elif run.status == "failed" %}
+      {{ ui.text(["The run failed;", ui.link("its job", "/jobs/" ~ run.job_id), "says why."], error=true) }}
+    {% elif run.status in ("cancelled", "interrupted") %}
+      {{ ui.text("The run was " ~ run.status ~ " before it was done: these are the images it got to.", muted=true) }}
+    {% endif %}
+
+    {% for label, classes in run.found.items() %}
+      {% call ui.section(label if run.found | length > 1) %}
+        {% call ui.stats() %}
+          {% for name, c in classes.items() %}
+            {{ ui.stat(name, c.objects | number, note="on " ~ c.images | plural("image") ~ " · average score " ~ c.average_score | number) }}
+          {% endfor %}
+        {% endcall %}
+      {% endcall %}
+    {% endfor %}
+
+    {% if tiles %}
+      {{ ui.gallery(tiles, classes=run.legend) }}
+      {% if run.pages > 1 %}
+        {{ ui.pagination(run.page, run.pages, previous="?page=" ~ (run.page - 1) if run.page > 1,
+                         next="?page=" ~ (run.page + 1) if run.page < run.pages, note=run.images | plural("image")) }}
+      {% endif %}
+    {% endif %}
+  </div>
+{% endblock %}

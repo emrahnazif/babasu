@@ -1,18 +1,37 @@
 """HTML page routes."""
 
-from fastapi import APIRouter, HTTPException, Request
+import sqlite3
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app import runs
+from app import annotators, db, runs
 from app.templating import templates
 
 router = APIRouter()
+DB = Annotated[sqlite3.Connection, Depends(db.get)]
 
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     """Where the app opens: the way into Studio, the way into making a project, and examples to try."""
     return templates.TemplateResponse(request, "pages/home.html")
+
+
+@router.get("/runs/{run_id}", response_class=HTMLResponse)
+def run_page(request: Request, run_id: int, conn: DB, page: Annotated[int, Query(ge=1)] = 1):
+    """A run: what it found per class, and a page of its images with what it found drawn."""
+    run = runs.results_page(conn, run_id, page, shapes=True)
+    if run is None:
+        raise HTTPException(404, "No such run")
+    run = annotators.annotated(conn, run)
+    workflow = run["workflow_id"] and runs.load(run["workflow_id"])
+    tiles = [{"src": r["thumb_url"], "width": r["width"], "height": r["height"], "annotations": r["annotations"],
+              "caption": (", ".join(f"{name} {n}" for name, n in r["objects"].items()) or "nothing found")
+                         + (f" · {r['filename']}" if run["project_id"] else "")} for r in run["results"]]
+    return templates.TemplateResponse(request, "runs/run.html", {
+        "run": run, "tiles": tiles, "workflow": workflow.name if workflow else run["workflow_id"] or "a workflow not saved"})
 
 
 @router.get("/components", response_class=HTMLResponse)
