@@ -1,4 +1,9 @@
-{# The images a step of the agent found (projects.images): in a saved turn (partials/chat.html) and
-   fetched by chat.js when a step ends (/agent/images). #}
+{# Images in the chat (templating.shown_images): those a step of the agent found, a project's, drawn
+   with their objects; or those the person attached. In a saved turn (partials/chat.html) and
+   fetched by chat.js as the turn goes (/agent/images). #}
+{% import "components.html" as ui %}
 {% from "projects/macros.html" import image_tiles %}
-<div class="chat__images">{{ image_tiles(shown.project_id, shown.images, shown.classes) }}</div>
+<div class="chat__images">
+  {%- if shown.project_id is not none %}{{ image_tiles(shown.project_id, shown.images, shown.classes) }}
+  {%- else %}{{ ui.tiles(shown.tiles) }}{% endif -%}
+</div>

@@ -20,6 +20,13 @@ if (chat) {
   addEventListener("pagehide", () => { leaving = true; });
 
   const clone = (id) => chat.querySelector(`#${id}`).content.firstElementChild.cloneNode(true);
+  // Images in the chat, drawn by the server as in a saved turn (partials/chat-images.html): a
+  // project's (with their objects), or stored ones (no project: those attached).
+  function drawn(mediaIds, projectId) {
+    const query = new URLSearchParams(projectId == null ? {} : { project_id: projectId });
+    for (const mediaId of mediaIds) query.append("media_ids", mediaId);
+    return fetch(`/agent/images?${query}`).then((response) => (response.ok ? response.text() : ""));
+  }
   const atBottom = () => messages.scrollHeight - messages.scrollTop - messages.clientHeight < 24;
 
   // Follow the reply only while the reader is at the bottom; scrolling up to read stops it.
@@ -57,6 +64,12 @@ if (chat) {
     }
 
     return {
+      // The images the person attached, under their message, unless the page has them already
+      // (it was opened mid-reply).
+      attached(mediaIds) {
+        if (turn.previousElementSibling?.classList.contains("chat__images")) return;
+        drawn(mediaIds).then((html) => turn.insertAdjacentHTML("beforebegin", html));
+      },
       text(delta) {
         clearStatus();
         part ??= { element: append(turn, clone("chat-text")), markdown: "" };
@@ -77,14 +90,8 @@ if (chat) {
         shown.textContent = note ?? "";
         shown.classList.toggle("selectable", state === "error"); // why it failed can be copied
         element.dataset.status = state;
-        // The images it found, drawn by the server (partials/chat-images.html) as in a saved turn.
-        if (images) {
-          const query = new URLSearchParams({ project_id: images.project_id });
-          for (const mediaId of images.media_ids) query.append("media_ids", mediaId);
-          fetch(`/agent/images?${query}`)
-            .then((response) => (response.ok ? response.text() : ""))
-            .then((html) => element.insertAdjacentHTML("beforeend", html));
-        }
+        // The images it found.
+        if (images) drawn(images.media_ids, images.project_id).then((html) => element.insertAdjacentHTML("beforeend", html));
         // The picture it gave the model (a crop it looked at), as the model saw it.
         if (picture) {
           const shown = clone("chat-picture");
@@ -206,7 +213,8 @@ if (chat) {
         buffer = lines.pop();
         for (const line of lines.filter(Boolean)) {
           const event = JSON.parse(line);
-          if (event.type === "agent") turn.by(event.agent, event.model);
+          if (event.type === "attached") turn.attached(event.media_ids);
+          else if (event.type === "agent") turn.by(event.agent, event.model);
           else if (event.type === "text") turn.text(event.delta);
           else if (event.type === "tool") {
             heard();
@@ -245,7 +253,8 @@ if (chat) {
     }
   }
 
-  function send(text) {
+  // The message, with the images attached to it (a drop zone's paths, in this form wherever it is).
+  function send(text, paths) {
     empty.hidden = true;
     const user = clone("chat-user");
     user.textContent = text;
@@ -256,7 +265,7 @@ if (chat) {
       headers: { "Content-Type": "application/json" },
       // Where it was written: a chat that starts with this message reopens here.
       body: JSON.stringify({
-        text, page: location.pathname + location.search, page_title: document.title,
+        text, paths, page: location.pathname + location.search, page_title: document.title,
         about: document.querySelector('meta[name="about"]')?.content ?? "",
       }),
     });
@@ -280,8 +289,9 @@ if (chat) {
     }
     const text = input.value.trim();
     if (!text) return;
-    input.value = "";
-    send(text);
+    const paths = new FormData(form).getAll("paths");
+    form.reset(); // empties the field and what's attached
+    send(text, paths);
   });
 
   // Switch this chat's agent; it answers from the next message on.

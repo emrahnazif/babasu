@@ -2,8 +2,10 @@
    Saved turns are rendered here with these macros; the <template>s at the bottom use the same
    macros, and chat.js clones them for a turn that is streaming. One source of markup. #}
 {% from "partials/select.html" import select %}
-{% macro user_message(text) -%}
+{# The person's message, and under it the images they attached (`shown`). #}
+{% macro user_message(text, shown=none) -%}
   <div class="chat__message chat__message--user selectable">{{ text }}</div>
+  {%- if shown %}{% include "partials/chat-images.html" %}{% endif %}
 {%- endmacro %}
 
 {# The agent's text: its markdown, as text; chat.js renders it (js/markdown.js). Rendered in the
@@ -56,7 +58,7 @@
 
     {% for turn in chat.turns %}
       {% if turn.role == "user" %}
-        {{ user_message(turn.text) }}
+        {{ user_message(turn.text, turn.shown) }}
       {% else %}
         <div class="chat__message chat__message--agent" data-status="{{ turn.status }}">
           {% for part in turn.parts %}
@@ -74,8 +76,8 @@
     {% endif %}
   </div>
 
-  <form class="chat__form">
-    <textarea class="chat__input" name="message" placeholder="Ask the agent…" aria-label="Message"></textarea>
+  <form class="chat__form" id="chat-form">
+    <textarea class="chat__input" id="chat-input" name="message" placeholder="Ask the agent…" aria-label="Message"></textarea>
     <div class="chat__bar">
       {% if chat.agents %}
         {# The agent this chat talks to; changing it applies from the next message. #}

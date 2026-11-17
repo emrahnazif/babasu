@@ -1,6 +1,7 @@
 // Drop zone: drag files or folders onto it, or click it to choose files. It knows nothing about
 // what the paths are for: it collects them as hidden form fields named by data-name, so a form
-// receives them like any other field.
+// receives them like any other field: the form it's in, or the one data-form names (by id) when
+// it's elsewhere on the page. That form's reset empties it.
 //   <div class="dropzone" id="…" data-drop-paths data-name="paths" data-accept=".jpg,.png"
 //        role="button" tabindex="0"><p>Drop files or folders here</p><ul></ul></div>
 // Real paths only exist in the desktop window: app/desktop.py sends them as a "paths" event.
@@ -16,6 +17,7 @@ function setUp(zone) {
       if (paths.has(path)) continue;
       paths.add(path);
       const input = Object.assign(document.createElement("input"), { type: "hidden", name: zone.dataset.name, value: path });
+      if (zone.dataset.form) input.setAttribute("form", zone.dataset.form);
       const item = Object.assign(document.createElement("li"), { textContent: path, title: path });
       zone.append(input);
       list.append(item);
@@ -55,7 +57,7 @@ function setUp(zone) {
       choose();
     }
   });
-  zone.closest("form")?.addEventListener("reset", clear);
+  (zone.dataset.form ? document.getElementById(zone.dataset.form) : zone.closest("form"))?.addEventListener("reset", clear);
 }
 
 for (const zone of document.querySelectorAll("[data-drop-paths]")) setUp(zone);

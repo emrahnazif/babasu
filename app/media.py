@@ -87,14 +87,17 @@ def store(conn: sqlite3.Connection, data: bytes, name: str) -> int:
 
 
 def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> None:
-    """Of these media, delete the rows no project or run uses any more. Caller commits.
-    Their files stay while the history can put the rows back; history.purge removes them after."""
+    """Of these media, delete the rows no project, run or chat message (attached) uses any more.
+    Caller commits. Their files stay while the history can put the rows back; history.purge
+    removes them after."""
     if not media_ids:
         return
     conn.execute(
         """DELETE FROM media WHERE id IN (SELECT value FROM json_each(?))
            AND NOT EXISTS (SELECT 1 FROM project_media WHERE media_id = media.id)
-           AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id)""",
+           AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id)
+           AND id NOT IN (SELECT attached.value FROM message, json_each(message.images, '$.media_ids') attached
+                          WHERE message.role = 'user')""",
         (json.dumps(media_ids),),
     )
 
@@ -102,6 +105,17 @@ def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> None:
 # An image's name, in SQL over `media m LEFT JOIN project_media pm` (the project it's seen in, if
 # any): its name there; else its own, the file name it came with; else the start of its sha256.
 NAME = "coalesce(pm.filename, m.name, substr(m.sha256, 1, 12))"
+
+
+def listed(conn: sqlite3.Connection, media_ids: list[int], project_id: int | None = None) -> list[dict]:
+    """These stored images, in the order given (those that are stored): media_id, name (NAME, in
+    the project given), width, height and thumbnail."""
+    rows = {r["id"]: r for r in conn.execute(
+        f"""SELECT m.id, m.sha256, m.width, m.height, {NAME} AS name
+            FROM media m LEFT JOIN project_media pm ON pm.media_id = m.id AND pm.project_id = ?
+            WHERE m.id IN (SELECT value FROM json_each(?))""", (project_id, json.dumps(media_ids)))}
+    return [{"media_id": m, "name": rows[m]["name"], "width": rows[m]["width"], "height": rows[m]["height"],
+             "thumb_url": thumb_url(rows[m]["sha256"])} for m in media_ids if m in rows]
 
 
 def _thumbnail(image: Image.Image) -> bytes:

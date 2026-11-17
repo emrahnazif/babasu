@@ -491,12 +491,12 @@
 {%- endmacro %}
 
 {# Where files and folders are dropped, or clicked to choose files (js/drop-zone.js): their paths
-   become the form's `name` fields. `accept`: the file types (".jpg,.png"); `large`: a big target,
-   when dropping is the page's main action. `id`: unique on the page (the desktop window delivers
-   the paths to it). #}
-{% macro dropzone(id, name, text="Drop files or folders here, or click to choose files", accept=none, large=false) -%}
+   become the form's `name` fields: the form it's in, or the one `form` names (its id) elsewhere
+   on the page. `accept`: the file types (".jpg,.png"); `large`: a big target, when dropping is the
+   page's main action. `id`: unique on the page (the desktop window delivers the paths to it). #}
+{% macro dropzone(id, name, text="Drop files or folders here, or click to choose files", accept=none, large=false, form=none) -%}
   <div class="dropzone{% if large %} large{% endif %}" id="{{ id }}" data-drop-paths data-name="{{ name }}"
-    {{- {"data-accept": accept} | xmlattr }} role="button" tabindex="0">
+    {{- {"data-accept": accept, "data-form": form} | xmlattr }} role="button" tabindex="0">
     <p>{{ text }}</p>
     <ul></ul>
   </div>

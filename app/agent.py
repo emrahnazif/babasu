@@ -18,10 +18,11 @@ import sqlite3
 import threading
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import closing
+from pathlib import Path
 
 import openai
 
-from app import agent_tools, code, config, db, settings
+from app import agent_tools, code, config, db, media, settings
 
 MAX_ROUNDS = 20  # model calls per turn; each round may run tools (work of several steps takes many)
 # Tokens one model call may write, its thinking included: a reply, a script or a workflow fits many
@@ -39,8 +40,8 @@ Answer any question fully, as you would anywhere. In their app you do the work: 
 about their projects, images and runs, with no tool names, API paths or code unless they ask for code.
 
 How you work:
-- Look first. Each message comes with the page it was written on and what's on it ("this project", "these images" \
-are that page's).
+- Look first. Each message comes with the page it was written on and what's on it, and the images attached to it \
+("this project", "these images" are that page's, or those attached).
 - When what's in the images matters, see for yourself: look at them, or at what a run found.
 - A change to many images: say what the preview shows, then change it if they asked for it.
 - A workflow is built in steps, tried on a few images before it's saved: read_docs workflows.
@@ -281,7 +282,7 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
     result: list[dict] = []
     for m in messages:
         if m["role"] == "user":
-            result.append({"role": "user", "text": m["content"]})
+            result.append({"role": "user", "text": m["content"], "images": json.loads(m["images"]) if m["images"] else None})
         elif m["role"] == "assistant":
             if not result or result[-1]["role"] != "agent":
                 result.append({"role": "agent", "parts": [], "status": "done", "error": None, "agent": None, "model": None,
@@ -327,6 +328,20 @@ def _on_page(message: dict, current: bool) -> str:
     return f"(On the page{title}, {message['page']}.)\n\n"
 
 
+NAMED = 20  # attached images named in the line before a message; more are counted
+
+
+def _attached(conn: sqlite3.Connection, message: dict) -> str:
+    """The line the model gets before a message the person attached images to: their ids (what
+    runs and look take) and names (how the person may refer to them)."""
+    if message["role"] != "user" or not message["images"]:
+        return ""
+    ids = json.loads(message["images"])["media_ids"]
+    names = [image["name"] for image in media.listed(conn, ids)]
+    more = f" and {len(names) - NAMED} more" if len(names) > NAMED else ""
+    return f"(Attached: {len(ids)} images, media_ids {ids}: {', '.join(names[:NAMED])}{more}.)\n\n"
+
+
 def _arguments(text: str) -> str:
     """A tool call's arguments as the API takes them back: a JSON object. Ones that aren't (cut
     off, malformed, empty) go as {}, or the server refuses the whole conversation; the call's
@@ -369,7 +384,7 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
     pictures: list[tuple[str, bytes]] = []  # sent after the results of the calls that gave them
     for i, m in enumerate(messages):
         if m["role"] == "user":
-            history.append({"role": "user", "content": _on_page(m, current=i == this_turn) + m["content"]})
+            history.append({"role": "user", "content": _on_page(m, current=i == this_turn) + _attached(conn, m) + m["content"]})
         elif m["role"] == "assistant":
             calls = [c for c in m["tool_calls"] if c["id"] in answered]
             if not m["content"] and not calls:
@@ -432,9 +447,11 @@ def _streamed(open_stream: Callable, stop: threading.Event) -> Iterator:
         left.set()
 
 
-def start_turn(text: str, page: str | None = None, page_title: str | None = None, about: str | None = None) -> Turn:
-    """Send the person's message to the current conversation (started if there is none) and run
-    the turn in its own thread (see run_turn). Busy if that conversation's last turn is still running."""
+def start_turn(text: str, page: str | None = None, page_title: str | None = None, about: str | None = None,
+               files: list[tuple[str, str]] = ()) -> Turn:
+    """Send the person's message to the current conversation (started if there is none), with the
+    image files they attached ((path, name) each), and run the turn in its own thread (see
+    run_turn). Busy if that conversation's last turn is still running."""
     with closing(db.connect()) as conn:
         conversation_id = current_conversation(conn) or new_conversation(conn)
     turn = Turn()
@@ -448,7 +465,7 @@ def start_turn(text: str, page: str | None = None, page_title: str | None = None
 
     def run() -> None:
         try:
-            for event in run_turn(conversation_id, text, turn.stop, page, page_title, about):
+            for event in run_turn(conversation_id, text, turn.stop, page, page_title, about, files):
                 turn.send(event)
         finally:
             turn.send(None)
@@ -496,13 +513,31 @@ async def follow(turn: Turn) -> AsyncIterator[dict]:
                 turn.followers.remove(follower)
 
 
+def _stored(conn: sqlite3.Connection, files: list[tuple[str, str]]) -> dict | None:
+    """The image files the person attached, in the media store (each once, by its content, under
+    its name; one transaction each, as an import, so the database isn't held while they're read),
+    as their message keeps them: {"media_ids"}; None without any. One that turns out not to be a
+    readable image is left out."""
+    ids = []
+    for path, name in files:
+        try:
+            with conn:
+                media_id = media.store(conn, Path(path).read_bytes(), name)
+        except (media.NotAnImage, OSError):
+            continue
+        if media_id not in ids:
+            ids.append(media_id)
+    return {"media_ids": ids} if ids else None
+
+
 def run_turn(
     conversation_id: int, text: str, stop: threading.Event, page: str | None = None, page_title: str | None = None,
-    about: str | None = None,
+    about: str | None = None, files: list[tuple[str, str]] = (),
 ) -> Iterator[dict]:
     """Send the person's message (written on `page`, which the conversation keeps as where it
     was left; `about`: what that page showed, in its own words) to the conversation's agent and yield what happens, for the chat to show as it streams:
-      {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
+      {"type": "attached", "media_ids": [501, 502]}         the images the person attached, stored (first)
+      {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "label", "status": "running" | "done" | "error", "note", "images", "picture"}
       {"type": "call", "id", "name", "delta": "..."}        a tool call's arguments as the model writes them
@@ -517,16 +552,20 @@ def run_turn(
     as stopped. What the turn changes is one action in the history, named by the message.
     """
     with closing(db.connect()) as conn, db.action("agent", text), agent_tools.turn_of(conversation_id, stop) as tools_turn:
+        attached = _stored(conn, files)
         with conn:
             conn.execute(
-                "INSERT INTO message (conversation_id, role, content, page, page_title, about) VALUES (?, 'user', ?, ?, ?, ?)",
-                (conversation_id, text, page, page_title, about),
+                "INSERT INTO message (conversation_id, role, content, page, page_title, about, images) "
+                "VALUES (?, 'user', ?, ?, ?, ?, ?)",
+                (conversation_id, text, page, page_title, about, attached and json.dumps(attached)),
             )
             conn.execute(
                 f"UPDATE conversation SET updated_at = {db.NOW}, title = CASE title WHEN '' THEN ? ELSE title END, "
                 "page = coalesce(?, page), page_title = coalesce(?, page_title) WHERE id = ?",
                 (text[:TITLE_LENGTH], page, page_title, conversation_id),
             )
+        if attached:
+            yield {"type": "attached", "media_ids": attached["media_ids"]}
 
         found = settings.find_agent(conversation_agent(conn, conversation_id))
         who = (found[0].name, found[1].name) if found else (None, None)

@@ -158,6 +158,11 @@
 
 .chat__images .justified { --row-height: 3.5rem; }
 
+.chat__message--user + .chat__images {  /* those the person attached: under their message, at its side */
+  align-self: flex-end;
+  width: 85%;
+}
+
 .chat__picture {  /* the picture a step gave the model, on a line of its own under it, as it is */
   flex-basis: 100%;
   margin-block: var(--space-1);

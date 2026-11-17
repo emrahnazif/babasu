@@ -50,8 +50,8 @@ def agent_chat(request: Request, page_title: str) -> dict:
             page = request.url.path + (f"?{request.url.query}" if request.url.query else "")
             agent.set_page(conn, conversation_id, page, page_name(page_title))
         turns = agent.turns(conn, conversation_id)
-        for part in (part for turn in turns for part in turn.get("parts", []) if part.get("images")):
-            part["shown"] = projects.images(conn, part["images"]["project_id"], part["images"]["media_ids"])
+        for part in (part for turn in turns for part in [turn, *turn.get("parts", [])] if part.get("images")):
+            part["shown"] = shown_images(conn, part["images"])
         agent_id = agent.conversation_agent(conn, conversation_id)
     running = agent.running(conversation_id)
     if running and turns and turns[-1]["role"] == "agent":
@@ -59,6 +59,16 @@ def agent_chat(request: Request, page_title: str) -> dict:
     s = settings.get()
     found = settings.find_agent(agent_id, s)
     return {"turns": turns, "running": running, "agents": s.agents, "agent_id": found[0].id if found else None}
+
+
+def shown_images(conn, images: dict) -> dict | None:
+    """Images a chat message names, as partials/chat-images.html draws them: a step's found images
+    ({"project_id", "media_ids"}: the project's, with their objects), or those the person attached
+    ({"media_ids"}: stored images, no project, as tiles)."""
+    if images.get("project_id") is not None:
+        return projects.images(conn, images["project_id"], images["media_ids"])
+    return {"project_id": None, "tiles": [{"src": i["thumb_url"], "width": i["width"], "height": i["height"], "caption": i["name"]}
+                                          for i in media.listed(conn, images["media_ids"])]}
 
 
 def query(params: dict, **changes) -> str:
