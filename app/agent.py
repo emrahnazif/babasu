@@ -587,8 +587,8 @@ def run_turn(
                             text_parts.append(delta.content)
                             yield {"type": "text", "delta": delta.content}
                         for part in delta.tool_calls or []:
-                            call = calls.setdefault(part.index, {"id": "", "name": "", "arguments": ""})
-                            call["id"] = part.id or call["id"]
+                            # Its id is ours, from the reply's: servers may send none, or the same each round.
+                            call = calls.setdefault(part.index, {"id": f"call_{reply_id}_{part.index}", "name": "", "arguments": ""})
                             if part.function:
                                 call["name"] += part.function.name or ""
                                 call["arguments"] += part.function.arguments or ""
