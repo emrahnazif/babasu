@@ -428,6 +428,22 @@ def _results(conn: sqlite3.Connection, run_id: int, page: int | None = None, sha
             | ({"result": json.loads(r["result"])} if shapes else {}) for r in rows]
 
 
+def finds(conn: sqlite3.Connection, run_id: int, media_id: int) -> dict | None:
+    """What a run found on one image: the image's file name (as _results names it) and its
+    detections, all labels' in order (class_name, confidence, bbox [x1, y1, x2, y2], …); None if
+    the run has no result for the image."""
+    rows = conn.execute(
+        """SELECT coalesce(pm.filename, substr(m.sha256, 1, 12)) AS filename, r.result
+           FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
+           LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
+           WHERE r.run_id = ? AND r.media_id = ? ORDER BY r.label""",
+        (run_id, media_id),
+    ).fetchall()
+    if not rows:
+        return None
+    return {"filename": rows[0]["filename"], "detections": [d for r in rows for d in json.loads(r["result"])["detections"]]}
+
+
 def get(conn: sqlite3.Connection, run_id: int) -> dict | None:
     """The run with all its results, shapes included (see _results)."""
     run = _run(conn, run_id)

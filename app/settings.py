@@ -37,7 +37,7 @@ class Model(BaseModel):
     model: Text  # the server's name for it, e.g. claude-opus-5-5
     # FOR TESTING ONLY the API key is stored here in plain text; it will move to the OS keychain.
     api_key: Text = ""
-    sees_images: bool = False  # it reads images: the agent can look at images and crops
+    sees_images: bool = True  # it reads images: the agent can look at images and crops (on unless turned off)
 
 
 class Agent(BaseModel):

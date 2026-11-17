@@ -87,7 +87,7 @@ testButton.addEventListener("click", async () => {
 });
 
 // --- The agent building this workflow ---
-// While the agent writes a workflow document for this builder (call_api: PUT to it, or POST a new
+// While the agent writes a workflow document for this builder (change: PUT to it, or POST a new
 // one or a check, named as this one; the chat passes what's written so far as "agent:call"), the
 // builder draws it: each node once its id and type are written, each edge once both its nodes are
 // there. It's inert meanwhile. When the reply ends, a save to this workflow that went through
@@ -104,7 +104,7 @@ const nameInput = [...about].find((input) => input.name === "name");
 
 document.addEventListener("agent:call", ({ detail }) => {
   const { method, path, body } = detail.arguments;
-  if (detail.name !== "call_api" || !Array.isArray(body?.nodes) || !["PUT", "POST"].includes(method)) return;
+  if (detail.name !== "change" || !Array.isArray(body?.nodes) || !["PUT", "POST"].includes(method)) return;
   const to = element.dataset.saveTo;
   const saves = Boolean(to) && path === to;
   const mine = saves || (["/api/workflows", "/api/workflows/check"].includes(path) && (!to || body.name === nameInput.value.trim()));

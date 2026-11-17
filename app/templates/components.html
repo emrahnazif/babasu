@@ -484,8 +484,10 @@
 {%- endmacro %}
 
 {# A yes-or-no field: a box to tick, and what ticking it means. #}
-{% macro checkbox(name, label, checked=false, value="true") -%}
-  <label><input type="checkbox" name="{{ name }}" value="{{ value }}"{% if checked %} checked{% endif %}> {{ label }}</label>
+{% macro checkbox(name, label, checked=false) -%}
+  {#- An unticked box sends nothing: the hidden "false" says so; a ticked box's "true" comes after it, and wins. #}
+  <input type="hidden" name="{{ name }}" value="false">
+  <label><input type="checkbox" name="{{ name }}" value="true"{% if checked %} checked{% endif %}> {{ label }}</label>
 {%- endmacro %}
 
 {# Where files and folders are dropped, or clicked to choose files (js/drop-zone.js): their paths

@@ -17,7 +17,7 @@ class ModelForm(BaseModel):
     base_url: str = Field(description="The API's address, e.g. http://localhost:11434/v1 (Ollama).")
     model: str = Field(description="The server's name for the model, e.g. qwen3:8b.")
     api_key: str = Field("", description="The API key, if the server needs one; blank on a change keeps the saved one.")
-    sees_images: bool = Field(False, description="It reads images: the agent can look at images and crops (they're "
+    sees_images: bool = Field(True, description="It reads images: the agent can look at images and crops (they're "
                               "sent to its server).")
 
 

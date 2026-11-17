@@ -108,7 +108,7 @@ IDLE = 30 * 60  # seconds a conversation's process waits for its next run, then 
 
 def _child(pipe, folder: str) -> None:
     """In the child: work in the conversation's folder (its files open by relative paths), and run
-    each piece of code the app sends (a snippet, or a file of the folder) all in one namespace, so
+    each piece of code the app sends all in one namespace, so
     what one run leaves in variables and functions the next can use. Sends what's printed as it's
     printed, then ("done", error): None, or the error with the line it was on (its file, number
     and text). Ends after IDLE seconds without a run."""
@@ -126,8 +126,8 @@ def _child(pipe, folder: str) -> None:
 
     names = {"api": Api(pipe), "Refused": Refused, "progress": progress, "__name__": "__main__"}
     while pipe.poll(IDLE):
-        code, file = pipe.recv()  # file: the folder's file the code was read from; None for a snippet
-        name, shown, error = file or "<code>", -1, None
+        code = pipe.recv()
+        name, shown, error = "<code>", -1, None
         try:
             with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(printed):  # warnings too
                 exec(compile(code, name, "exec"), names)
@@ -137,7 +137,7 @@ def _child(pipe, folder: str) -> None:
             lines = [f.lineno for f in traceback.extract_tb(e.__traceback__) if f.filename == name]
             where = ""
             if lines:
-                where = f"{file + ' ' if file else ''}line {lines[-1]} ({code.splitlines()[lines[-1] - 1].strip()}): "
+                where = f"line {lines[-1]} ({code.splitlines()[lines[-1] - 1].strip()}): "
             error = where + "".join(traceback.format_exception_only(e)).strip()
         printed.flush()
         pipe.send(("done", error))
@@ -170,9 +170,8 @@ class Session:
         self.close()
         return f"{why} Its variables are gone: the next run starts a new process."
 
-    def run(self, code: str, call: Call, stop: threading.Event, timeout: int = TIMEOUT,
-            file: str | None = None) -> Iterator[dict]:
-        """Run the code (read from `file` of the folder, if it was), making its API calls with
+    def run(self, code: str, call: Call, stop: threading.Event, timeout: int = TIMEOUT) -> Iterator[dict]:
+        """Run the code, making its API calls with
         `call` (here, in this thread), for at most `timeout` seconds, or until `stop` is set. Yields what it shows as it
         comes, {"type": "output", "text"} (as much as the agent gets) and {"type": "progress",
         "done", "total"}; returns {output: what it printed (cut when long), error: why it stopped,
@@ -180,16 +179,16 @@ class Session:
         or the turn ended) ends the process: the code would wait for an answer that never comes."""
         self.running = True
         try:
-            return (yield from self._run(code, call, stop, timeout, file))
+            return (yield from self._run(code, call, stop, timeout))
         except BaseException:
             self.close()
             raise
         finally:
             self.running = False
 
-    def _run(self, code: str, call: Call, stop: threading.Event, timeout: int, file: str | None) -> Iterator[dict]:
+    def _run(self, code: str, call: Call, stop: threading.Event, timeout: int) -> Iterator[dict]:
         started = time.monotonic()
-        self._pipe.send((code, file))
+        self._pipe.send(code)
         kept, size = [], 0  # what's printed, up to OUTPUT_SIZE; how much in all
         while True:
             left = timeout - (time.monotonic() - started)

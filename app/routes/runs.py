@@ -100,7 +100,7 @@ class RunDetail(RunOut):
 
 class RunStarted(Answer):
     run_id: int
-    job_id: int = Field(description="Follow it at /api/jobs/{job_id} (or wait_for_job).")
+    job_id: int = Field(description="Follow it at /api/jobs/{job_id}.")
     images: int = Field(description="How many images it runs on.")
     downloads_first: list[ToDownload] = Field(description="The models it downloads before it starts.")
 

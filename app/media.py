@@ -113,10 +113,9 @@ def _thumbnail(image: Image.Image) -> bytes:
 PICTURE_SIZE = 768  # pixels a picture for a model is at most on its longer side: enough to judge, few tokens
 
 
-def picture(path: Path, box: tuple[float, float, float, float] | None = None) -> bytes:
-    """An image, or a part of it (box: x1, y1, x2, y2 in its pixels), scaled to fit PICTURE_SIZE, as
-    a JPEG: what a model is shown."""
-    image = Image.open(path)
+def picture(image: Image.Image, box: tuple[float, float, float, float] | None = None) -> bytes:
+    """An image (opened, or drawn on), or a part of it (box: x1, y1, x2, y2 in its pixels), scaled
+    to fit PICTURE_SIZE, as a JPEG: what a model is shown."""
     if box is None:
         image.draft("RGB", (PICTURE_SIZE, PICTURE_SIZE))  # decoded small, as for thumbnails
     else:

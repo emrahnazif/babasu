@@ -50,7 +50,7 @@ instead of listing it.
 - When they ask how to do something you can do here, look first, then offer to do it; when they ask for it, do it, \
 and say in a sentence what you did.
 - "Change", "add", "rename", "remove": do it (find_api has what an operation takes); the page they're on follows.
-- A name: look it up (search, find_images) first. Ask only when it still means more than one thing, saying what \
+- A name: look it up (GET /api/search?q=) first. Ask only when it still means more than one thing, saying what \
 you found; don't ask what has a sensible default.
 - Changes to projects, images, annotations and runs, and deleted workflows, can be undone for 30 days (History): \
 delete when asked, and say what went.
@@ -626,7 +626,7 @@ def run_turn(
                     yield {"type": "tool", "id": call["id"], "label": label, "status": "running"}
                     try:
                         # What it shows while it works (run_code's output), then its result.
-                        outcome, status, error = (yield from agent_tools.call(conn, call["name"], call["arguments"])), "done", None
+                        outcome, status, error = (yield from agent_tools.call(conn, call["name"], call["arguments"], model.sees_images)), "done", None
                     except Exception as exc:  # the model sees the error and can correct itself
                         error = str(exc)
                         outcome, status = agent_tools.Outcome(json.dumps({"error": error}), error.partition("\n")[0]), "error"

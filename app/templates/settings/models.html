@@ -19,7 +19,7 @@
                placeholder="Saved, leave blank to keep it" if m and m.has_api_key else "Not needed for most local servers",
                note="For testing only, keys are saved in plain text in the workspace's settings file."),
       ui.checkbox("sees_images", "It reads images: the agent can look at images and crops, sent to its server",
-                  checked=m.sees_images if m),
+                  checked=m.sees_images if m else true),
       ui.hidden("model_id", m.id) if m,
     ]) }}
     <p class="muted" data-test-result aria-live="polite"></p>

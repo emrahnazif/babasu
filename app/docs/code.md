@@ -1,7 +1,7 @@
 # Code
 How to write Python for run_code: the api client, paging through a project's images, and worked examples.
 
-Use run_code for what one API call doesn't do: going through many images, changing many objects at once, combining projects. For one change, call_api is simpler.
+Use run_code for what the API doesn't do in one call: going through many images, measuring and comparing, a change no operation makes. For one read or change, read and change are simpler; for changing many images that match a filter, POST /api/projects/ID/changes.
 
 ## The client
 - `api.get(path)`, `api.post(path, body)`, `api.put(path, body)`, `api.patch(path, body)`, `api.delete(path)`: any /api operation (find_api finds one and what it takes). Each returns the JSON answer (None when there's none); find_api shows what an operation takes and the fields of its answer, so look there before writing code that reads one.
@@ -14,12 +14,7 @@ Use run_code for what one API call doesn't do: going through many images, changi
 - `progress(done, total)` shows a bar in the chat while a long loop runs; what you print shows there as it's printed.
 
 ## Your folder
-Each chat has a folder of its own, and your code runs in it: files open by relative paths. A `.py` file run with `file` runs like code, in the same process: the functions and variables it makes are there for the next runs, and running it again after an edit makes them anew. Keep your work there:
-- scripts you'll run again or change (write_file, then run_code with `file`; edit_file to change a line),
-- what a step finds, saved by your code (`json.dump(misses, open("results/misses.json", "w"))`),
-- drafts (workflows) before they're saved.
-
-list_files shows what's there; read_file reads a file in parts (to check it, not to copy data from it: read data in code).
+Each chat has a folder of its own, and your code runs in it: files open by relative paths. The functions and variables a run makes are there for the next runs. Keep there what a step finds (`json.dump(misses, open("results/misses.json", "w"))`) and drafts (workflows) before they're saved; read them back the same way.
 
 The folder is yours, not the app's: projects, images, annotations and runs change only through `api`, so the app shows them and History can undo them.
 
@@ -27,7 +22,7 @@ The folder is yours, not the app's: projects, images, annotations and runs chang
 Your runs in a chat share one Python process, so what a run leaves in variables the next run has; files stay for good (variables go when the process stops). A long request is done in steps, each on what the last one left:
 
 1. Read and compute: save what you'll need (a variable, and a file in `results/`), and print what you need to decide and the checks (how many read, matched, left out), never the data itself.
-2. Look and decide: show a few of them (show_images), think, choose the next step.
+2. Look and decide: look at a few of them, think, choose the next step.
 3. Go on with what the last step saved: no copying ids or numbers out of what was printed.
 
 A run that's stopped (time) or crashes ends the process, and so do 30 minutes without a run: its variables are gone; read the files again and go on.

@@ -114,7 +114,7 @@ if __name__ == "__main__":
 
     script = Script([
         [text("I'll check this project's labelled images."),
-         call(0, "c1", "find_images", '{"step": "Finding labelled images", "project_id": 9, "where": "labelled"}'),
+         call(0, "c1", "read", '{"step": "Finding labelled images", "path": "/api/projects/9?where=labelled"}'),
          call(1, "c2", "run_code", '{"step": "Counting objects per class", "code": "print(\\"car 41, person 12\\")"}')],
         [text("19 of the 24 images are labelled: **41 cars** and **12 people**.")],
     ])
