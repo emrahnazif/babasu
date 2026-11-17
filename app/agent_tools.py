@@ -539,13 +539,20 @@ class PageArgs(Args):
     opens=True,
 )
 def show(conn: sqlite3.Connection, args: PageArgs) -> dict:
-    return {"open": args.path, "title": _page_title(args.path)}
+    path = _page_path(args.path)
+    return {"open": path, "title": _page_title(path)}
+
+
+def _page_path(path: str) -> str:
+    """The page the agent means: as given, or the one an API path's data is shown on (/api/projects/3
+    is /projects/3, as _api_path reads a page's data); a missing first / added."""
+    return ("/" + path.strip().lstrip("/")).removeprefix("/api") or "/"
 
 
 def _page_title(path: str) -> str:
     """The title of the app's page at `path`, rendered as the browser would get it: checks it shows.
     ToolError if there's no such page."""
-    if not path.startswith("/") or path.startswith(("//", "/api/", "/static/")):
+    if path.startswith(("//", "/static/")):
         raise ToolError(f"{path!r} isn't a page of the app: give its path, e.g. /projects/3")
     response = _client.get(path, follow_redirects=False)
     if response.status_code != 200 or not response.headers.get("content-type", "").startswith("text/html"):
