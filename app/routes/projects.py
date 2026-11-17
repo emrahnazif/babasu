@@ -231,9 +231,17 @@ class Counted(ProjectOut):
     labelled_count: int = Field(description="How many of them have at least one object.")
 
 
-class ProjectListed(Counted):
+class ProjectListed(Answer):
+    """A project in the list: what tells it apart and its counts (GET /api/projects/{id} has the rest)."""
+
+    id: int = Field(description="The project's id.")
+    name: str
+    task: projects.Task = Field(description=TASK)
+    image_count: int = Field(description="How many images it has.")
+    labelled_count: int = Field(description="How many of them have at least one object.")
     class_count: int = Field(description="How many classes it has.")
-    covers: list[str] = Field(description="Thumbnail URLs of its first few images.")
+    root_id: int | None = Field(description="The project this is a version of; null for an original.")
+    frozen_at: str | None = Field(description="When it was frozen (a frozen project never changes); null if it isn't.")
 
 
 class ImageListed(Answer):
@@ -643,8 +651,8 @@ def api_search(conn: DB, q: Annotated[str, Query(min_length=1, description="Part
 @router.get("/api/projects", response_model=list[ProjectListed], response_model_exclude_unset=True)
 def api_project_list(conn: DB) -> list[dict]:
     """Every project, most recently changed first: id, name, type, how many images, how many of them
-    labelled and how many classes, and thumbnails of its first images."""
-    return projects.list_all(conn)
+    labelled and how many classes, whether it's a version or frozen."""
+    return [{k: p[k] for k in ProjectListed.model_fields} for p in projects.list_all(conn)]
 
 
 @router.post("/api/projects", status_code=201, response_model=Created)
