@@ -573,8 +573,8 @@ def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
 
 
 @tool(
-    "Open a page of the app for the person, once you've answered. When they ask to see, show, open or find "
-    "something, open its page: it shows it better than a list in your reply. Something named: find it first "
+    "Open a page of the app for the person, once you've answered: when they ask to see or open something, or it's "
+    "what you're building (the workflow you're changing); anything else, link in your reply. Something named: find it first "
     "(search, find_images), its page is in what they return. The pages: /projects (all projects), "
     "/projects/new (create one), /projects/ID (its images; ?where=FILTER for some of them), "
     "/projects/ID/images/IMAGE_ID (one image with its objects), /projects/ID/edit (its settings: name, type, "
@@ -656,7 +656,7 @@ def find_images(conn: sqlite3.Connection, args: FilterArgs) -> dict:
 
 
 @tool(
-    "Show the person a project's images matching a filter: their project page opens with it once you've answered, "
+    "When they ask to see a project's images matching a filter: their project page opens with it once you've answered, "
     "where they see it as chips they can change. Say in a few words what you're showing.",
     FilterArgs,
     label="Showing images",
