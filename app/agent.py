@@ -39,7 +39,7 @@ unless they ask you for code.
 
 How you work here:
 - Their data first: before you advise on it or act on it, look at it. Each message starts with the page it was \
-written on, and that page's data is at the same path under /api (/projects/3/images/42 → \
+written on and what's on it; that page's data is at the same path under /api (/projects/3/images/42 → \
 /api/projects/3/images/42); "this image", "this project", "these" are that page's. find_api finds any other \
 operation of the API and what it takes.
 - When they ask how to do something you can do here, look first, then offer to do it; when they ask for it, do it, \
@@ -260,7 +260,7 @@ def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bo
     """The conversation's messages in order, tool calls parsed. Tool results can be large and only
     the model reads them, and only this turn's (`results`); the others are left out."""
     rows = conn.execute(
-        """SELECT role, tool_calls, tool_call_id, status, error, label, note, images, agent, model, page, page_title,
+        """SELECT role, tool_calls, tool_call_id, status, error, label, note, images, agent, model, page, page_title, about,
                   CASE WHEN role = 'tool' AND NOT (:results AND id > (
                       SELECT max(id) FROM message WHERE conversation_id = :id AND role = 'user'))
                   THEN '' ELSE content END AS content
@@ -295,11 +295,15 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
     return result
 
 
-def _on_page(message: dict) -> str:
-    """The line the model gets before a message of the person's: the page it was written on."""
+def _on_page(message: dict, current: bool) -> str:
+    """The line the model gets before a message of the person's: the page it was written on, and
+    for the current one what that page showed (its own words, templates' `about` block)."""
     if not message["page"]:
         return ""
-    return f'(On the page "{message["page_title"]}": {message["page"]})\n\n'
+    if current and message["about"]:
+        return f"(On the page {message['page']}: {message['about']})\n\n"
+    title = f' "{message["page_title"]}"' if message["page_title"] else ""
+    return f"(On the page{title}, {message['page']}.)\n\n"
 
 
 def _arguments(text: str) -> str:
@@ -337,7 +341,7 @@ def _history(conn: sqlite3.Connection, conversation_id: int, agent: settings.Age
     for i, m in enumerate(messages):
         earlier = i < this_turn
         if m["role"] == "user":
-            history.append({"role": "user", "content": _on_page(m) + m["content"]})
+            history.append({"role": "user", "content": _on_page(m, current=i == this_turn) + m["content"]})
         elif m["role"] == "assistant":
             calls = [c for c in m["tool_calls"] if c["id"] in answered]
             if not m["content"] and not calls:
@@ -395,7 +399,7 @@ def _streamed(open_stream: Callable, stop: threading.Event) -> Iterator:
         left.set()
 
 
-def start_turn(text: str, page: str | None = None, page_title: str | None = None) -> Turn:
+def start_turn(text: str, page: str | None = None, page_title: str | None = None, about: str | None = None) -> Turn:
     """Send the person's message to the current conversation (started if there is none) and run
     the turn in its own thread (see run_turn). Busy if that conversation's last turn is still running."""
     with closing(db.connect()) as conn:
@@ -411,7 +415,7 @@ def start_turn(text: str, page: str | None = None, page_title: str | None = None
 
     def run() -> None:
         try:
-            for event in run_turn(conversation_id, text, turn.stop, page, page_title):
+            for event in run_turn(conversation_id, text, turn.stop, page, page_title, about):
                 turn.send(event)
         finally:
             turn.send(None)
@@ -461,9 +465,10 @@ async def follow(turn: Turn) -> AsyncIterator[dict]:
 
 def run_turn(
     conversation_id: int, text: str, stop: threading.Event, page: str | None = None, page_title: str | None = None,
+    about: str | None = None,
 ) -> Iterator[dict]:
     """Send the person's message (written on `page`, which the conversation keeps as where it
-    was left) to the conversation's agent and yield what happens, for the chat to show as it streams:
+    was left; `about`: what that page showed, in its own words) to the conversation's agent and yield what happens, for the chat to show as it streams:
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers (first)
       {"type": "text", "delta": "..."}                      part of the reply
       {"type": "tool", "id", "label", "status": "running" | "done" | "error", "note", "images"}
@@ -480,8 +485,8 @@ def run_turn(
     with closing(db.connect()) as conn, db.action("agent", text), agent_tools.turn_of(conversation_id, stop):
         with conn:
             conn.execute(
-                "INSERT INTO message (conversation_id, role, content, page, page_title) VALUES (?, 'user', ?, ?, ?)",
-                (conversation_id, text, page, page_title),
+                "INSERT INTO message (conversation_id, role, content, page, page_title, about) VALUES (?, 'user', ?, ?, ?, ?)",
+                (conversation_id, text, page, page_title, about),
             )
             conn.execute(
                 f"UPDATE conversation SET updated_at = {db.NOW}, title = CASE title WHEN '' THEN ? ELSE title END, "

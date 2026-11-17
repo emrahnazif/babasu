@@ -3,6 +3,10 @@
 {% from "projects/macros.html" import downloads, image_tiles, no_classes %}
 {% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
+{% block about %}Project {{ project.name }} ({{ project.task }}): {{ project.image_count | plural("image") }}, {{ project.labelled_count | number }} labelled.
+  Classes: {% for c in project.classes %}{{ c.name }} (id {{ c.id }}) {{ c.annotation_count | plural("object") }}{{ ", " if not loop.last }}{% else %}none{% endfor %}.
+  {% if error %}Its filter is refused: {{ error }}{% elif project.filter %}Filtered by {{ project.filter }}: {{ project.match_count | plural("image") }} match.{% endif %}
+  {% if project.pages > 1 %}Page {{ project.page }} of {{ project.pages }}.{% endif %}{% endblock %}
 {% set params = {"where": project.filter} %}  {# these links keep the filter #}
 
 {# Where images come from: files and folders dropped or chosen, or a typed path (local disk or NAS).

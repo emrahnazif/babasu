@@ -10,6 +10,7 @@
 {% set editable = not project.frozen_at and project.classes %}
 {% set main_bleed = true %}
 {% set crumbs = [(project.name, "/projects/" ~ project.id ~ query(params)), (image.filename, None)] %}
+{% block about %}Image {{ image.filename }} of project {{ project.name }}; its objects: {% for name, n in image.objects.items() %}{{ name }} {{ n }}{{ ", " if not loop.last }}{% else %}none{% endfor %}.{% endblock %}
 
 {% macro step(media_id, label, icon_name, key) %}
   {% if media_id %}

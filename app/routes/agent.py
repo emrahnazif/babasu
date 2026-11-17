@@ -28,6 +28,8 @@ class NewMessage(BaseModel):
     # message: page loads record it from then on (templating.agent_chat).
     page: str = "/"
     page_title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
+    # What the page shows, in its own words (base.html's meta "about"), for the agent.
+    about: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] = ""
 
 
 def _stream(turn: agent.Turn) -> StreamingResponse:
@@ -42,7 +44,7 @@ def send_message(message: NewMessage) -> StreamingResponse:
     on this request: dropping it (a page change) leaves the agent answering; follow it again with
     GET /api/agent/turn. Refused (409) while the agent is still answering."""
     try:
-        turn = agent.start_turn(message.text, safe_next(message.page), page_name(message.page_title))
+        turn = agent.start_turn(message.text, safe_next(message.page), page_name(message.page_title), message.about)
     except agent.Busy as exc:
         raise HTTPException(409, str(exc)) from None
     return _stream(turn)

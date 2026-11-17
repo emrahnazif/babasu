@@ -93,10 +93,11 @@ def workspace(script: Script, copy: bool = False):
     return server
 
 
-def turn(message: str, page: str | None = None) -> list[dict]:
-    """Send a message as the chat does and wait for the turn to end: its events."""
+def turn(message: str, page: str | None = None, about: str | None = None) -> list[dict]:
+    """Send a message as the chat does (written on `page`, which showed `about`) and wait for the
+    turn to end: its events."""
     from app import agent
-    running = agent.start_turn(message, page)
+    running = agent.start_turn(message, page, None, about)
     while not running.ended:
         time.sleep(0.02)
     return running.events

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "components.html" as ui %}
 {% set crumbs = [("Jobs", None), (job.title, None)] %}
+{% block about %}Job: {{ job.title }}{{ " for " ~ job.project_name if job.project_name }}, {{ job.status }}{% if job.total %} ({{ job | counted }}){% endif %}{% if job.summary %}: {{ job.summary }}{% endif %}.{% endblock %}
 
 {% block content %}
   {{ ui.text([job.status | capitalize, "· " ~ job.project_name if job.project_name,

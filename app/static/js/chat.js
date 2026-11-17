@@ -240,7 +240,10 @@ if (chat) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // Where it was written: a chat that starts with this message reopens here.
-      body: JSON.stringify({ text, page: location.pathname + location.search, page_title: document.title }),
+      body: JSON.stringify({
+        text, page: location.pathname + location.search, page_title: document.title,
+        about: document.querySelector('meta[name="about"]')?.content ?? "",
+      }),
     });
     follow(request, agentTurn());
   }

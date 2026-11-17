@@ -15,6 +15,9 @@
   {# The window title follows the breadcrumb, current page first: "Street cars · babasu". #}
   {% set names = (trail | map("first") | reverse | list) or ([here.label] if here else []) %}
   <title>{% block title %}{{ (names + [app_name]) | join(" · ") }}{% endblock %}</title>
+  {# What the page shows, in a line or two of its own words (its `about` block): the chat sends it
+     with a message, so the agent knows what "this" and "these" are. #}
+  <meta name="about" content="{% filter striptags | e %}{% block about %}{% endblock %}{% endfilter %}">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='brand/app-icon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='css/main.css') }}">
   <script type="module" src="{{ url_for('static', path='js/sidebar.js') }}"></script>
