@@ -24,6 +24,11 @@ import openai
 from app import agent_tools, code, config, db, settings
 
 MAX_ROUNDS = 20  # model calls per turn; each round may run tools (work of several steps takes many)
+# Tokens one model call may write, its thinking included: a reply, a script or a workflow fits many
+# times over. Without it a server writes until the context is full (Ollama: 131,072 tokens), so a
+# model caught repeating itself keeps the GPU busy for half an hour; this cuts it off (finish_reason
+# "length") in a couple of minutes.
+REPLY_TOKENS = 8_192
 TITLE_LENGTH = 60
 
 # What every agent is told about the app; the agent's own instructions follow.
@@ -572,7 +577,7 @@ def run_turn(
                 try:
                     for chunk in _streamed(lambda: model_client.chat.completions.create(
                             model=model.model, messages=messages, tools=agent_tools.schemas(model.sees_images), stream=True,
-                            stream_options={"include_usage": True}), stop):
+                            max_tokens=REPLY_TOKENS, stream_options={"include_usage": True}), stop):
                         usage = chunk.usage or usage
                         if not chunk.choices:
                             continue
@@ -601,7 +606,8 @@ def run_turn(
                     return
 
                 if ended == "length":  # cut off mid-reply: a tool call in it may be half written
-                    message = f"{model.name} reached its output limit mid-reply. Ask it to go on, or for less at once."
+                    message = (f"{model.name} wrote {REPLY_TOKENS:,} tokens without ending its reply, so it was cut off "
+                               "(it may have been repeating itself). Ask again, or for less at once.")
                     finish("error", message)
                     yield {"type": "error", "message": message}
                     return
