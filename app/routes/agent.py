@@ -39,11 +39,11 @@ class NewMessage(BaseModel):
 def _attached(paths: list[str]) -> list[tuple[str, str]]:
     """The image files the paths name ((path, name) each, a folder's with their subfolders'), for
     the message to attach; 422 saying why if one is missing, isn't an image, or they're too many."""
-    files, missing = imports.find_images(paths)
+    files, others, missing = imports.find_images(paths)
     if missing:
         raise HTTPException(422, f"Not found: {', '.join(missing)}")
-    if others := [name for file, name in files if file.suffix.lower() not in media.SUFFIXES]:
-        raise HTTPException(422, f"Not an image ({media.FORMATS_TEXT}): {', '.join(others)}")
+    if others:
+        raise HTTPException(422, f"Not an image ({media.FORMATS_TEXT}): {', '.join(name for _, name in others)}")
     if len(files) > ATTACHED_AT_MOST:
         raise HTTPException(422, f"That's {len(files):,} images, more than a message takes ({ATTACHED_AT_MOST}): "
                                  "make a project of them (New project, then import them) and ask about it there.")

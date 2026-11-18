@@ -13,20 +13,22 @@ from app import db, jobs, media, projects
 KIND = "import_images"
 
 
-def find_images(paths: list[str]) -> tuple[list[tuple[Path, str]], list[str]]:
-    """The files to import, as (file, name in the project), and the paths that don't exist.
+def find_images(paths: list[str]) -> tuple[list[tuple[Path, str]], list[tuple[Path, str]], list[str]]:
+    """The images the paths name, as (file, name in the project); the files given that aren't
+    images by their name (e.g. notes.txt, or a photo saved without a suffix), the same way; and
+    the paths that don't exist.
 
     A folder contributes its image files and those of its subfolders, named relative to it
     (e.g. "train/0001.jpg"); hidden files and folders are left out (e.g. .DS_Store and the
-    "._name.jpg" files macOS leaves on network drives). A file given directly is always tried.
+    "._name.jpg" files macOS leaves on network drives).
     os.walk gets file types from the directory listing itself and prunes hidden folders before
     entering them: on a NAS each extra look at a file is a network round trip.
     """
-    found, missing = [], []
+    found, others, missing = [], [], []
     for given in paths:
         path = Path(given)
         if path.is_file():
-            found.append((path, path.name))
+            (found if path.suffix.lower() in media.SUFFIXES else others).append((path, path.name))
         elif path.is_dir():
             in_folder = []
             for root, dirs, files in os.walk(path):
@@ -37,13 +39,14 @@ def find_images(paths: list[str]) -> tuple[list[tuple[Path, str]], list[str]]:
             found += [(file, file.relative_to(path).as_posix()) for file in sorted(in_folder)]
         else:
             missing.append(given)
-    return found, missing
+    return found, others, missing
 
 
 @jobs.kind(KIND, lane="io", title="Import images")
 def import_images(ctx: jobs.Context, project_id: int, paths: list[str]) -> dict:
     ctx.advance(0, "Looking for images…")  # the total isn't known yet: the bar is indeterminate
-    files, missing = find_images(paths)
+    images, others, missing = find_images(paths)
+    files = images + others  # a file given directly is tried all the same: its content decides
     for path in missing:
         ctx.log(f"Not found: {path}")
     if not files and missing:
