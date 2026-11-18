@@ -20,12 +20,13 @@ if (chat) {
   addEventListener("pagehide", () => { leaving = true; });
 
   const clone = (id) => chat.querySelector(`#${id}`).content.firstElementChild.cloneNode(true);
-  // Images in the chat, drawn by the server as in a saved turn (partials/chat-images.html): a
-  // project's (with their objects), or stored ones (no project: those attached).
+  // Images drawn by the server as in a saved turn (partials/chat-images.html): those a step found,
+  // a project's (with their objects) or stored ones of no project; or those attached to a message.
+  const html = (url) => fetch(url).then((response) => (response.ok ? response.text() : ""));
   function drawn(mediaIds, projectId) {
     const query = new URLSearchParams(projectId == null ? {} : { project_id: projectId });
     for (const mediaId of mediaIds) query.append("media_ids", mediaId);
-    return fetch(`/agent/images?${query}`).then((response) => (response.ok ? response.text() : ""));
+    return html(`/agent/images?${query}`);
   }
   const atBottom = () => messages.scrollHeight - messages.scrollTop - messages.clientHeight < 24;
 
@@ -64,11 +65,20 @@ if (chat) {
     }
 
     return {
-      // The images the person attached, under their message, unless the page has them already
-      // (it was opened mid-reply).
-      attached(mediaIds) {
-        if (turn.previousElementSibling?.classList.contains("chat__images")) return;
-        drawn(mediaIds).then((html) => turn.insertAdjacentHTML("beforebegin", html));
+      // Storing the images the person attached, before the agent starts: how far it is.
+      storing({ done, total }) {
+        if (total == null) status.textContent = "Storing the images…";
+        else if (done < total) status.textContent = `Storing the images: ${done.toLocaleString("en")} of ${total.toLocaleString("en")}…`;
+        else status.replaceWith((status = clone("chat-status")));
+      },
+      // Those images, under the person's message (the first few); in place of those the page
+      // drew if it was opened while they were being stored.
+      attached(messageId) {
+        html(`/agent/attached/${messageId}`).then((images) => {
+          const drawnBefore = turn.previousElementSibling;
+          if (drawnBefore?.classList.contains("chat__images")) drawnBefore.outerHTML = images;
+          else turn.insertAdjacentHTML("beforebegin", images);
+        });
       },
       text(delta) {
         clearStatus();
@@ -213,7 +223,8 @@ if (chat) {
         buffer = lines.pop();
         for (const line of lines.filter(Boolean)) {
           const event = JSON.parse(line);
-          if (event.type === "attached") turn.attached(event.media_ids);
+          if (event.type === "storing") turn.storing(event);
+          else if (event.type === "attached") turn.attached(event.message_id);
           else if (event.type === "agent") turn.by(event.agent, event.model);
           else if (event.type === "text") turn.text(event.delta);
           else if (event.type === "tool") {

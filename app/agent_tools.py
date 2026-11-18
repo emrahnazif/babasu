@@ -386,7 +386,8 @@ def _read_note(args: ReadArgs, answer) -> str:
     "Read anything in the app: any GET of its API. Answers are short (one too long is refused, saying how to ask "
     "for less). The main ones: /api/projects (every project, with its counts); /api/projects/ID (one, with a page "
     "of its images; ?where=FILTER for some, ?images=0 for the project alone); /api/projects/ID/stats?field=class "
-    "(objects per class); /api/projects/ID/images/MEDIA_ID (one image and its objects); /api/runs, /api/runs/ID "
+    "(objects per class); /api/projects/ID/images/MEDIA_ID (one image and its objects); /api/images?message_id=ID "
+    "(the images attached to a message, or any image set: how many, the first with their ids); /api/runs, /api/runs/ID "
     "(what a run found); /api/workflows; /api/workflows/nodes; /api/jobs; /api/vision/models; /api/search?q=NAME; "
     "/api/history. A page's path works too (/projects/3 reads /api/projects/3); find_api finds any other.",
     ReadArgs,

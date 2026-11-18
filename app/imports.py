@@ -1,4 +1,5 @@
-"""Importing images into a project from files and folders (local disk or NAS), as a background job.
+"""Importing images from files and folders (local disk or NAS), as a background job: into a project,
+or attached to the chat message they were dropped with.
 
 Crash-safe and safe to retry (product.md "Jobs"): each image is stored and added in its own
 transaction, and an image the project already has is skipped, so a retry only does what's left.
@@ -43,7 +44,7 @@ def find_images(paths: list[str]) -> tuple[list[tuple[Path, str]], list[tuple[Pa
 
 
 @jobs.kind(KIND, lane="io", title="Import images")
-def import_images(ctx: jobs.Context, project_id: int, paths: list[str]) -> dict:
+def import_images(ctx: jobs.Context, paths: list[str], project_id: int | None = None, message_id: int | None = None) -> dict:
     ctx.advance(0, "Looking for images…")  # the total isn't known yet: the bar is indeterminate
     images, others, missing = find_images(paths)
     files = images + others  # a file given directly is tried all the same: its content decides
@@ -62,7 +63,9 @@ def import_images(ctx: jobs.Context, project_id: int, paths: list[str]) -> dict:
             try:
                 data = file.read_bytes()
                 with conn:  # one image, one transaction
-                    is_new = projects.add_image(conn, project_id, media.store(conn, data, name), name)
+                    media_id = media.store(conn, data, name)
+                    is_new = (media.attach(conn, message_id, media_id) if project_id is None
+                              else projects.add_image(conn, project_id, media_id, name))
             except (media.NotAnImage, OSError) as exc:
                 skipped += 1
                 ctx.log(f"Skipped {name}: {str(exc) or 'not a readable image'}")
@@ -73,4 +76,4 @@ def import_images(ctx: jobs.Context, project_id: int, paths: list[str]) -> dict:
                     duplicates += 1
             ctx.advance(1, name)
 
-    return {"added": added, "already_in_project": duplicates, "skipped": skipped}
+    return {"added": added, "already_there": duplicates, "skipped": skipped}

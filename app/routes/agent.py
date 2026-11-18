@@ -12,15 +12,14 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
-from app import agent, db, imports, media
+from app import agent, db, media
 from app.routes import UI_ONLY, safe_next
-from app.templating import page_name, shown_images, templates
+from app.templating import attached_images, page_name, shown_images, templates
 
 router = APIRouter(tags=[UI_ONLY])
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
-ATTACHED_AT_MOST = 100  # images a message takes; more are a dataset: a project of them
 
 
 class NewMessage(BaseModel):
@@ -32,22 +31,9 @@ class NewMessage(BaseModel):
     page_title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     # What the page shows, in its own words (base.html's meta "about"), for the agent.
     about: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] = ""
-    # Images attached to it: files and folders on this computer (the drop zone's paths).
-    paths: list[str] = Field([], max_length=ATTACHED_AT_MOST)
-
-
-def _attached(paths: list[str]) -> list[tuple[str, str]]:
-    """The image files the paths name ((path, name) each, a folder's with their subfolders'), for
-    the message to attach; 422 saying why if one is missing, isn't an image, or they're too many."""
-    files, others, missing = imports.find_images(paths)
-    if missing:
-        raise HTTPException(422, f"Not found: {', '.join(missing)}")
-    if others:
-        raise HTTPException(422, f"Not an image ({media.FORMATS_TEXT}): {', '.join(name for _, name in others)}")
-    if len(files) > ATTACHED_AT_MOST:
-        raise HTTPException(422, f"That's {len(files):,} images, more than a message takes ({ATTACHED_AT_MOST}): "
-                                 "make a project of them (New project, then import them) and ask about it there.")
-    return [(str(file), name) for file, name in files]
+    # Images attached to it, however many: files and folders on this computer (the drop zone's paths),
+    # stored as an import (a missing one or a file that isn't an image is in the import's log).
+    paths: list[str] = []
 
 
 def _stream(turn: agent.Turn) -> StreamingResponse:
@@ -63,7 +49,7 @@ def send_message(message: NewMessage) -> StreamingResponse:
     GET /api/agent/turn. Refused (409) while the agent is still answering."""
     try:
         turn = agent.start_turn(message.text, safe_next(message.page), page_name(message.page_title), message.about,
-                                _attached(message.paths))
+                                message.paths)
     except agent.Busy as exc:
         raise HTTPException(409, str(exc)) from None
     return _stream(turn)
@@ -71,13 +57,20 @@ def send_message(message: NewMessage) -> StreamingResponse:
 
 @router.get("/agent/images", response_class=HTMLResponse)
 def step_images(request: Request, conn: DB, media_ids: Annotated[list[int], Query()], project_id: int | None = None):
-    """Images in the chat, drawn (partials/chat-images.html): those a step of the agent found (a
-    project's, with their objects), fetched by chat.js when the step ends; without project_id,
-    those the person attached, when the turn starts."""
+    """The images a step of the agent found, drawn (partials/chat-images.html): a project's, with
+    their objects, or (no project_id) stored ones of no project; fetched by chat.js when the step ends."""
     shown = shown_images(conn, {"project_id": project_id, "media_ids": media_ids})
     if shown is None:
         raise HTTPException(404, "No such project")
     return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": shown})
+
+
+@router.get("/agent/attached/{message_id}", response_class=HTMLResponse)
+def attached_images_part(request: Request, conn: DB, message_id: int):
+    """The images the person attached to a message, drawn (partials/chat-images.html): the first
+    few, and how many more; fetched by chat.js once they're stored."""
+    count = len(media.attached(conn, message_id))
+    return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": attached_images(conn, message_id, count)})
 
 
 @router.get("/agent/pictures/{message_id}")

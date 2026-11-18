@@ -4,7 +4,7 @@ What babasu is, what it does today and what comes later, and its pages.
 babasu is a local computer vision app: everything runs on the person's computer, and their images stay there. A person makes projects (datasets), imports images, annotates them (by hand with a click tool, or with vision models from the class names), filters and measures them, and runs workflows over them. You, the agent, work through the same functions as the app's own pages.
 
 ## What it does today
-- Asking about images without a project: dropped on Home, they go with the next chat message (up to 100; more are a dataset: a project).
+- Asking about images without a project: dropped on Home (files or whole folders, any number), they go with the next chat message, which says how many and names them as an image set (see workflows).
 - Projects with classes; importing images from files and folders (local disk or a network drive).
 - Annotating one image in the editor: changing objects by hand, and the click tool that outlines an object from a click or a box (see annotating); auto-annotating with an auto-annotator (see auto-annotate).
 - Filtering a project's images by what's in them, and measuring them (see filters).

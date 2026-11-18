@@ -29,8 +29,13 @@ READS = "reads"
 
 
 def _query_parameters(dependant) -> Iterator[str]:
-    """The query parameters a route takes, its dependencies' too."""
-    yield from (p.alias for p in dependant.query_params)
+    """The query parameters a route takes, its dependencies' too; a query model's (Images) each."""
+    for param in dependant.query_params:
+        model = param.field_info.annotation
+        if isinstance(model, type) and issubclass(model, BaseModel):
+            yield from (field.alias or name for name, field in model.model_fields.items())
+        else:
+            yield param.alias
     for inner in dependant.dependencies:
         yield from _query_parameters(inner)
 
@@ -154,17 +159,18 @@ def check_writes(openapi: dict) -> None:
         raise RuntimeError(f"Writes that don't answer what they did (a Done response_model): {', '.join(missing)}")
 
 
-IMAGES = ("Which images: {\"media_ids\": [...]} (e.g. those attached to a message), {\"project_id\": 3, \"where\": "
-          "\"night\", \"count\": 10} (a project's, matching a filter, some at random), or {\"run_id\": 31, \"found\": "
-          "\"person\"} (those a run found that on); each with its name.")
+IMAGES = ("Which images: {\"message_id\": 57} (those attached to a message), {\"project_id\": 3, \"where\": "
+          "\"night\", \"count\": 10} (a project's, matching a filter, some at random), {\"run_id\": 31, \"found\": "
+          "\"person\"} (those a run found that on) or {\"media_ids\": [...]}.")
 
 
 class Images(BaseModel):
-    """Which images, one way: by id; a project's (those matching a filter); or a run's (those it
-    found a class on). Any of them, some at random (count)."""
+    """Which images, one way: by id; those attached to a chat message; a project's (those matching a
+    filter); or a run's (those it found a class on). Any of them, some at random (count)."""
 
     model_config = ConfigDict(extra="forbid")
-    media_ids: list[int] | None = Field(None, description="By id, e.g. those attached to a message.")
+    media_ids: list[int] | None = Field(None, description="By id.")
+    message_id: int | None = Field(None, description="Those the person attached to a message of the chat.")
     project_id: int | None = Field(None, description="A project's images (with where).")
     where: str = Field("", max_length=2000, description=WHERE)
     run_id: int | None = Field(None, description="A run's images (with found: those it found that on).")
@@ -173,8 +179,8 @@ class Images(BaseModel):
 
     @model_validator(mode="after")
     def _one_way(self):
-        if sum(given is not None for given in (self.media_ids, self.project_id, self.run_id)) != 1:
-            raise ValueError("Name the images one way: media_ids, project_id (with where) or run_id (with found)")
+        if sum(given is not None for given in (self.media_ids, self.message_id, self.project_id, self.run_id)) != 1:
+            raise ValueError("Name the images one way: media_ids, message_id, project_id (with where) or run_id (with found)")
         if self.where and self.project_id is None:
             raise ValueError("where filters a project's images: give project_id with it")
         if self.found and self.run_id is None:
@@ -189,6 +195,9 @@ class Images(BaseModel):
             ids = list(dict.fromkeys(self.media_ids))
             if missing := sorted(set(ids) - {i["media_id"] for i in media.listed(conn, ids)}):
                 raise ValueError(f"No stored images {missing}")
+        elif self.message_id is not None:
+            if not (ids := media.attached(conn, self.message_id)):
+                raise ValueError(f"Message {self.message_id} has no images attached")
         elif self.project_id is not None:
             ids = on_project(conn, self.project_id, Filter.parse(self.where))
         else:
@@ -202,6 +211,7 @@ class Images(BaseModel):
         project's or a run of one's). ValueError as ids()."""
         project_id, ids = self.ids(conn)
         return media.listed(conn, ids, project_id)
+
 
 class ClassOut(Answer):
     id: int = Field(description="The class's id in its project (what annotations' class_id refers to).")

@@ -96,10 +96,20 @@ def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> None:
         """DELETE FROM media WHERE id IN (SELECT value FROM json_each(?))
            AND NOT EXISTS (SELECT 1 FROM project_media WHERE media_id = media.id)
            AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id)
-           AND id NOT IN (SELECT attached.value FROM message, json_each(message.images, '$.media_ids') attached
-                          WHERE message.role = 'user')""",
+           AND NOT EXISTS (SELECT 1 FROM attachment WHERE media_id = media.id)""",
         (json.dumps(media_ids),),
     )
+
+
+def attach(conn: sqlite3.Connection, message_id: int, media_id: int) -> bool:
+    """Attach a stored image to a chat message; False if it already was. Caller commits."""
+    return conn.execute("INSERT OR IGNORE INTO attachment (message_id, media_id) VALUES (?, ?)", (message_id, media_id)).rowcount == 1
+
+
+def attached(conn: sqlite3.Connection, message_id: int, limit: int = -1) -> list[int]:
+    """The images attached to a chat message, in the order they came (the first `limit`)."""
+    return [row[0] for row in conn.execute("SELECT media_id FROM attachment WHERE message_id = ? ORDER BY rowid LIMIT ?",
+                                           (message_id, limit))]
 
 
 # An image's name, in SQL over `media m LEFT JOIN project_media pm` (the project it's seen in, if

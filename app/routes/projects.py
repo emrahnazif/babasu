@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, Reques
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
-from app import annotators, db, imports, jobs, projects, runs, segment
+from app import annotators, db, imports, jobs, media, projects, runs, segment
 from app.filters import WHERE, Filter, FilterError, ObjectCondition, Range
 from app.formatting import plural
 from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, Started, ToDownload, started
@@ -664,6 +664,30 @@ def _change_done(conn: sqlite3.Connection, change: ProjectChange, changed: dict)
                         "copy_images": ("copy", "Copied", images + to),
                         "move_images": ("move", "Moved", images + to)}[change.action]
     return f"Would {would} {what} (a preview: dry_run false changes it)" if change.dry_run else f"{did} {what}"
+
+
+class StoredImage(Answer):
+    media_id: int = Field(description="The image's id (the same in every project and run that has it).")
+    name: str = Field(description="Its name (as its project names it, for a project's or a run on one).")
+    width: int = Field(description="In pixels.")
+    height: int = Field(description="In pixels.")
+
+
+class ImagesOut(Answer):
+    count: int = Field(description="How many images they are.")
+    images: list[StoredImage] = Field(description=f"The first {projects.PAGE_SIZE} of them.")
+
+
+@router.get("/api/images", response_model=ImagesOut)
+def api_images(images: Annotated[Images, Query()], conn: DB) -> dict:
+    """Images named one way (an image set, e.g. ?message_id=57: those attached to a message): how
+    many, and the first of them, each with its id (what an image's operations take) and name."""
+    try:
+        project_id, ids = images.ids(conn)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
+    return {"count": len(ids), "images": [{field: image[field] for field in StoredImage.model_fields}
+                                          for image in media.listed(conn, ids[:projects.PAGE_SIZE], project_id)]}
 
 
 @router.get("/api/search", response_model=Found)
