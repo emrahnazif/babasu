@@ -26,7 +26,7 @@ import sqlite3
 import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import closing
 from dataclasses import dataclass
 from typing import Literal
@@ -248,6 +248,16 @@ def get(conn: sqlite3.Connection, job_id: int) -> dict | None:
     row = conn.execute(f"{_SELECT} WHERE job.id = ?", (job_id,)).fetchone()
     return _job(row) if row else None
 
+
+
+def watched(conn: sqlite3.Connection, job_id: int, stop: threading.Event, seconds: float | None = None) -> Iterator[dict]:
+    """A job as it goes (every SYNC_INTERVAL, as its progress is written), until it ends (the last
+    one yielded is it ended), `seconds` pass or `stop` is set. Nothing if there's no such job."""
+    deadline = None if seconds is None else time.monotonic() + seconds
+    while (job := get(conn, job_id)) is not None:
+        yield job
+        if job["status"] not in ACTIVE or (deadline is not None and time.monotonic() >= deadline) or stop.wait(SYNC_INTERVAL):
+            return
 
 def read_log(job_id: int, offset: int | None = 0, limit: int = 65536) -> tuple[str, int]:
     """Log text from byte `offset` (at most `limit` bytes), and the offset to continue from.

@@ -570,12 +570,10 @@ def wait(conn: sqlite3.Connection, args: WaitArgs) -> Iterator[dict]:
 def _waited(conn: sqlite3.Connection, job_id: int, seconds: int) -> Iterator[dict]:
     """Wait for a job to end, or `seconds` to pass (or the turn to stop), its bar showing meanwhile;
     the job as it is then."""
-    deadline, stop = time.monotonic() + seconds, _turn.get().stop
-    while (job := jobs.get(conn, job_id)) and job["status"] in jobs.ACTIVE and time.monotonic() < deadline:
-        if job["total"]:  # the chat shows the job's bar under the step
+    job = None
+    for job in jobs.watched(conn, job_id, _turn.get().stop, seconds):
+        if job["status"] in jobs.ACTIVE and job["total"]:  # the chat shows the job's bar under the step
             yield {"type": "progress", "done": job["done"], "total": job["total"]}
-        if stop.wait(1):
-            break
     if job is None:
         raise ToolError(f"There is no job {job_id}.")
     return job
