@@ -230,7 +230,7 @@ def api_start_run(new: NewRun, conn: DB) -> dict:
     starts}. Follow the job at /api/jobs/{job_id}, read the results at /api/runs/{run_id}, see them
     at /runs/{run_id}. 422 with why it can't start."""
     try:
-        media_ids = [i["media_id"] for i in new.images.resolve(conn)]
+        _, media_ids = new.images.ids(conn)
         run_id, job_id, name = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.images.project_id, new.name,
                                           new.prompts, new.workflow)
     except ValueError as e:

@@ -181,23 +181,27 @@ class Images(BaseModel):
             raise ValueError("found picks a run's images: give run_id with it")
         return self
 
-    def resolve(self, conn: sqlite3.Connection) -> list[dict]:
-        """The images, as media.listed has them (named as their project names them, if they're a
-        project's or a run of one's). ValueError saying why there are none."""
+    def ids(self, conn: sqlite3.Connection) -> tuple[int | None, list[int]]:
+        """Which images: the project they're in (the one named, or the run's), if any, and their ids.
+        ValueError saying why there are none, or which ids aren't stored images."""
         project_id = self.project_id
         if self.media_ids is not None:
             ids = list(dict.fromkeys(self.media_ids))
+            if missing := sorted(set(ids) - {i["media_id"] for i in media.listed(conn, ids)}):
+                raise ValueError(f"No stored images {missing}")
         elif self.project_id is not None:
             ids = on_project(conn, self.project_id, Filter.parse(self.where))
         else:
             project_id, ids = found_on(conn, self.run_id, self.found)
         if self.count is not None and self.count < len(ids):
             ids = sorted(random.sample(ids, self.count))
-        images = media.listed(conn, ids, project_id)
-        if missing := sorted(set(ids) - {i["media_id"] for i in images}):
-            raise ValueError(f"No stored images {missing}")
-        return images
+        return project_id, ids
 
+    def resolve(self, conn: sqlite3.Connection) -> list[dict]:
+        """The images, as media.listed has them (named as their project names them, if they're a
+        project's or a run of one's). ValueError as ids()."""
+        project_id, ids = self.ids(conn)
+        return media.listed(conn, ids, project_id)
 
 class ClassOut(Answer):
     id: int = Field(description="The class's id in its project (what annotations' class_id refers to).")
