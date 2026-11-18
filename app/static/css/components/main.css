@@ -8,12 +8,12 @@
    parent (at any depth, e.g. inside a refresh region) has nothing to space from. */
 :is(.grid, .gallery, .columns, .bars, .area, .justified, .stack, .fields, .actions):first-child { margin-top: 0; }
 
-/* A page with one thing to do (e.g. Home): its content in a column up to 44rem wide, in the
-   middle of the main area on both axes, its text and rows of buttons centred too. */
+/* A page with one thing to do (e.g. Home): its content in a column (--column-width at most), in
+   the middle of the main area on both axes, its text and rows of buttons centred too. */
 .center {
   min-height: 100%;
   display: grid;
-  grid-template-columns: min(100%, 44rem);
+  grid-template-columns: min(100%, var(--column-width));
   place-content: center;
   text-align: center;
 }
@@ -55,9 +55,11 @@
 }
 
 /*
-  Drop zone for files and folders; click to choose files. Behaviour: js/drop-zone.js.
-  <div class="dropzone" id="…" data-drop-paths data-name="paths" data-accept=".jpg,.png" role="button" tabindex="0">
-    <p>Drop files here</p><ul></ul>
+  Drop zone for files and folders; click it to choose files. Behaviour: js/drop-zone.js.
+  <div class="dropzone" id="…" data-drop-paths data-name="paths" data-accept=".jpg,.png" data-preview="/files/preview">
+    <button type="button">Drop files here</button>
+    <output></output>   (what was dropped: partials/dropped.html)
+    <button class="button secondary" type="button" data-clear>Clear</button>   (once something is)
   </div>
   "dropzone over" while something is dragged over it; "dropzone large" for a big target.
 */
@@ -75,29 +77,34 @@
 }
 
 .dropzone:hover,
-.dropzone:focus-visible,
+.dropzone:has(> button:first-child:focus-visible),
 .dropzone.over {
   border-color: var(--color-text-muted);
   background: var(--color-accent-bg);
+}
+
+/* Its text is the button that chooses files (for the keyboard; a click anywhere does it too). */
+.dropzone > button:first-child {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: inherit;
   outline: none;
 }
 
-.dropzone ul {
-  max-height: 8rem;
-  overflow-y: auto;
-  list-style: none;
-  padding: 0;
+/* What was dropped: no wider than a centred column, so its images stay small in a wide zone. */
+.dropzone output {
+  width: min(100%, var(--column-width));
+  justify-self: center;
   text-align: left;
   color: var(--color-text);
+  cursor: default;
 }
 
-.dropzone li {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.dropzone output:empty,
+.dropzone output:empty + .button { display: none; }
 
-.dropzone ul:empty { display: none; }
+.dropzone output + .button { justify-self: center; }
 
 /* "dropzone large": a big target, when dropping is the page's main action. */
 .dropzone.large {

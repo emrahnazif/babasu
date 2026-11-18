@@ -14,7 +14,8 @@
 {% macro import_fields(id, large=false) %}
   {{ ui.text(image_formats ~ " images. A folder brings its subfolders too. Images already in the project are skipped.", muted=true) }}
   {{ ui.fields([
-    ui.dropzone(id ~ "-drop", "paths", "Drop images or folders here, or click to choose images", accept=image_suffixes, large=large),
+    ui.dropzone(id ~ "-drop", "paths", "Drop images or folders here, or click to choose images", accept=image_suffixes, large=large,
+                preview="/files/preview"),
     ui.input("paths", "Or enter a path", placeholder="/Volumes/NAS/datasets/coco/val2017"),
   ]) }}
 {% endmacro %}

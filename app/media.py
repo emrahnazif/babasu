@@ -118,6 +118,16 @@ def listed(conn: sqlite3.Connection, media_ids: list[int], project_id: int | Non
              "thumb_url": thumb_url(rows[m]["sha256"])} for m in media_ids if m in rows]
 
 
+def thumbnail(file: Path) -> bytes:
+    """A thumbnail of an image file that isn't stored (one about to be imported or attached), made
+    as it's asked for. Raises NotAnImage for a file Pillow can't read."""
+    try:
+        with Image.open(file) as image:
+            return _thumbnail(image)
+    except OSError:  # UnidentifiedImageError, or a broken file
+        raise NotAnImage from None
+
+
 def _thumbnail(image: Image.Image) -> bytes:
     """An image as opened, as a small upright WebP. It shrinks the image itself: no full-size copy."""
     # draft: a JPEG not yet loaded can be decoded at a fraction of its size, much faster for big photos.
