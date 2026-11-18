@@ -75,7 +75,7 @@ def store(conn: sqlite3.Connection, data: bytes, name: str) -> int:
             _write(file, data)
         thumb = path(sha256, "thumb.webp")
         if not thumb.exists():
-            _write(thumb, _thumbnail(upright))
+            _write(thumb, _thumbnail(image))
 
     row = conn.execute("SELECT id FROM media WHERE sha256 = ?", (sha256,)).fetchone()
     if row:
@@ -119,10 +119,11 @@ def listed(conn: sqlite3.Connection, media_ids: list[int], project_id: int | Non
 
 
 def _thumbnail(image: Image.Image) -> bytes:
+    """An image as opened, as a small upright WebP. It shrinks the image itself: no full-size copy."""
     # draft: a JPEG not yet loaded can be decoded at a fraction of its size, much faster for big photos.
     image.draft("RGB", (THUMB_SIZE, THUMB_SIZE))
-    small = image.copy()
-    small.thumbnail((THUMB_SIZE, THUMB_SIZE))
+    image.thumbnail((THUMB_SIZE, THUMB_SIZE))
+    small = ImageOps.exif_transpose(image)  # upright if its EXIF says it's turned
     if small.mode not in ("RGB", "RGBA"):  # e.g. palette, greyscale 16-bit, CMYK
         small = small.convert("RGBA" if "A" in small.getbands() else "RGB")
     buffer = io.BytesIO()
