@@ -1,15 +1,14 @@
-"""Importing images from files and folders (local disk or NAS), as a background job: into a project,
-or attached to the chat message they were dropped with.
+"""Importing images from files and folders (local disk or NAS) into a project, as a background job.
 
-Crash-safe and safe to retry (product.md "Jobs"): each image is stored and added in its own
-transaction, and an image the project already has is skipped, so a retry only does what's left.
+Crash-safe and safe to retry (product.md "Jobs"): each image is stored in its own transaction, and
+an image the project already has is skipped, so a retry only does what's left.
 """
 
 import os
 from contextlib import closing
 from pathlib import Path
 
-from app import db, jobs, media, projects
+from app import db, jobs, media
 
 KIND = "import_images"
 
@@ -43,8 +42,15 @@ def find_images(paths: list[str]) -> tuple[list[tuple[Path, str]], list[tuple[Pa
     return found, others, missing
 
 
+def name_for(paths: list[str]) -> str:
+    """A name for a project made from these files and folders, until it's given one: the folder's
+    or file's name, "street and 2 more" for several."""
+    first = Path(paths[0]).expanduser().name or paths[0]
+    return first if len(paths) == 1 else f"{first} and {len(paths) - 1} more"
+
+
 @jobs.kind(KIND, lane="io", title="Import images")
-def import_images(ctx: jobs.Context, paths: list[str], project_id: int | None = None, message_id: int | None = None) -> dict:
+def import_images(ctx: jobs.Context, paths: list[str], project_id: int) -> dict:
     ctx.advance(0, "Looking for images…")  # the total isn't known yet: the bar is indeterminate
     images, others, missing = find_images(paths)
     files = images + others  # a file given directly is tried all the same: its content decides
@@ -63,9 +69,7 @@ def import_images(ctx: jobs.Context, paths: list[str], project_id: int | None = 
             try:
                 data = file.read_bytes()
                 with conn:  # one image, one transaction
-                    media_id = media.store(conn, data, name)
-                    is_new = (media.attach(conn, message_id, media_id) if project_id is None
-                              else projects.add_image(conn, project_id, media_id, name))
+                    _, is_new = media.store(conn, project_id, data, name)
             except (media.NotAnImage, OSError) as exc:
                 skipped += 1
                 ctx.log(f"Skipped {name}: {str(exc) or 'not a readable image'}")

@@ -17,8 +17,8 @@ TIME = "%Y-%m-%dT%H:%M:%SZ"
 NOW = f"strftime('{TIME}', 'now')"
 
 # The user's data: every write to these tables is kept in `history` (app/history.py) by triggers
-# migrate() makes from their columns. Not `annotation` (its triggers rebuild it from project_media).
-HISTORY_TABLES = ("project", "media", "project_media", "run", "run_result")
+# migrate() makes from their columns. Not `annotation` (its triggers rebuild it from media).
+HISTORY_TABLES = ("project", "media", "run", "run_result")
 
 
 @dataclass(frozen=True)
@@ -90,7 +90,11 @@ def migrate() -> None:
                                         r"AND name LIKE 'history\_%' ESCAPE '\'").fetchall():
                 conn.execute(f"DROP TRIGGER {name}")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        migrations = sorted(MIGRATIONS_DIR.glob("*.sql"))
+        if version > int(migrations[-1].name.split("_")[0]):
+            raise RuntimeError(f"{config.DB_FILE} was made by another version of {config.APP_NAME}: "
+                               "move its workspace folder away to start a new one")
+        for path in migrations:
             number = int(path.name.split("_")[0])
             if number > version:
                 # One transaction per migration, including the version bump.

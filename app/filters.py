@@ -1,4 +1,4 @@
-"""Which of a project's images to show: the filter behind the project page, its API and the agent.
+"""Which images to show, a project's or across all: the filter behind the project page, its API and the agent.
 
 A filter is a set of conditions that must all hold:
   - on the image: labelled or unlabelled, its file name contains some text, how many objects it has;
@@ -235,15 +235,6 @@ class Filter(BaseModel):
             color = colors.get(c.classes[0].casefold()) if len(c.classes) == 1 else None
             chips.append({"kind": "condition", "index": i, "label": c.label(), "without": rest.text(), "color": color})
         return chips
-
-
-def class_ids(names: list[str], classes: list[dict]) -> list[int]:
-    """The ids of these class names among a project's (active) classes; FilterError for a name it doesn't have."""
-    by_name = {c["name"].casefold(): c["id"] for c in classes}
-    missing = [n for n in names if n.casefold() not in by_name]
-    if missing:
-        raise FilterError(f"This project has no class “{missing[0]}”")
-    return [by_name[n.casefold()] for n in names]
 
 
 _RANGE_KEYS = {"w", "h", "size", "area", "aspect"}

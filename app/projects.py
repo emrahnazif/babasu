@@ -1,7 +1,11 @@
-"""Projects and their media. Reads return plain dicts (JSON columns parsed), ready for templates and the API.
+"""Projects and their media (product.md "Projects, media and annotations"). Reads return plain dicts
+(JSON columns parsed), ready for templates and the API.
 
-Inactive classes (deleted by the user, kept so their ids are never reused) are left
-out of every read here, together with their annotations.
+An image is a row of `media` with its own id, in one project; its annotations are a list on the
+row. A class is a name on an annotation: a project keeps its classes (name, colour, prompt, in
+order), and an annotation of a name it hasn't had adds one. Names are matched ignoring case, and an
+annotation written as "Tomato" in a project that has "tomato" is saved as "tomato", so one class
+never becomes two.
 """
 
 import json
@@ -14,19 +18,27 @@ from PIL import ImageColor
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app import db, jobs, media
-from app.filters import Filter, FilterError, ObjectCondition, class_ids
+from app.filters import Filter, FilterError, ObjectCondition
 
 # What a project is for. It suggests (an annotator: annotators.SUGGESTED; later what to train), it
-# doesn't restrict: every project may hold every shape. Classification comes later.
+# doesn't restrict: every project may hold every shape. Optional; classification comes later.
 Task = Literal["detection", "segmentation", "keypoints"]
 TASKS: dict[Task, str] = {"detection": "Object detection", "segmentation": "Segmentation", "keypoints": "Keypoint detection"}
 
 # Pixel coordinate on the original image, rounded to 1 decimal.
 Coord = Annotated[float, AfterValidator(lambda v: round(v, 1))]
 
+# What people type for a project and its classes, checked the same way wherever it comes in.
+Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+ClassName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+Prompt = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+PROMPT = ("What annotators look for (not its name), e.g. 'hole in the road surface' for a class named pothole; "
+          "empty: its name.")
+
 
 class Keypoint(BaseModel):
-    """One named point of an object (keypoints projects)."""
+    """One named point of an object."""
 
     model_config = ConfigDict(extra="forbid")
     name: str = Field(description="Which point, e.g. left_eye.")
@@ -36,8 +48,8 @@ class Keypoint(BaseModel):
 class Annotation(BaseModel):
     """One thing in an image, with whichever shapes it has (like COCO and pixelflow's Detection)."""
 
-    model_config = ConfigDict(extra="forbid")
-    class_id: int = Field(description="One of the project's class ids.")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
+    class_: ClassName = Field(alias="class", description="Its class's name, e.g. car; a new name is a new class.")
     bbox: tuple[Coord, Coord, Coord, Coord] | None = Field(None, description="Its box: x, y, width, height in pixels.")
     segments: list[tuple[Coord, Coord]] | None = Field(None, description="Its outline: polygon points [x, y] in pixels.")
     keypoints: list[Keypoint] | None = Field(None, description="Its named points.")
@@ -50,14 +62,9 @@ class Annotation(BaseModel):
             raise ValueError("an annotation needs a bbox, segments or keypoints")
         return self
 
-
-# What people type for a project and its classes, checked the same way wherever it comes in.
-Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
-ClassName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-Prompt = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
-PROMPT = ("What annotators look for (not its name), e.g. 'hole in the road surface' for a class named pothole; "
-          "empty: its name.")
+    def stored(self) -> dict:
+        """As it's kept in media.annotations."""
+        return self.model_dump(exclude_none=True)
 
 
 def _color(value: str) -> str:
@@ -81,92 +88,57 @@ class NewClass(BaseModel):
 
 
 class ClassChange(NewClass):
-    """One class of a project's class list, as it's set (set_classes): an existing one by its id
-    (no colour: it keeps its own), or a new one (no id)."""
+    """One class of a project's class list, as it's set (set_classes): an existing one by the name
+    it had (`was`; renamed if `name` differs), or a new one (no `was`)."""
 
-    id: int | None = Field(None, description="An existing class's id; empty for a new class.")
-
-
-# One of a project's classes, by its id or its name.
-ClassRef = int | ClassName
+    was: ClassName | None = Field(None, description="An existing class's name; empty for a new class.")
 
 
 class ClassEdit(BaseModel):
-    """A change to one class (edit_classes): which one, by its id or else its name, and what changes.
-    With an id, `name` is a new name; `new_name` is one either way."""
+    """A change to one class (edit_classes): which one, by its name, and what changes."""
 
     model_config = ConfigDict(extra="forbid")
-    id: int | None = Field(None, description="The class's id; without one, `name` says which class.")
-    name: ClassName | None = Field(None, description="With an id: its new name. Without: the class's name.")
-    new_name: ClassName | None = Field(None, description="Its new name, to rename it.")
+    name: ClassName = Field(description="The class's name.")
+    new_name: ClassName | None = Field(None, description="Its new name: its annotations are renamed (into another "
+                                       "class's name: merged into it).")
     prompt: Prompt | None = Field(None, description=PROMPT)
     color: Color | None = Field(None, description="A colour name or #rrggbb.")
 
 
-# Class colours, in the order new classes get them.
+# Class colours, in the order classes get them.
 PALETTE = ["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]
 
 PAGE_SIZE = 100  # images per page
-
-
-class FrozenError(Exception):
-    """Raised on any write to a frozen project."""
-
-
-def _project(row: sqlite3.Row) -> dict:
-    """A project row with its classes, without those removed (and so without their `active`)."""
-    classes = [{k: v for k, v in c.items() if k != "active"} for c in json.loads(row["classes"]) if c["active"]]
-    return dict(row) | {"classes": classes}
-
-
 COVER_SIZE = 4  # images shown on a project's card
 
 
-def list_all(conn: sqlite3.Connection) -> list[dict]:
-    """Every project, most recently changed first, with its image count, how many of its images
-    are labelled (have an annotation), how many classes it has and the thumbnails of its first few
-    images for its card."""
-    rows = conn.execute(
-        """SELECT project.*, count(project_media.media_id) AS image_count,
-                  (SELECT json_group_array(sha256) FROM (
-                      SELECT media.sha256 FROM project_media AS first JOIN media ON media.id = first.media_id
-                      WHERE first.project_id = project.id ORDER BY first.media_id LIMIT ?)) AS covers
-           FROM project LEFT JOIN project_media ON project_media.project_id = project.id
-           GROUP BY project.id ORDER BY project.updated_at DESC""",
-        (COVER_SIZE,),
-    ).fetchall()
-    labelled = _labelled_counts(conn, rows)
-    listed = []
-    for row in rows:
-        project = _project(row) | {"labelled_count": labelled.get(row["id"], 0),
-                                   "covers": [media.thumb_url(sha) for sha in json.loads(row["covers"])]}
-        project["class_count"] = len(project.pop("classes"))
-        listed.append(project)
-    return listed
+def _free_color(listed: list[dict]) -> str:
+    """The first palette colour none of these classes has (round the palette when all are taken)."""
+    taken = {c.get("color") for c in listed}
+    return next((p for p in PALETTE if p not in taken), PALETTE[len(listed) % len(PALETTE)])
 
 
-def _labelled(row: sqlite3.Row) -> tuple[str, list]:
-    """SQL condition (and its parameters) on a project_media row of this project: the image is
-    labelled, i.e. has an annotation of an active class."""
-    active = json.dumps([c["id"] for c in _project(row)["classes"]])
-    return f"EXISTS (SELECT 1 FROM annotation a WHERE {_OF_IMAGE} AND a.class_id IN (SELECT value FROM json_each(?)))", [active]
+def _classes(stored: list[dict]) -> list[dict]:
+    """A project's classes as kept (project.classes), each with its prompt (its name unless set)."""
+    return [{"name": c["name"], "prompt": c.get("prompt") or c["name"], "color": c["color"]} for c in stored]
 
 
-def _labelled_counts(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> dict[int, int]:
-    """Labelled images per project id: one count over all projects, then a recount of those
-    with an inactive class (whose objects don't count)."""
-    counts = dict(conn.execute("SELECT project_id, count(DISTINCT media_id) FROM annotation GROUP BY project_id").fetchall())
-    for row in rows:
-        if any(not c["active"] for c in json.loads(row["classes"])):
-            counts[row["id"]] = _labelled_count(conn, row)
-    return counts
+def _stored(conn: sqlite3.Connection, project_id: int) -> list[dict]:
+    row = conn.execute("SELECT classes FROM project WHERE id = ?", (project_id,)).fetchone()
+    return json.loads(row["classes"]) if row else []
 
 
-def _labelled_count(conn: sqlite3.Connection, row: sqlite3.Row) -> int:
-    condition, params = _labelled(row)
-    return conn.execute(
-        f"SELECT count(*) FROM project_media WHERE project_id = ? AND {condition}", (row["id"], *params)
-    ).fetchone()[0]
+def classes(conn: sqlite3.Connection, project_id: int) -> list[dict]:
+    """The project's classes (name, prompt, colour), in order."""
+    return _classes(_stored(conn, project_id))
+
+
+def _project(row: sqlite3.Row) -> dict:
+    return dict(row) | {"classes": _classes(json.loads(row["classes"]))}
+
+
+def _row(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
 
 
 def get(conn: sqlite3.Connection, project_id: int) -> dict | None:
@@ -174,29 +146,40 @@ def get(conn: sqlite3.Connection, project_id: int) -> dict | None:
     return _project(row) if row else None
 
 
-def image_file(conn: sqlite3.Connection, project_id: int, media_id: int) -> dict | None:
-    """One image of a project as a model works on it, read cheaply (on every mouse move of the click
-    tool): its file (path), the project's task and its active classes' ids. None if there's none."""
-    row = conn.execute(
-        """SELECT media.sha256, media.ext FROM project_media JOIN media ON media.id = project_media.media_id
-           WHERE project_media.project_id = ? AND project_media.media_id = ?""", (project_id, media_id)).fetchone()
-    project = row and get(conn, project_id)
-    if not project:
-        return None
-    return {"path": media.path(row["sha256"], row["ext"]), "task": project["task"],
-            "class_ids": {c["id"] for c in project["classes"]}}
-
-
-def _row(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
-
-
-def _count(conn: sqlite3.Connection, where: str, params: list) -> int:
-    return conn.execute(f"SELECT count(*) FROM project_media WHERE {where}", params).fetchone()[0]
+def list_all(conn: sqlite3.Connection) -> list[dict]:
+    """Every project, most recently changed first, with its image count, how many of its images
+    are labelled (have an annotation), how many classes it has and the thumbnails of its first few
+    images for its card."""
+    rows = conn.execute(
+        """SELECT project.*, count(media.id) AS image_count,
+                  count(CASE WHEN media.annotations != '[]' THEN 1 END) AS labelled_count,
+                  (SELECT json_group_array(sha256) FROM (
+                      SELECT sha256 FROM media AS first WHERE first.project_id = project.id ORDER BY first.id LIMIT ?)) AS covers
+           FROM project LEFT JOIN media ON media.project_id = project.id
+           GROUP BY project.id ORDER BY project.updated_at DESC""",
+        (COVER_SIZE,),
+    ).fetchall()
+    listed = []
+    for row in rows:
+        project = _project(row) | {"covers": [media.thumb_url(sha) for sha in json.loads(row["covers"])]}
+        project["class_count"] = len(project.pop("classes"))
+        listed.append(project)
+    return listed
 
 
 def image_count(conn: sqlite3.Connection, project_id: int) -> int:
-    return _count(conn, "project_media.project_id = ?", [project_id])
+    return conn.execute("SELECT count(*) FROM media WHERE project_id = ?", (project_id,)).fetchone()[0]
+
+
+def _labelled_count(conn: sqlite3.Connection, project_id: int) -> int:
+    return conn.execute("SELECT count(*) FROM media WHERE project_id = ? AND annotations != '[]'", (project_id,)).fetchone()[0]
+
+
+def annotation_counts(conn: sqlite3.Connection, project_id: int) -> dict[str, int]:
+    """Number of annotations per class (by name, ignoring case), over all of the project's images."""
+    rows = conn.execute("""SELECT a.class, count(*) FROM annotation a JOIN media m ON m.id = a.media_id
+                           WHERE m.project_id = ? GROUP BY a.class""", (project_id,))
+    return {name.casefold(): n for name, n in rows}
 
 
 def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Filter = Filter(),
@@ -208,85 +191,75 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     row = _row(conn, project_id)
     if row is None:
         return None
-    counts = annotation_counts(conn, project_id)
     project = _project(row)
-    project["classes"] = [c | {"annotation_count": counts.get(c["id"], 0)} for c in project["classes"]]
+    counts = annotation_counts(conn, project_id)
+    project["classes"] = [c | {"annotation_count": counts.get(c["name"].casefold(), 0)} for c in project["classes"]]
     total = image_count(conn, project_id)
-    where, params = _where(row, filter)
+    where, params = _where(conn, filter, project_id)
     match_count = total if filter == Filter() else _count(conn, where, params)
     pages = max(1, math.ceil(match_count / page_size)) if page_size else 1
     page = min(max(page, 1), pages)
-    rows = conn.execute(
-        f"""{_IMAGE_SELECT} WHERE {where} ORDER BY project_media.filename, project_media.media_id LIMIT ? OFFSET ?""",
-        (*params, page_size, (page - 1) * page_size),
-    ).fetchall()
-    names = class_names(project)
-    matches = _matches(conn, row, filter, [r["media_id"] for r in rows])
+    rows = conn.execute(f"{_IMAGE_SELECT} WHERE {where} ORDER BY media.name, media.id LIMIT ? OFFSET ?",
+                        (*params, page_size, (page - 1) * page_size)).fetchall()
+    matches = _matches(conn, filter, [r["id"] for r in rows])
     return project | {
         "image_count": total,
-        "labelled_count": _labelled_count(conn, row),
+        "labelled_count": _labelled_count(conn, project_id),
         "filter": filter.text(),
         "match_count": match_count,
         "page": page,
         "pages": pages,
-        "images": [_image(r, names, matches and matches[r["media_id"]]) for r in rows],
+        "images": [_image(r, matches and matches[r["id"]]) for r in rows],
     }
+
+
+def _count(conn: sqlite3.Connection, where: str, params: list) -> int:
+    return conn.execute(f"SELECT count(*) FROM media WHERE {where}", params).fetchone()[0]
 
 
 def named(conn: sqlite3.Connection, text: str, limit: int = 20) -> dict:
     """Projects and images whose name contains `text` (ignoring case): projects (id, name) and the
     first `limit` images (media id, file name, project id and name), with how many images match."""
     found = conn.execute("SELECT id, name FROM project WHERE instr(lower(name), lower(?)) > 0 ORDER BY name", (text,))
-    images = """FROM project_media JOIN project ON project.id = project_media.project_id
-                WHERE instr(lower(project_media.filename), lower(?)) > 0"""
-    rows = conn.execute(
-        f"""SELECT project_media.media_id, project_media.filename, project.id AS project_id, project.name AS project
-            {images} ORDER BY project_media.filename, project.name LIMIT ?""", (text, limit))
+    images = "FROM media JOIN project ON project.id = media.project_id WHERE instr(lower(media.name), lower(?)) > 0"
+    rows = conn.execute(f"""SELECT media.id AS media_id, media.name AS filename, project.id AS project_id,
+                                   project.name AS project {images} ORDER BY media.name, project.name LIMIT ?""", (text, limit))
     return {"projects": [dict(r) for r in found], "images": [dict(r) for r in rows],
             "image_count": conn.execute(f"SELECT count(*) {images}", (text,)).fetchone()[0]}
 
 
-def sample(conn: sqlite3.Connection, project_id: int, filter: Filter = Filter(), count: int | None = None) -> list[int] | None:
-    """The media ids of the project's images matching `filter`: all of them, or `count` picked at
-    random. None if there's no such project; FilterError as detail()."""
-    row = _row(conn, project_id)
-    if row is None:
-        return None
-    where, params = _where(row, filter)
-    order = "ORDER BY random() LIMIT ?" if count else "ORDER BY project_media.filename LIMIT ?"
-    rows = conn.execute(f"SELECT media_id FROM project_media WHERE {where} {order}", (*params, count or -1))
-    return [r[0] for r in rows]
+def sample(conn: sqlite3.Connection, filter: Filter = Filter(), project_id: int | None = None,
+           count: int | None = None, first: int | None = None) -> list[int]:
+    """The ids of the images matching `filter`, a project's or across all: all of them (by file
+    name), the `first` few, or `count` picked at random. FilterError as detail()."""
+    where, params = _where(conn, filter, project_id)
+    order = "ORDER BY random()" if count else "ORDER BY media.name, media.id"
+    return [r[0] for r in conn.execute(f"SELECT media.id FROM media WHERE {where} {order} LIMIT ?",
+                                       (*params, count or first or -1))]
 
 
-def image(conn: sqlite3.Connection, project_id: int, media_id: int, filter: Filter = Filter()) -> dict | None:
-    """One image of a project with its annotations, the project, and where the image is among
-    the images matching `filter` (by file name): its position, how many match, and the
-    previous and next ones."""
-    row = _row(conn, project_id)
-    found = row and conn.execute(
-        f"{_IMAGE_SELECT} WHERE project_media.project_id = ? AND project_media.media_id = ?", (project_id, media_id)
-    ).fetchone()
+def image(conn: sqlite3.Connection, media_id: int, filter: Filter = Filter()) -> dict | None:
+    """One image with its annotations, its project, and where the image is among the project's
+    images matching `filter` (by file name): its position, how many match, and the previous and
+    next ones."""
+    found = conn.execute(f"{_IMAGE_SELECT} WHERE media.id = ?", (media_id,)).fetchone()
     if not found:
         return None
-    where, params = _where(row, filter)
-    key = (found["filename"], media_id)  # file names can repeat, so the id breaks ties
+    project_id = found["project_id"]
+    where, params = _where(conn, filter, project_id)
+    key = (found["name"], media_id)  # file names can repeat, so the id breaks ties
 
     def neighbour(before: bool) -> int | None:
         op, order = ("<", "DESC") if before else (">", "ASC")
-        hit = conn.execute(
-            f"""SELECT media_id FROM project_media WHERE {where} AND (filename, media_id) {op} (?, ?)
-                ORDER BY filename {order}, media_id {order} LIMIT 1""",
-            (*params, *key),
-        ).fetchone()
+        hit = conn.execute(f"""SELECT id FROM media WHERE {where} AND (name, id) {op} (?, ?)
+                               ORDER BY name {order}, id {order} LIMIT 1""", (*params, *key)).fetchone()
         return hit[0] if hit else None
 
     match_count, position = conn.execute(
-        f"SELECT count(*), total((filename, media_id) <= (?, ?)) FROM project_media WHERE {where}", (*key, *params)
-    ).fetchone()
-    project = _project(row)
-    matches = _matches(conn, row, filter, [media_id])
-    return _image(found, class_names(project), matches and matches[media_id]) | {
-        "project": project,
+        f"SELECT count(*), total((name, id) <= (?, ?)) FROM media WHERE {where}", (*key, *params)).fetchone()
+    matches = _matches(conn, filter, [media_id])
+    return _image(found, matches and matches[media_id]) | {
+        "project": get(conn, project_id),
         "filter": filter.text(),
         "position": int(position),
         "match_count": match_count,
@@ -295,92 +268,94 @@ def image(conn: sqlite3.Connection, project_id: int, media_id: int, filter: Filt
     }
 
 
-_IMAGE_SELECT = """SELECT project_media.media_id, project_media.filename, project_media.split,
-                          project_media.annotations, media.sha256, media.ext, media.width, media.height
-                   FROM project_media JOIN media ON media.id = project_media.media_id"""
+_IMAGE_SELECT = """SELECT media.id, media.project_id, media.name, media.split, media.annotations, media.sha256,
+                          media.ext, media.width, media.height FROM media"""
 
 
-def class_names(project: dict) -> dict[int, str]:
-    """A project's active classes: id -> name."""
-    return {c["id"]: c["name"] for c in project["classes"]}
-
-
-def _image(row: sqlite3.Row, names: dict[int, str], matched: set[int] | None = None) -> dict:
-    """An image row for templates and the API: its objects per class (by name), its annotations
-    (of active classes, `names`), and, when the filter asks for objects, `matches`: the positions
-    in that list of the objects it found."""
-    kept = [(i, a) for i, a in enumerate(json.loads(row["annotations"])) if a["class_id"] in names]
-    image = {k: row[k] for k in ("media_id", "filename", "split", "width", "height")} | {
-        "objects": dict(Counter(names[a["class_id"]] for _, a in kept)),
-        "annotations": [a for _, a in kept],
-        "url": media.url(row["sha256"], row["ext"]),
-        "thumb_url": media.thumb_url(row["sha256"]),
-    }
+def _image(row: sqlite3.Row, matched: set[int] | None = None) -> dict:
+    """An image row for templates and the API: its objects per class, its annotations, and, when
+    the filter asks for objects, `matches`: the positions in that list of the objects it found."""
+    annotations = json.loads(row["annotations"])
+    image = {"media_id": row["id"], "project_id": row["project_id"], "filename": row["name"], "split": row["split"],
+             "width": row["width"], "height": row["height"],
+             "objects": dict(Counter(a["class"] for a in annotations)),
+             "annotations": annotations,
+             "url": media.url(row["sha256"], row["ext"]),
+             "thumb_url": media.thumb_url(row["sha256"])}
     if matched is not None:
-        image["matches"] = [n for n, (i, _) in enumerate(kept) if i in matched]
+        image["matches"] = sorted(matched)
     return image
 
 
-def images(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> dict | None:
-    """Some of a project's images, in the order given, each as image pages get it, with the
-    project's classes to draw them in; None if the project is gone."""
-    project = get(conn, project_id)
-    if project is None:
-        return None
-    rows = {r["media_id"]: r for r in conn.execute(
-        f"{_IMAGE_SELECT} WHERE project_media.project_id = ? AND project_media.media_id IN (SELECT value FROM json_each(?))",
-        (project_id, json.dumps(media_ids)))}
-    names = class_names(project)
-    return {"project_id": project_id, "classes": project["classes"],
-            "images": [_image(rows[m], names) for m in media_ids if m in rows]}
+def images(conn: sqlite3.Connection, media_ids: list[int]) -> dict:
+    """Some images, in the order given (those that exist), each as image pages get it, with the
+    classes to draw them in: their projects', the first project's spelling and colour for a name
+    two of them have."""
+    rows = {r["id"]: r for r in conn.execute(f"{_IMAGE_SELECT} WHERE media.id IN (SELECT value FROM json_each(?))",
+                                             (json.dumps(media_ids),))}
+    found = [_image(rows[m]) for m in media_ids if m in rows]
+    drawn: dict[str, dict] = {}
+    for project_id in dict.fromkeys(i["project_id"] for i in found):
+        for c in classes(conn, project_id):
+            drawn.setdefault(c["name"].casefold(), c)
+    return {"classes": list(drawn.values()), "images": found}
 
 
-# An annotation `a` of the project_media row being filtered.
-_OF_IMAGE = "a.project_id = project_media.project_id AND a.media_id = project_media.media_id"
+def image_file(conn: sqlite3.Connection, media_id: int) -> dict | None:
+    """One image as a model works on it, read cheaply (on every mouse move of the click tool): its
+    file (path) and its project's task. None if there's none."""
+    row = conn.execute("""SELECT media.sha256, media.ext, project.task FROM media JOIN project ON project.id = media.project_id
+                          WHERE media.id = ?""", (media_id,)).fetchone()
+    return row and {"path": media.path(row["sha256"], row["ext"]), "task": row["task"]}
 
 
-def _where(row: sqlite3.Row, filter: Filter) -> tuple[str, list]:
-    """SQL condition (and parameters) on project_media for this project's images matching
-    `filter`. Raises FilterError if it names a class the project doesn't have."""
-    parts, params = ["project_media.project_id = ?"], [row["id"]]
+# An annotation `a` of the media row being filtered.
+_OF_IMAGE = "a.media_id = media.id"
+
+
+def _where(conn: sqlite3.Connection, filter: Filter, project_id: int | None = None) -> tuple[str, list]:
+    """SQL condition (and parameters) on `media` for the images matching `filter`: a project's, or
+    every project's. Raises FilterError if it names a class there isn't."""
+    parts, params = (["media.project_id = ?"], [project_id]) if project_id is not None else (["true"], [])
+    _known(conn, filter, project_id)
     if filter.show != "all":
-        labelled, more = _labelled(row)
-        parts.append(labelled if filter.show == "labelled" else f"NOT ({labelled})")
-        params += more
+        parts.append("media.annotations != '[]'" if filter.show == "labelled" else "media.annotations = '[]'")
     if filter.name:
-        parts.append("instr(lower(project_media.filename), lower(?)) > 0")
+        parts.append("instr(lower(media.name), lower(?)) > 0")
         params.append(filter.name)
     if filter.objects:
-        condition, more = filter.objects.sql(*_object_count(row))
+        condition, more = filter.objects.sql(f"(SELECT count(*) FROM annotation a WHERE {_OF_IMAGE})")
         parts.append(condition)
         params += more
     for c in filter.conditions:
-        condition, more = _object_sql(row, c)
+        condition, more = _object_sql(c)
         parts.append(f"{'NOT ' if c.negate else ''}EXISTS (SELECT 1 FROM annotation a WHERE {_OF_IMAGE} AND {condition})")
         params += more
     return " AND ".join(parts), params
 
 
-def _object_count(row: sqlite3.Row) -> tuple[str, tuple]:
-    """SQL for how many objects (of active classes) the project_media row being filtered has, and its parameters."""
-    active = json.dumps([c["id"] for c in _project(row)["classes"]])
-    return f"(SELECT count(*) FROM annotation a WHERE {_OF_IMAGE} AND a.class_id IN (SELECT value FROM json_each(?)))", (active,)
+def _known(conn: sqlite3.Connection, filter: Filter, project_id: int | None) -> None:
+    """FilterError for a class the filter names that the project (or no project) has: a typo would
+    otherwise find nothing and look like an answer."""
+    names = {n for c in filter.conditions for n in c.classes}
+    if not names:
+        return
+    if project_id is not None:
+        have = [c["name"] for c in classes(conn, project_id)]
+    else:
+        have = [r[0] for r in conn.execute("SELECT DISTINCT class FROM annotation")]
+    known = {n.casefold() for n in have}
+    if missing := sorted(n for n in names if n.casefold() not in known):
+        where = "This project has" if project_id is not None else "No image has"
+        raise FilterError(f"{where} no class “{missing[0]}”; the classes: {', '.join(have) or 'none'}")
 
 
-def _wanted(row: sqlite3.Row, filter: Filter) -> tuple[str, list] | None:
-    """SQL condition (and parameters) on an annotation `a`: it's one of the objects the filter
-    asks for (meets one of its conditions that aren't negated), or None if it asks for none."""
-    wanted = [_object_sql(row, c) for c in filter.conditions if not c.negate]
-    if not wanted:
-        return None
-    return " OR ".join(f"({condition})" for condition, _ in wanted), [p for _, more in wanted for p in more]
-
-
-def _object_sql(row: sqlite3.Row, c: ObjectCondition) -> tuple[str, list]:
+def _object_sql(c: ObjectCondition) -> tuple[str, list]:
     """SQL condition (and parameters) on an annotation `a`: it meets all of `c` (its sign aside)."""
-    classes = _project(row)["classes"]
-    ids = class_ids(c.classes, classes) if c.classes else [k["id"] for k in classes]
-    parts, params = ["a.class_id IN (SELECT value FROM json_each(?))"], [json.dumps(ids)]
+    parts, params = [], []
+    if c.classes:
+        parts.append("a.class IN (SELECT value FROM json_each(?))")  # the column's NOCASE decides
+        params.append(json.dumps(c.classes))
     for column, r in (("a.w", c.w), ("a.h", c.h), ("a.area", c.area), ("a.aspect", c.aspect)):
         if r:
             condition, more = r.sql(column)
@@ -389,22 +364,28 @@ def _object_sql(row: sqlite3.Row, c: ObjectCondition) -> tuple[str, list]:
     if c.edge is not None:
         parts.append("a.edge = ?")
         params.append(int(c.edge))
-    return " AND ".join(parts), params
+    return " AND ".join(parts) or "true", params
 
 
-def _matches(conn: sqlite3.Connection, row: sqlite3.Row, filter: Filter, media_ids: list[int]) -> dict[int, set[int]] | None:
+def _wanted(filter: Filter) -> tuple[str, list] | None:
+    """SQL condition (and parameters) on an annotation `a`: it's one of the objects the filter
+    asks for (meets one of its conditions that aren't negated), or None if it asks for none."""
+    wanted = [_object_sql(c) for c in filter.conditions if not c.negate]
+    if not wanted:
+        return None
+    return " OR ".join(f"({condition})" for condition, _ in wanted), [p for _, more in wanted for p in more]
+
+
+def _matches(conn: sqlite3.Connection, filter: Filter, media_ids: list[int]) -> dict[int, set[int]] | None:
     """For these images, the objects the filter asks for (positions in each image's annotations
     list), or None if it doesn't ask for any."""
-    wanted = _wanted(row, filter)
+    wanted = _wanted(filter)
     if wanted is None:
         return None
     condition, params = wanted
     found: dict[int, set[int]] = {m: set() for m in media_ids}
-    rows = conn.execute(
-        f"""SELECT a.media_id, a.idx FROM annotation a
-            WHERE a.project_id = ? AND a.media_id IN (SELECT value FROM json_each(?)) AND ({condition})""",
-        (row["id"], json.dumps(media_ids), *params),
-    )
+    rows = conn.execute(f"SELECT a.media_id, a.idx FROM annotation a WHERE a.media_id IN (SELECT value FROM json_each(?)) "
+                        f"AND ({condition})", (json.dumps(media_ids), *params))
     for media_id, idx in rows:
         found[media_id].add(idx)
     return found
@@ -417,24 +398,19 @@ def stats(conn: sqlite3.Connection, project_id: int, field: str, filter: Filter 
     """How a measure is spread over the images matching `filter`: "class" counts objects per
     class; "w", "h", "area" and "aspect" give a histogram of the objects (those the filter asks
     for, or all of them); "objects" gives a histogram of objects per image."""
-    row = _row(conn, project_id)
-    if row is None:
+    if _row(conn, project_id) is None:
         return None
-    where, params = _where(row, filter)
+    where, params = _where(conn, filter, project_id)
     if field == "objects":
-        count, count_params = _object_count(row)
-        rows = conn.execute(
-            f"SELECT n, count(*) FROM (SELECT {count} AS n FROM project_media WHERE {where}) GROUP BY n ORDER BY n",
-            (*count_params, *params),
-        ).fetchall()
+        rows = conn.execute(f"""SELECT n, count(*) FROM (SELECT (SELECT count(*) FROM annotation a WHERE {_OF_IMAGE}) AS n
+                                FROM media WHERE {where}) GROUP BY n ORDER BY n""", params).fetchall()
         return {"field": field, "counts": [{"objects": n, "images": k} for n, k in rows]}
-    condition, more = _wanted(row, filter) or _object_sql(row, ObjectCondition())
-    objects = f"FROM annotation a JOIN project_media ON {_OF_IMAGE} WHERE {where} AND ({condition})"
+    condition, more = _wanted(filter) or ("true", [])
+    objects = f"FROM annotation a JOIN media ON {_OF_IMAGE} WHERE {where} AND ({condition})"
     params += more
     if field == "class":
-        names = class_names(_project(row))
-        rows = conn.execute(f"SELECT a.class_id, count(*) {objects} GROUP BY a.class_id ORDER BY 2 DESC", params)
-        return {"field": field, "counts": [{"class": names[k], "objects": n} for k, n in rows]}
+        rows = conn.execute(f"SELECT a.class, count(*) {objects} GROUP BY a.class ORDER BY 2 DESC", params)
+        return {"field": field, "counts": [{"class": name, "objects": n} for name, n in rows]}
     if field not in STAT_FIELDS:
         raise FilterError(f"There are no statistics for “{field}”; try one of {', '.join(STAT_FIELDS)}")
     column = f"a.{field}"
@@ -453,55 +429,23 @@ def stats(conn: sqlite3.Connection, project_id: int, field: str, filter: Filter 
     }
 
 
-def annotation_counts(conn: sqlite3.Connection, project_id: int) -> dict[int, int]:
-    """Number of annotations per class id, over all of the project's images."""
-    rows = conn.execute("SELECT class_id, count(*) FROM annotation WHERE project_id = ? GROUP BY class_id", (project_id,))
-    return dict(rows.fetchall())
-
-
-def create(conn: sqlite3.Connection, name: str, description: str, task: Task, annotator: str | None,
-           classes: list[ClassChange] = ()) -> int:
-    """Create a project with an annotator (an id in annotators.FINDERS; None: none) and these
-    classes (as set_classes sets them). Caller commits. Raises ValueError as set_classes."""
-    project_id = conn.execute(
-        "INSERT INTO project (name, description, task, annotator) VALUES (?, ?, ?, ?)",
-        (name, description, task, annotator),
-    ).lastrowid
-    set_classes(conn, project_id, list(classes))
+def create(conn: sqlite3.Connection, name: str, description: str = "", task: Task | None = None,
+           annotator: str | None = None, classes: list[ClassChange] = ()) -> int:
+    """Create a project, with an annotator (an id in annotators.FINDERS; None: the suggested one)
+    and these classes (as set_classes sets them). Caller commits. Raises ValueError as set_classes."""
+    project_id = conn.execute("INSERT INTO project (name, description, task, annotator) VALUES (?, ?, ?, ?)",
+                              (name, description, task, annotator)).lastrowid
+    if classes:
+        set_classes(conn, project_id, list(classes))
     return project_id
 
 
-def duplicate(conn: sqlite3.Connection, project_id: int, name: str | None = None) -> int | None:
-    """A new project named `name` ("<its name> copy" if none) with the project's description, type,
-    annotator, classes (removed ones too, so their annotations come along hidden), images and
-    annotations; not its runs. The image files are shared, not copied. Its id; None if there's no
-    such project. Caller commits."""
-    row = _row(conn, project_id)
-    if row is None:
-        return None
-    new_id = conn.execute(
-        """INSERT INTO project (name, description, classes, task, annotator)
-           SELECT ?, description, classes, task, annotator FROM project WHERE id = ?""",
-        (name or f"{row['name']} copy", project_id),
-    ).lastrowid
-    conn.execute(
-        """INSERT INTO project_media (project_id, media_id, filename, split, annotations)
-           SELECT ?, media_id, filename, split, annotations FROM project_media WHERE project_id = ?""",
-        (new_id, project_id),
-    )
-    return new_id
-
-
-def update(
-    conn: sqlite3.Connection, project_id: int, name: str, description: str, task: Task, annotator: str | None
-) -> None:
-    """Change a project's name, description, type or annotator (None: none). Its annotations stay
-    as they are. Caller commits. Raises FrozenError."""
-    _editable(conn, project_id)
-    conn.execute(
-        "UPDATE project SET name = ?, description = ?, task = ?, annotator = ? WHERE id = ?",
-        (name, description, task, annotator, project_id),
-    )
+def update(conn: sqlite3.Connection, project_id: int, name: str, description: str, task: Task | None,
+           annotator: str | None) -> None:
+    """Change a project's name, description, type or annotator. Its annotations stay as they are.
+    Caller commits."""
+    conn.execute("UPDATE project SET name = ?, description = ?, task = ?, annotator = ? WHERE id = ?",
+                 (name, description, task, annotator, project_id))
     _touch(conn, project_id)
 
 
@@ -510,200 +454,152 @@ def _active_jobs(conn: sqlite3.Connection, project_id: int) -> int:
 
 
 def deletion(conn: sqlite3.Connection, project_id: int) -> dict:
-    """What deleting the project would remove: its `images`, their `annotations` (hidden ones
-    too) and its `runs`. `jobs`: how many of its jobs are queued or running; while there are, it
-    can't be deleted."""
+    """What deleting the project would remove: its `images`, their `annotations` and its `runs`.
+    `jobs`: how many of its jobs are queued or running; while there are, it can't be deleted."""
     count = lambda sql: conn.execute(sql, (project_id,)).fetchone()[0]
     return {
-        "images": count("SELECT count(*) FROM project_media WHERE project_id = ?"),
-        "annotations": count("SELECT count(*) FROM annotation WHERE project_id = ?"),
+        "images": image_count(conn, project_id),
+        "annotations": count("SELECT count(*) FROM annotation a JOIN media m ON m.id = a.media_id WHERE m.project_id = ?"),
         "runs": count("SELECT count(*) FROM run WHERE project_id = ?"),
         "jobs": _active_jobs(conn, project_id),
     }
 
 
-def delete(conn: sqlite3.Connection, project_id: int) -> list[int]:
-    """Delete a project, its rows of images and its runs (with their results), and return the ids
-    of the media they used (for media.remove_unused). The run rows go
-    here, not through runs.delete (its own transaction). Its versions stay: if
-    it's an original, its oldest version becomes the original. Caller commits.
-
-    Raises ValueError while one of its jobs is queued or running."""
+def remove(conn: sqlite3.Connection, project_id: int) -> None:
+    """Delete a project with its images and its runs, and commit. The files stay while History can
+    bring the images back (history.purge). Raises ValueError while one of its jobs is queued or running."""
     if _active_jobs(conn, project_id):
         raise ValueError("The project has jobs queued or running; cancel them first")
-    media_ids = [r[0] for r in conn.execute(
-        """SELECT media_id FROM project_media WHERE project_id = :project
-           UNION SELECT r.media_id FROM run_result r JOIN run ON run.id = r.run_id WHERE run.project_id = :project""",
-        {"project": project_id})]
-    if conn.execute("SELECT root_id FROM project WHERE id = ?", (project_id,)).fetchone()["root_id"] is None:
-        oldest = conn.execute(
-            "SELECT id FROM project WHERE root_id = ? ORDER BY created_at, id LIMIT 1", (project_id,)
-        ).fetchone()
-        if oldest:
-            conn.execute("UPDATE project SET root_id = NULL WHERE id = ?", (oldest["id"],))
-            conn.execute("UPDATE project SET root_id = ? WHERE root_id = ?", (oldest["id"], project_id))
-    conn.execute("DELETE FROM run WHERE project_id = ?", (project_id,))
-    conn.execute("DELETE FROM project WHERE id = ?", (project_id,))
-    return media_ids
-
-
-def remove(conn: sqlite3.Connection, project_id: int) -> None:
-    """Delete the project as delete() does, and the images nothing uses any more, and commit.
-    Raises ValueError as delete()."""
     with conn:
-        media.remove_unused(conn, delete(conn, project_id))
+        conn.execute("DELETE FROM project WHERE id = ?", (project_id,))
 
 
-def add_image(
-    conn: sqlite3.Connection,
-    project_id: int,
-    media_id: int,
-    filename: str,
-    annotations: list[Annotation] | None = None,
-    split: str | None = None,
-) -> bool:
-    """Add a stored media file to a project. Returns False if it was already there. Caller commits.
-
-    Raises ValueError for an unknown class.
-    """
-    project = _editable(conn, project_id)
-    objects = annotations or []
-    # Inactive classes count: their annotations are kept, only hidden.
-    unknown = {o.class_id for o in objects} - {c["id"] for c in json.loads(project["classes"])}
-    if unknown:
-        raise ValueError(f"unknown class ids: {sorted(unknown)}")
-    added = conn.execute(
-        """INSERT INTO project_media (project_id, media_id, filename, split, annotations)
-           VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""",
-        (project_id, media_id, filename, split, json.dumps([o.model_dump(exclude_none=True) for o in objects])),
-    ).rowcount == 1
-    if added:
-        _touch(conn, project_id)
+def add_images(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> list[int]:
+    """Copy images (of any project) into this one, with their annotations, names and splits: new
+    rows on the same files. One whose file it has already stays as it is. The new rows' ids.
+    Caller commits."""
+    added = sorted(r[0] for r in conn.execute(
+        """INSERT INTO media (project_id, sha256, ext, width, height, name, split, annotations)
+           SELECT ?, sha256, ext, width, height, name, split, annotations FROM media
+           WHERE id IN (SELECT value FROM json_each(?)) ON CONFLICT DO NOTHING RETURNING id""",
+        (project_id, json.dumps(media_ids))))
+    _arrived(conn, project_id, added)
     return added
 
 
-def add_images(conn: sqlite3.Connection, project_id: int, images: list[dict]) -> int:
-    """Add stored media files to a project without objects, each under its name ({"media_id",
-    "name"}, as media.listed has them); one it has already stays as it is. Returns how many it
-    added. Caller commits. Raises FrozenError."""
-    _editable(conn, project_id)
-    added = conn.execute(
-        """INSERT INTO project_media (project_id, media_id, filename, annotations)
-           SELECT ?, value ->> 'media_id', value ->> 'name', '[]' FROM json_each(?) WHERE true ON CONFLICT DO NOTHING""",
-        (project_id, json.dumps([{"media_id": i["media_id"], "name": i["name"]} for i in images])),
-    ).rowcount
-    if added:
+def _arrived(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> None:
+    """Images that came into the project (copied, moved) with their annotations: the classes it
+    hasn't had are added, and those it has are spelt its way, on the images where that changes."""
+    stored = _stored(conn, project_id)
+    count = len(stored)
+    for row in conn.execute("SELECT id, annotations FROM media WHERE id IN (SELECT value FROM json_each(?))",
+                            (json.dumps(media_ids),)).fetchall():
+        objects = json.loads(row["annotations"])
+        if (spelt := _spelt(stored, [dict(o) for o in objects])) != objects:
+            conn.execute("UPDATE media SET annotations = ? WHERE id = ?", (json.dumps(spelt), row["id"]))
+    if len(stored) > count:
+        conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(stored), project_id))
+    if media_ids:
         _touch(conn, project_id)
-    return added
 
 
-def set_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[Annotation]) -> str | None:
-    """Replace an image's annotations with these, as the editor and the agent see them: of active
-    classes. Those of inactive classes are shown nowhere, so they're kept as they are. Returns the
-    image's file name; None if the image isn't in the project. Caller commits.
+def _media_row(conn: sqlite3.Connection, media_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT project_id, name, annotations FROM media WHERE id = ?", (media_id,)).fetchone()
 
-    Raises FrozenError, or ValueError for a class the project doesn't have (or has deleted)."""
-    active = _check_active(_editable(conn, project_id), {a.class_id for a in annotations})
-    row = conn.execute(
-        "SELECT filename, annotations FROM project_media WHERE project_id = ? AND media_id = ?", (project_id, media_id)
-    ).fetchone()
+
+def set_annotations(conn: sqlite3.Connection, media_id: int, annotations: list[Annotation]) -> str | None:
+    """Replace an image's annotations with these. Returns the image's file name; None if there's no
+    such image. Caller commits."""
+    row = _media_row(conn, media_id)
     if row is None:
         return None
-    kept = [a for a in json.loads(row["annotations"]) if a["class_id"] not in active]
-    _save_objects(conn, project_id, media_id, [a.model_dump(exclude_none=True) for a in annotations] + kept)
-    return row["filename"]
+    _save(conn, media_id, row["project_id"], [a.stored() for a in annotations])
+    return row["name"]
 
 
 Change = Literal["delete_objects", "set_class", "remove_images", "copy_images", "move_images"]
 EXAMPLES = 4  # images a change names as examples
 
 
-def change(conn: sqlite3.Connection, project_id: int, filter: Filter, action: Change, class_id: int | None = None,
+def change(conn: sqlite3.Connection, project_id: int, filter: Filter, action: Change, class_name: str | None = None,
            to_project: int | None = None) -> dict | None:
-    """Change the images matching `filter` all at once, as one action (History undoes it whole):
-    delete the objects the filter names in brackets, e.g. (car w:<10), or give them `class_id`;
-    remove the images from the project; or copy or move them, with their objects, to `to_project`
-    (by class name: the classes it lacks are added to it; images it has already stay as they are,
-    in both). Returns how many images (and objects) it changed, the first few images, and the
-    classes it added; a preview is this, rolled back. None if there's no such project. Caller
-    commits. Raises FrozenError, or ValueError saying why it can't."""
-    row = _row(conn, project_id)
-    if row is None:
+    """Change the project's images matching `filter` all at once, as one action (History undoes it
+    whole): delete the objects the filter names in brackets, e.g. (car w:<10), or give them the
+    class `class_name`; remove the images from the project; or copy or move them, with their
+    objects, to `to_project` (images whose file it has already stay as they are, in both). Returns
+    how many images (and objects) it changed and the first few images; a preview is this, rolled
+    back. None if there's no such project. Caller commits. Raises ValueError saying why it can't."""
+    if _row(conn, project_id) is None:
         return None
-    media_ids = sample(conn, project_id, filter)
+    media_ids = sample(conn, filter, project_id)
     if action in ("delete_objects", "set_class"):
-        return {"action": action} | _rewrite(conn, row, filter, media_ids, class_id if action == "set_class" else None)
+        if action == "set_class" and not class_name:
+            raise ValueError("Give class: the class the objects become")
+        return {"action": action} | _rewrite(conn, project_id, filter, media_ids, class_name if action == "set_class" else None)
     if action == "remove_images":
-        _remove(conn, project_id, media_ids)
+        conn.execute("DELETE FROM media WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(media_ids),))
+        _touch(conn, project_id)
         return {"action": action, "images": len(media_ids), "examples": media_ids[:EXAMPLES]}
-    result, copied = _copy(conn, row, to_project, media_ids)
+    if to_project is None or to_project == project_id or _row(conn, to_project) is None:
+        raise ValueError("Give to_project: another project's id")
     if action == "move_images":
-        _remove(conn, project_id, copied)
-    return {"action": action} | result
+        moved = [r[0] for r in conn.execute(
+            f"""UPDATE OR IGNORE media SET project_id = ?, updated_at = {db.NOW}
+               WHERE id IN (SELECT value FROM json_each(?)) RETURNING id""", (to_project, json.dumps(media_ids)))]
+        _arrived(conn, to_project, moved)
+        _touch(conn, project_id)
+        done = moved
+    else:
+        done = add_images(conn, to_project, media_ids)
+    objects = conn.execute("SELECT count(*) FROM annotation WHERE media_id IN (SELECT value FROM json_each(?))",
+                           (json.dumps(done),)).fetchone()[0]
+    return {"action": action, "images": len(done), "objects": objects, "examples": done[:EXAMPLES],
+            "already_in_target": len(media_ids) - len(done)}
 
 
-def _rewrite(conn: sqlite3.Connection, row: sqlite3.Row, filter: Filter, media_ids: list[int], class_id: int | None) -> dict:
-    """Delete the objects the filter names (class_id None), or give them class_id: those images'
+def _rewrite(conn: sqlite3.Connection, project_id: int, filter: Filter, media_ids: list[int], class_name: str | None) -> dict:
+    """Delete the objects the filter names (class_name None), or give them class_name: those images'
     and objects' counts, and the first images."""
-    matches = _matches(conn, row, filter, media_ids)
+    matches = _matches(conn, filter, media_ids)
     if matches is None:
         raise ValueError("Say which objects, in brackets: e.g. (car w:<10)")
-    if class_id is not None:
-        _check_active(row, {class_id})
-    _editable(conn, row["id"])
-    changed, objects = [], 0
+    changed, objects, known = [], 0, _stored(conn, project_id)
     for media_id, found in matches.items():
-        stored = json.loads(conn.execute("SELECT annotations FROM project_media WHERE project_id = ? AND media_id = ?",
-                                         (row["id"], media_id)).fetchone()[0])
-        found = {i for i in found if class_id is None or stored[i]["class_id"] != class_id}  # already that class: as it is
+        stored = json.loads(_media_row(conn, media_id)["annotations"])
+        if class_name is not None:  # already that class: as it is
+            found = {i for i in found if stored[i]["class"].casefold() != class_name.casefold()}
         if not found:
             continue
-        _save_objects(conn, row["id"], media_id, [o for i, o in enumerate(stored) if i not in found] if class_id is None
-                      else [o | {"class_id": class_id} if i in found else o for i, o in enumerate(stored)])
+        _save(conn, media_id, project_id, [o for i, o in enumerate(stored) if i not in found] if class_name is None
+              else [o | {"class": class_name} if i in found else o for i, o in enumerate(stored)], known)
         changed.append(media_id)
         objects += len(found)
     return {"images": len(changed), "objects": objects, "examples": changed[:EXAMPLES]}
 
 
-def _remove(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> None:
-    """Remove images from a project, and the stored images nothing uses any more."""
-    _editable(conn, project_id)
-    conn.execute("DELETE FROM project_media WHERE project_id = ? AND media_id IN (SELECT value FROM json_each(?))",
-                 (project_id, json.dumps(media_ids)))
-    media.remove_unused(conn, media_ids)
-    _touch(conn, project_id)
+def _spelt(stored: list[dict], objects: list[dict]) -> list[dict]:
+    """These annotations with each class spelt as the project (its classes as kept, `stored`) spells
+    it; a name it hasn't had is added to `stored`, with a colour of its own."""
+    spellings = {c["name"].casefold(): c["name"] for c in stored}
+    for o in objects:
+        if o["class"].casefold() not in spellings:
+            stored.append({"name": o["class"], "color": _free_color(stored)})
+            spellings[o["class"].casefold()] = o["class"]
+        o["class"] = spellings[o["class"].casefold()]
+    return objects
 
 
-def _copy(conn: sqlite3.Connection, source: sqlite3.Row, to_project: int | None, media_ids: list[int]) -> tuple[dict, list[int]]:
-    """Copy images, with their objects of active classes, to another project by class name, adding
-    the classes it lacks; images it has already stay as they are. What it copied and the classes
-    it added, and the images it copied (a move removes them)."""
-    target = _row(conn, to_project)
-    if not target or target["id"] == source["id"]:
-        raise ValueError("Give to_project: another project's id")
-    classes = {c["id"]: c for c in _project(source)["classes"]}
-    rows = conn.execute("SELECT media_id, filename, split, annotations FROM project_media "
-                        "WHERE project_id = ? AND media_id IN (SELECT value FROM json_each(?))",
-                        (source["id"], json.dumps(media_ids))).fetchall()
-    objects = {r["media_id"]: [o for o in json.loads(r["annotations"]) if o["class_id"] in classes] for r in rows}
-    have = {c["name"].casefold() for c in _project(target)["classes"]}
-    used = {classes[o["class_id"]]["name"] for found in objects.values() for o in found}
-    added = sorted((name for name in used if name.casefold() not in have), key=str.casefold)
-    if added:
-        edit_classes(conn, target["id"], add=[NewClass(name=c["name"], color=c["color"], prompt=c["prompt"])
-                                               for c in classes.values() if c["name"] in added])
-    ids = {c["name"].casefold(): c["id"] for c in _project(_row(conn, target["id"]))["classes"]}
-    copied = [r["media_id"] for r in rows if add_image(
-        conn, target["id"], r["media_id"], r["filename"], split=r["split"],
-        annotations=[Annotation(**(o | {"class_id": ids[classes[o["class_id"]]["name"].casefold()]})) for o in objects[r["media_id"]]])]
-    return {"images": len(copied), "objects": sum(len(objects[m]) for m in copied), "examples": copied[:EXAMPLES],
-            "classes_added": added, "already_in_target": len(rows) - len(copied)}, copied
-
-
-def _save_objects(conn: sqlite3.Connection, project_id: int, media_id: int, objects: list[dict]) -> None:
-    """Write an image's objects (all of them, as stored) and mark it and its project changed."""
-    conn.execute(f"UPDATE project_media SET annotations = ?, updated_at = {db.NOW} WHERE project_id = ? AND media_id = ?",
-                 (json.dumps(objects), project_id, media_id))
+def _save(conn: sqlite3.Connection, media_id: int, project_id: int, objects: list[dict],
+          stored: list[dict] | None = None) -> None:
+    """Write an image's annotations (all of them, as stored), spelt the project's way (_spelt;
+    `stored`: its classes, read once for many images), keeping a class it hasn't had, and mark the
+    image and its project changed."""
+    stored = _stored(conn, project_id) if stored is None else stored
+    count = len(stored)
+    _spelt(stored, objects)
+    if len(stored) > count:
+        conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(stored), project_id))
+    conn.execute(f"UPDATE media SET annotations = ?, updated_at = {db.NOW} WHERE id = ?", (json.dumps(objects), media_id))
     _touch(conn, project_id)
 
 
@@ -730,140 +626,137 @@ def _iou(a, b) -> float:
     return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter)
 
 
-def add_annotations(conn: sqlite3.Connection, project_id: int, media_id: int, annotations: list[Annotation]) -> int | None:
+def add_annotations(conn: sqlite3.Connection, media_id: int, annotations: list[Annotation]) -> int | None:
     """Add objects to an image, next to the ones it has, leaving out each one already there: its
     box overlaps an object of its class by DUPLICATE_IOU or more. Returns how many were added;
-    None if the image isn't in the project. Caller commits.
-
-    Raises FrozenError, or ValueError for a class the project doesn't have (or has deleted)."""
-    _check_active(_editable(conn, project_id), {a.class_id for a in annotations})
-    row = conn.execute(
-        "SELECT annotations FROM project_media WHERE project_id = ? AND media_id = ?", (project_id, media_id)
-    ).fetchone()
+    None if there's no such image. Caller commits."""
+    row = _media_row(conn, media_id)
     if row is None:
         return None
     objects = json.loads(row["annotations"])
-    boxes = [(a["class_id"], corners(a)) for a in objects]
+    boxes = [(a["class"].casefold(), corners(a)) for a in objects]
     added = 0
     for a in annotations:
-        new = a.model_dump(exclude_none=True)
-        box = corners(new)
-        if box and any(c == a.class_id and b and _iou(box, b) >= DUPLICATE_IOU for c, b in boxes):
+        new = a.stored()
+        name, box = a.class_.casefold(), corners(new)
+        if box and any(c == name and b and _iou(box, b) >= DUPLICATE_IOU for c, b in boxes):
             continue
         objects.append(new)
-        boxes.append((a.class_id, box))
+        boxes.append((name, box))
         added += 1
     if added:
-        _save_objects(conn, project_id, media_id, objects)
+        _save(conn, media_id, row["project_id"], objects)
     return added
 
 
-def with_prompts(classes: list[dict], prompts: dict[int, str]) -> list[dict]:
-    """The classes with some prompts changed (class id -> prompt); an empty one is the class's name."""
-    return [c | {"prompt": prompts[c["id"]].strip() or c["name"]} if c["id"] in prompts else c for c in classes]
+def with_prompts(listed: list[dict], prompts: dict[str, str]) -> list[dict]:
+    """The classes with some prompts changed (class name -> prompt, ignoring case); an empty one is
+    the class's name."""
+    by_name = {k.casefold(): v for k, v in prompts.items()}
+    return [c | {"prompt": by_name[c["name"].casefold()].strip() or c["name"]} if c["name"].casefold() in by_name else c
+            for c in listed]
 
 
-def set_prompts(conn: sqlite3.Connection, project_id: int, prompts: dict[int, str]) -> None:
-    """Change the prompts of some classes (class id -> prompt), the text sent to annotators. An
-    empty prompt goes back to the class's name. Caller commits.
+def including(listed: list[dict], names) -> list[dict]:
+    """The classes and, after them, those of `names` they haven't (ignoring case): new classes,
+    looked for by their names, with no colour yet."""
+    have = {c["name"].casefold() for c in listed}
+    new = {n.casefold(): n for n in names if n.casefold() not in have}
+    return listed + [{"name": n, "prompt": n, "color": None} for n in new.values()]
 
-    Raises FrozenError, or ValueError for a class the project doesn't have (or has deleted)."""
-    row = _editable(conn, project_id)
-    _check_active(row, set(prompts))
-    classes = with_prompts(json.loads(row["classes"]), prompts)
-    conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(classes), project_id))
+
+def set_prompts(conn: sqlite3.Connection, project_id: int, prompts: dict[str, str]) -> None:
+    """Change the prompts of some classes (class name -> prompt), the text sent to annotators; a
+    name the project hasn't yet becomes a class. An empty prompt goes back to the class's name.
+    Caller commits."""
+    _keep(conn, project_id, with_prompts(including(classes(conn, project_id), prompts), prompts))
+
+
+def _keep(conn: sqlite3.Connection, project_id: int, listed: list[dict]) -> list[dict]:
+    """Keep these as the project's classes, in order, each with its colour (a free one if it has
+    none) and its prompt when it isn't the name; returns them as classes() does."""
+    kept = []
+    for c in listed:
+        kept.append({"name": c["name"], "color": (c.get("color") or _free_color(kept)).lower()}
+                    | ({"prompt": c["prompt"]} if c.get("prompt") and c["prompt"] != c["name"] else {}))
+    conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(kept), project_id))
     _touch(conn, project_id)
+    return _classes(kept)
 
 
-def set_classes(conn: sqlite3.Connection, project_id: int, classes: list[ClassChange]) -> list[dict]:
-    """Set the project's class list to these, in this order (product.md "Classes"): a class left
-    out becomes inactive (its annotations stay, hidden); a new one named like an inactive class
-    brings that one back; any other new one gets the next id, never one used before. A class
-    without a colour keeps its own, or gets the first palette colour no class has. Returns the
-    classes as set, with the new ones' ids. Caller commits.
+def _no_class(name: str, listed) -> ValueError:
+    return ValueError(f"There is no class {name!r}; the classes: {', '.join(c['name'] for c in listed) or 'none'}")
 
-    Raises FrozenError, or ValueError for a repeated name or an id the project doesn't have."""
-    current = {c["id"]: c for c in json.loads(_editable(conn, project_id)["classes"])}
-    active = {i for i, c in current.items() if c["active"]}
-    inactive = {c["name"].casefold(): i for i, c in current.items() if not c["active"]}
-    taken = {c["color"] for c in current.values()} | {c.color.lower() for c in classes if c.color}
-    free = [p for p in PALETTE if p not in taken]
-    next_id = max(current, default=-1) + 1
-    listed, seen = [], {}
-    for c in classes:
+
+def set_classes(conn: sqlite3.Connection, project_id: int, listed: list[ClassChange]) -> list[dict]:
+    """Set the project's class list to these, in this order: a class given by the name it had
+    (`was`) is kept, renamed when `name` differs (its annotations too; into another class's name,
+    they merge); one left out is removed with its annotations; a new one is added. A class
+    without a colour keeps its own, or gets a free one. Returns the classes as set. Caller commits.
+
+    Raises ValueError for a name given twice, or a `was` the project doesn't have."""
+    current = {c["name"].casefold(): c for c in classes(conn, project_id)}
+    kept: dict[str, ClassChange] = {}  # by name: the class given for it
+    renamed, keep = {}, []
+    for c in listed:
         name = c.name.casefold()
-        if first := seen.get(name):
-            raise ValueError(f"There's a class named {first.name} already (id {first.id})" if first.id is not None
-                             else f"Two classes are named {c.name}")
-        seen[name] = c
-        if c.id is None:
-            id = inactive.pop(name, None)
-            if id is None:
-                id, next_id = next_id, next_id + 1
-        elif c.id in active:
-            id = c.id
-            active.discard(id)
-        else:
-            raise ValueError(f"unknown class id: {c.id}")
-        color = c.color or current.get(id, {}).get("color") or (free.pop(0) if free else PALETTE[id % len(PALETTE)])
-        listed.append({"id": id, "name": c.name, "prompt": c.prompt or c.name, "color": color.lower(), "active": True})
-    active = [{k: v for k, v in c.items() if k != "active"} for c in listed]
-    kept = {c["id"] for c in listed}
-    listed += [c | {"active": False} for i, c in current.items() if i not in kept]
-    conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(listed), project_id))
-    _touch(conn, project_id)
-    return active
+        old = current.get(c.was.casefold()) if c.was else None
+        if c.was and old is None:
+            raise _no_class(c.was, current.values())
+        if old and old["name"] != c.name:
+            renamed[old["name"].casefold()] = c.name
+        if first := kept.get(name):  # a class renamed into another's name merges into it; two new ones can't
+            if not any(k.was and k.was.casefold() != name for k in (first, c)):
+                raise ValueError(f"Two classes are named {c.name}")
+            continue
+        kept[name] = c
+        keep.append({"name": c.name, "prompt": c.prompt or c.name, "color": c.color or (old["color"] if old else None)})
+    given = {c.was.casefold() for c in listed if c.was}
+    now = _keep(conn, project_id, keep)
+    _rename(conn, project_id, renamed, {n for n in current if n not in given})
+    return now
+
+
+def _rename(conn: sqlite3.Connection, project_id: int, renamed: dict[str, str], removed: set[str]) -> None:
+    """Rewrite the project's annotations: classes renamed (case-folded old name -> new name), and
+    those of removed classes deleted."""
+    touched = set(renamed) | removed
+    if not touched:
+        return
+    rows = conn.execute("""SELECT DISTINCT m.id, m.annotations FROM media m JOIN annotation a ON a.media_id = m.id
+                           WHERE m.project_id = ? AND a.class IN (SELECT value FROM json_each(?))""",
+                        (project_id, json.dumps(sorted(touched)))).fetchall()
+    stored = _stored(conn, project_id)
+    for row in rows:
+        objects = [o | {"class": renamed.get(o["class"].casefold(), o["class"])}
+                   for o in json.loads(row["annotations"]) if o["class"].casefold() not in removed]
+        _save(conn, row["id"], project_id, objects, stored)
 
 
 def edit_classes(conn: sqlite3.Connection, project_id: int, add: list[NewClass] = (),
-                 change: list[ClassEdit] = (), remove: list[ClassRef] = ()) -> list[dict]:
-    """Add, change and remove some of the project's classes; the others stay as they are. Added
-    ones go last; set_classes's rules hold (a removed class becomes inactive, one added by an
-    inactive class's name brings it back). A prompt that is the class's name stays "the name", so
-    it follows a rename. Returns the classes as set_classes does. Caller commits.
+                 change: list[ClassEdit] = (), remove: list[ClassName] = ()) -> list[dict]:
+    """Add, change and remove some of the project's classes; the others stay as they are. Added ones
+    go last; a renamed one's annotations follow it, a removed one's are deleted (set_classes). A
+    prompt that is the class's name stays "the name", so it follows a rename. Returns the classes as
+    set_classes does. Caller commits. Raises ValueError for a class it doesn't have (saying which it has)."""
+    current = classes(conn, project_id)
+    rows = {c["name"].casefold(): {"was": c["name"], "name": c["name"], "color": c["color"],
+                                   "prompt": "" if c["prompt"] == c["name"] else c["prompt"]} for c in current}
 
-    Raises FrozenError, or ValueError for a class it doesn't have (saying which it has) or as set_classes."""
-    classes = _project(_editable(conn, project_id))["classes"]
-    rows = {c["id"]: {"id": c["id"], "name": c["name"], "color": c["color"],
-                      "prompt": "" if c["prompt"] == c["name"] else c["prompt"]} for c in classes}
-
-    def find(ref: ClassRef) -> int:
-        for id, row in rows.items():
-            if ref == id if isinstance(ref, int) else ref.casefold() == row["name"].casefold():
-                return id
-        listed = ", ".join(f"{c['name']} ({c['id']})" for c in classes) or "none"
-        raise ValueError(f"There is no class {ref!r}; the classes: {listed}")
+    def find(name: str) -> dict:
+        if name.casefold() not in rows:
+            raise _no_class(name, current)
+        return rows[name.casefold()]
 
     for e in change:
-        if e.id is None and e.name is None:
-            raise ValueError("Say which class to change: its id or its name")
-        row = rows[find(e.name if e.id is None else e.id)]
+        row = find(e.name)
         row |= e.model_dump(include={"prompt", "color"}, exclude_none=True)
-        row["name"] = e.new_name or (e.name if e.id is not None and e.name else row["name"])
-    for ref in remove:
-        del rows[find(ref)]
+        row["name"] = e.new_name or row["name"]
+    for name in remove:
+        del rows[find(name)["was"].casefold()]
     return set_classes(conn, project_id, [ClassChange(**r) for r in rows.values()]
                        + [ClassChange(**c.model_dump()) for c in add])
 
 
-def _check_active(project: sqlite3.Row, class_ids: set[int]) -> set[int]:
-    """The project's active class ids; ValueError if `class_ids` has others (unknown or deleted)."""
-    active = {c["id"] for c in _project(project)["classes"]}
-    if class_ids - active:
-        raise ValueError(f"unknown class ids: {sorted(class_ids - active)}")
-    return active
-
-
-def _editable(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row:
-    """The project row, for a write; raises FrozenError if it's frozen."""
-    row = conn.execute("SELECT frozen_at, classes FROM project WHERE id = ?", (project_id,)).fetchone()
-    if row["frozen_at"]:
-        raise FrozenError(f"project {project_id} is frozen")
-    return row
-
-
 def _touch(conn: sqlite3.Connection, project_id: int) -> None:
-    conn.execute(
-        f"UPDATE project SET updated_at = {db.NOW} WHERE id = ?",
-        (project_id,),
-    )
+    conn.execute(f"UPDATE project SET updated_at = {db.NOW} WHERE id = ?", (project_id,))

@@ -60,9 +60,8 @@ def _where(key: dict) -> tuple[str, dict]:
 # --- Reading ---
 
 # How the history page and the agent name what an action changed.
-_NAMES = {"project": ("project", "projects"), "project_media": ("image in a project", "images in projects"),
-          "media": ("stored image", "stored images"), "run": ("run", "runs"), "run_result": ("run result", "run results"),
-          "file": ("file", "files")}
+_NAMES = {"project": ("project", "projects"), "media": ("image", "images"), "run": ("run", "runs"),
+          "run_result": ("run result", "run results"), "file": ("file", "files")}
 _DONE = {"insert": "added", "update": "changed", "delete": "deleted", "trash": "moved to the trash",
          "untrash": "back from the trash"}
 
@@ -98,7 +97,7 @@ def actions(conn: sqlite3.Connection, limit: int = 100, action_id: str | None = 
 
 def _changed(conn: sqlite3.Connection, action_id: str) -> str:
     """What an action changed, per row: added (its first entry an insert), deleted (its last a
-    delete) or changed; "project “Cats” deleted, 1,240 images in projects deleted"."""
+    delete) or changed; "project “Cats” deleted, 1,240 images deleted"."""
     groups = conn.execute(
         """WITH touched AS (SELECT tbl, key, min(id) AS first, max(id) AS last FROM history
                             WHERE action_id = ? GROUP BY tbl, key)

@@ -14,14 +14,10 @@ from contextlib import closing
 
 from PIL import Image, ImageDraw
 
-from app import annotators, db, media, projects
+from app import db, media, projects
 
 NAME = "Shapes (sample)"
-CLASSES = [
-    {"id": 0, "name": "square", "prompt": "square", "color": "#e11d48", "active": True},
-    {"id": 1, "name": "circle", "prompt": "circle", "color": "#2563eb", "active": True},
-    {"id": 2, "name": "triangle", "prompt": "triangle", "color": "#16a34a", "active": True},
-]
+CLASSES = [("square", "#e11d48"), ("circle", "#2563eb"), ("triangle", "#16a34a")]
 IMAGE_COUNT = 24
 WIDTH, HEIGHT = 640, 480
 
@@ -32,16 +28,16 @@ def make_image(rng: random.Random) -> tuple[bytes, list[dict]]:
     draw = ImageDraw.Draw(image)
     annotations = []
     for _ in range(rng.randint(1, 4)):
-        class_id = rng.randrange(len(CLASSES))
+        shape = CLASSES[rng.randrange(len(CLASSES))][0]
         size = rng.randint(60, 160)
         x, y = rng.randint(0, WIDTH - size), rng.randint(0, HEIGHT - size)
         fill = tuple(rng.randint(40, 160) for _ in range(3))
         # One object per shape, with every form it has (like COCO and pixelflow's Detection).
-        obj = {"class_id": class_id, "bbox": [x, y, size, size]}
+        obj = {"class": shape, "bbox": [x, y, size, size]}
         box = (x, y, x + size, y + size)
-        if class_id == 0:
+        if shape == "square":
             draw.rectangle(box, fill=fill)
-        elif class_id == 1:
+        elif shape == "circle":
             draw.ellipse(box, fill=fill)
             obj["keypoints"] = [{"name": "center", "point": [x + size / 2, y + size / 2]}]
         else:
@@ -59,14 +55,15 @@ def main() -> None:
         if conn.execute("SELECT 1 FROM project WHERE name = ?", (NAME,)).fetchone():
             print(f"'{NAME}' already exists; nothing to do.")
             return
-        project_id = projects.create(conn, NAME, "Generated squares, circles and triangles.", "detection",
-                                     annotators.SUGGESTED["detection"],
-                                     [projects.ClassChange(name=c["name"], color=c["color"]) for c in CLASSES])
+        project_id = projects.create(conn, NAME, "Generated squares, circles and triangles.", "detection", None,
+                                     [projects.ClassChange(name=name, color=color) for name, color in CLASSES])
         rng = random.Random(0)
         for i in range(IMAGE_COUNT):
             data, annotations = make_image(rng)
             split = "train" if i < 18 else "val" if i < 22 else "test"
-            projects.add_image(conn, project_id, media.store(conn, data, f"shapes_{i:03}.jpg"), f"shapes_{i:03}.jpg", annotations, split)
+            media_id, _ = media.store(conn, project_id, data, f"shapes_{i:03}.jpg")
+            conn.execute("UPDATE media SET split = ? WHERE id = ?", (split, media_id))
+            projects.set_annotations(conn, media_id, [projects.Annotation(**a) for a in annotations])
     print(f"Created '{NAME}' with {IMAGE_COUNT} images.")
 
 

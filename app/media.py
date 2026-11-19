@@ -1,6 +1,8 @@
-"""Media files: stored once in MEDIA_DIR, named by the SHA-256 of their content.
+"""Media: an image in a project is a row of `media`; its file is stored once in MEDIA_DIR, named by
+the SHA-256 of its content, whichever projects have it.
 
-Each image also gets a small WebP thumbnail next to it (<sha256>.thumb.webp) for grids.
+Each image also gets a small WebP thumbnail next to it (<sha256>.thumb.webp) for grids. A file
+goes when no row and no history entry names it any more (history.purge).
 """
 
 import hashlib
@@ -42,12 +44,13 @@ def thumb_url(sha256: str) -> str:
     return url(sha256, "thumb.webp")
 
 
-def store(conn: sqlite3.Connection, data: bytes, name: str) -> int:
-    """Store an image (if new) under the file name it came with, and return its media id. Caller
-    commits.
+def store(conn: sqlite3.Connection, project_id: int, data: bytes, name: str) -> tuple[int, bool]:
+    """Store an image in a project under the file name it came with: its media id, and whether it's
+    new there (a project has a file once: the same file again keeps the row it has). Caller commits.
 
-    EXIF rotation is applied here, so stored pixels are upright and width/height
-    are true; annotations then never depend on a rotation flag.
+    The file is written once for every project (named by its content), with its thumbnail.
+    EXIF rotation is applied here, so stored pixels are upright and width/height are true;
+    annotations then never depend on a rotation flag.
     Raises NotAnImage for anything that isn't a supported image.
     """
     try:
@@ -77,55 +80,23 @@ def store(conn: sqlite3.Connection, data: bytes, name: str) -> int:
         if not thumb.exists():
             _write(thumb, _thumbnail(image))
 
-    row = conn.execute("SELECT id FROM media WHERE sha256 = ?", (sha256,)).fetchone()
+    row = conn.execute("SELECT id FROM media WHERE project_id = ? AND sha256 = ?", (project_id, sha256)).fetchone()
     if row:
-        return row["id"]
+        return row["id"], False
     return conn.execute(
-        "INSERT INTO media (sha256, ext, width, height, name) VALUES (?, ?, ?, ?, ?)",
-        (sha256, ext, width, height, name),
-    ).lastrowid
+        "INSERT INTO media (project_id, sha256, ext, width, height, name) VALUES (?, ?, ?, ?, ?, ?)",
+        (project_id, sha256, ext, width, height, name),
+    ).lastrowid, True
 
 
-def remove_unused(conn: sqlite3.Connection, media_ids: list[int]) -> None:
-    """Of these media, delete the rows no project, run or chat message (attached) uses any more.
-    Caller commits. Their files stay while the history can put the rows back; history.purge
-    removes them after."""
-    if not media_ids:
-        return
-    conn.execute(
-        """DELETE FROM media WHERE id IN (SELECT value FROM json_each(?))
-           AND NOT EXISTS (SELECT 1 FROM project_media WHERE media_id = media.id)
-           AND NOT EXISTS (SELECT 1 FROM run_result WHERE media_id = media.id)
-           AND NOT EXISTS (SELECT 1 FROM attachment WHERE media_id = media.id)""",
-        (json.dumps(media_ids),),
-    )
-
-
-def attach(conn: sqlite3.Connection, message_id: int, media_id: int) -> bool:
-    """Attach a stored image to a chat message; False if it already was. Caller commits."""
-    return conn.execute("INSERT OR IGNORE INTO attachment (message_id, media_id) VALUES (?, ?)", (message_id, media_id)).rowcount == 1
-
-
-def attached(conn: sqlite3.Connection, message_id: int, limit: int = -1) -> list[int]:
-    """The images attached to a chat message, in the order they came (the first `limit`)."""
-    return [row[0] for row in conn.execute("SELECT media_id FROM attachment WHERE message_id = ? ORDER BY rowid LIMIT ?",
-                                           (message_id, limit))]
-
-
-# An image's name, in SQL over `media m LEFT JOIN project_media pm` (the project it's seen in, if
-# any): its name there; else its own, the file name it came with; else the start of its sha256.
-NAME = "coalesce(pm.filename, m.name, substr(m.sha256, 1, 12))"
-
-
-def listed(conn: sqlite3.Connection, media_ids: list[int], project_id: int | None = None) -> list[dict]:
-    """These stored images, in the order given (those that are stored): media_id, name (NAME, in
-    the project given), width, height and thumbnail."""
+def listed(conn: sqlite3.Connection, media_ids: list[int]) -> list[dict]:
+    """These images, in the order given (those that exist): media_id, project_id, name, width,
+    height and thumbnail."""
     rows = {r["id"]: r for r in conn.execute(
-        f"""SELECT m.id, m.sha256, m.width, m.height, {NAME} AS name
-            FROM media m LEFT JOIN project_media pm ON pm.media_id = m.id AND pm.project_id = ?
-            WHERE m.id IN (SELECT value FROM json_each(?))""", (project_id, json.dumps(media_ids)))}
-    return [{"media_id": m, "name": rows[m]["name"], "width": rows[m]["width"], "height": rows[m]["height"],
-             "thumb_url": thumb_url(rows[m]["sha256"])} for m in media_ids if m in rows]
+        "SELECT id, project_id, sha256, width, height, name FROM media WHERE id IN (SELECT value FROM json_each(?))",
+        (json.dumps(media_ids),))}
+    return [{"media_id": m, "project_id": rows[m]["project_id"], "name": rows[m]["name"], "width": rows[m]["width"],
+             "height": rows[m]["height"], "thumb_url": thumb_url(rows[m]["sha256"])} for m in media_ids if m in rows]
 
 
 def thumbnail(file: Path) -> bytes:
