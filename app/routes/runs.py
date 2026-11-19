@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app import annotators, db, runs
 from app.formatting import plural
-from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, Started, started
+from app.routes import IMAGES, READS, AnnotationOut, Answer, Done, Images, Started, started
 
 router = APIRouter(prefix="/api")
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -67,11 +67,11 @@ class RunOut(Answer):
     id: int = Field(description="The run's id.")
     name: str
     workflow_id: str | None = Field(description="The workflow it ran (its copy is kept with the run); null: one not saved, tried as a draft.")
-    project_id: int | None = Field(description="The project its images came from; null: images given by id.")
+    project_id: int | None = Field(description="The project its images are in; null: deleted.")
     job_id: int | None = Field(description="The job that ran it (GET /api/jobs/{job_id}).")
     status: str | None = Field(description="The job's status: queued, running, succeeded, failed, cancelled, interrupted.")
     created_at: str = Field(description="When it started, UTC (ISO 8601).")
-    classes: list[int] | None = Field(description="The project's class ids its prompts stood for, in order; null: other prompts.")
+    classes: list[str] | None = Field(description="The class names its prompts stood for, in order (auto-annotate, Try); null: other prompts.")
     annotates: bool = Field(description="It added its objects to the project (auto-annotate).")
     images: int = Field(description="How many images have results so far.")
 
@@ -84,18 +84,18 @@ class ClassFound(Answer):
 
 class RunResult(Answer):
     media_id: int = Field(description="The image's id.")
-    filename: str = Field(description="Its file name in the run's project (no project: the start of its sha256).")
+    filename: str = Field(description="Its file name.")
     label: str = Field(description="Which of the workflow's save_to_babasu nodes kept it.")
     objects: dict[str, int] = Field(description="How many objects of each class were found on it.")
     width: int | None = Field(None, description="In pixels (with ?annotations=1).")
     height: int | None = Field(None, description="In pixels (with ?annotations=1).")
-    annotations: list[AnnotationOut] | None = Field(None, description="The objects as a project stores them, class_id "
+    annotations: list[AnnotationOut] | None = Field(None, description="The objects as a project stores them: class "
                                                     "(in `legend`), bbox [x, y, w, h], segments, score (with ?annotations=1).")
 
 
-class LegendClass(ClassOut):
-    prompt: str | None = Field(None, description="A project's class: its prompt.")
-    active: bool | None = Field(None, description="A project's class: always true.")
+class LegendClass(Answer):
+    name: str = Field(description="The class's name.")
+    color: str = Field(description="The colour it's drawn in, #rrggbb.")
 
 
 class RunDetail(RunOut):
@@ -103,8 +103,8 @@ class RunDetail(RunOut):
     page: int = Field(description="This page's number, from 1.")
     pages: int = Field(description="How many pages its images make.")
     results: list[RunResult] = Field(description="This page of its images' results, by image (one a label).")
-    legend: list[LegendClass] | None = Field(None, description="The classes the annotations are in: a project's run, "
-                                             "the project's; any other, its prompts in order (with ?annotations=1).")
+    legend: list[LegendClass] | None = Field(None, description="The classes the annotations are in, with their colours "
+                                             "(with ?annotations=1).")
 
 
 @router.get("/workflows", response_model=list[WorkflowListed], response_model_exclude_unset=True)
@@ -230,8 +230,8 @@ def api_start_run(new: NewRun, conn: DB) -> dict:
     starts}. Follow the job at /api/jobs/{job_id}, read the results at /api/runs/{run_id}, see them
     at /runs/{run_id}. 422 with why it can't start."""
     try:
-        _, media_ids = new.images.ids(conn)
-        run_id, job_id, name = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.images.project_id, new.name,
+        media_ids = new.images.ids(conn)
+        run_id, job_id, name = runs.start(conn, new.workflow_id, media_ids, new.overrides, new.name,
                                           new.prompts, new.workflow)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
@@ -271,8 +271,7 @@ def api_rename_run(run_id: int, changes: RunChanges, conn: DB) -> dict:
 
 @router.delete("/runs/{run_id}", response_model=Done)
 def api_delete_run(run_id: int, conn: DB) -> dict:
-    """Deletes the run and its results, and the images no project, run or message uses any more;
-    409 while its job runs."""
+    """Deletes the run and its results; 409 while its job runs."""
     try:
         run = _found(runs.delete(conn, run_id))
     except ValueError as e:

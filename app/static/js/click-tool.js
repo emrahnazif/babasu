@@ -93,7 +93,7 @@ export function clickTool(editor, canvas, currentClass) {
       const response = await fetch(canvas.dataset.segment, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ points, labels, box, class_id: classOf() }),
+        body: JSON.stringify({ points, labels, box, class: classOf() }),
         signal: controller.signal,
       });
       if (response.status === 204) return undefined; // overtaken by a newer call

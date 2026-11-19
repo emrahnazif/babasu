@@ -2,19 +2,18 @@
    through the images the project page was showing (its filter comes along in the URL). In the
    middle, the class (the selected object's, or new objects'). In the main bar, Auto-annotate (the
    project's auto-annotator on this image; the editor shows what it added when the job ends) and
-   Edit project, as on the project page. A frozen
-   project, or one without classes, only shows its annotations. #}
+   Edit project, as on the project page. A project without classes only shows its annotations. #}
 {% extends "base.html" %}
 {% from "projects/macros.html" import downloads, no_classes %}
 {% set project, params = image.project, {"where": image.filter} %}
-{% set editable = not project.frozen_at and project.classes %}
+{% set editable = project.classes %}
 {% set main_bleed = true %}
 {% set crumbs = [(project.name, "/projects/" ~ project.id ~ query(params)), (image.filename, None)] %}
-{% block about %}Image {{ image.filename }} (media_id {{ image.media_id }}) of project {{ project.name }} (id {{ project.id }}); its objects, by place: {% set listed = image.annotations[:40] %}{% for a in listed %}#{{ loop.index0 }} {{ (project.classes | selectattr("id", "equalto", a.class_id) | first).name }}{{ ", " if not loop.last }}{% else %}none{% endfor %}{% if image.annotations | length > listed | length %} and {{ image.annotations | length - listed | length }} more{% endif %}.{% endblock %}
+{% block about %}Image {{ image.filename }} (media_id {{ image.media_id }}) of project {{ project.name }} (id {{ project.id }}); its objects, by place: {% set listed = image.annotations[:40] %}{% for a in listed %}#{{ loop.index0 }} {{ a["class"] }}{{ ", " if not loop.last }}{% else %}none{% endfor %}{% if image.annotations | length > listed | length %} and {{ image.annotations | length - listed | length }} more{% endif %}.{% endblock %}
 
 {% macro step(media_id, label, icon_name, key) %}
   {% if media_id %}
-    <a class="icon-button" href="/projects/{{ project.id }}/images/{{ media_id }}{{ query(params) }}"
+    <a class="icon-button" href="/images/{{ media_id }}{{ query(params) }}"
        data-shortcut="{{ key }}" aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</a>
   {% else %}
     <button class="icon-button" type="button" disabled aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</button>
@@ -25,10 +24,10 @@
 
 {# The main bar: the project's own actions, as on the project page. #}
 {% block actions %}
-  {% if editable and project.annotator %}
-    <form method="post" action="/projects/{{ project.id }}/images/{{ image.media_id }}/annotate" data-background-form>
+  {% if editable and annotator %}
+    <form method="post" action="/images/{{ image.media_id }}/annotate" data-background-form>
       <button class="icon-button" type="submit" aria-label="Auto-annotate"
-              title="Auto-annotate this image with {{ annotators[project.annotator] }}{% if to_download %}; downloads {{ downloads(to_download) }} first{% endif %}">{{ icon("sparkles") }}</button>
+              title="Auto-annotate this image with {{ annotators[annotator] }}{% if to_download %}; downloads {{ downloads(to_download) }} first{% endif %}">{{ icon("sparkles") }}</button>
     </form>
   {% endif %}
   <a class="icon-button" href="/projects/{{ project.id }}/edit" aria-label="Edit project" title="Edit project">{{ icon("pencil-square") }}</a>
@@ -53,7 +52,7 @@
       <div id="class-menu" class="menu" popover>
         <input class="menu__search" type="search" placeholder="Class…" aria-label="Class" autocomplete="off" autofocus>
         {% for class in project.classes %}
-          <button class="menu__item" type="button" data-class-id="{{ class.id }}">
+          <button class="menu__item" type="button" data-class-name="{{ class.name }}">
             <span class="menu__swatch" style="--swatch-color: {{ class.color }}"></span>{{ class.name }}</button>
         {% endfor %}
       </div>
@@ -92,11 +91,11 @@
       <img src="{{ image.url }}" alt="{{ image.filename }}">
       <svg viewBox="0 0 {{ image.width }} {{ image.height }}"
            data-annotations='{{ image.annotations | tojson }}' data-classes='{{ project.classes | tojson }}'
-           data-source="/api/projects/{{ project.id }}/images/{{ image.media_id }}" data-project-id="{{ project.id }}"
-           {% if editable %}data-save="/api/projects/{{ project.id }}/images/{{ image.media_id }}/annotations"
-             data-segment="/api/projects/{{ project.id }}/images/{{ image.media_id }}/segment"
-             data-prepare="/api/projects/{{ project.id }}/images/{{ image.media_id }}/prepare"
-             {% if image.next_id %}data-prepare-next="/api/projects/{{ project.id }}/images/{{ image.next_id }}/prepare"{% endif %}{% endif %}></svg>
+           data-source="/api/images/{{ image.media_id }}" data-project-id="{{ project.id }}"
+           {% if editable %}data-save="/api/images/{{ image.media_id }}/annotations"
+             data-segment="/api/images/{{ image.media_id }}/segment"
+             data-prepare="/api/images/{{ image.media_id }}/prepare"
+             {% if image.next_id %}data-prepare-next="/api/images/{{ image.next_id }}/prepare"{% endif %}{% endif %}></svg>
     </div>
     {# The click tool's object being shaped: its points, and Add and Discard next to it; Refine
        next to a selected object, to shape it again. #}

@@ -211,8 +211,9 @@
   <svg viewBox="0 0 {{ image.width }} {{ image.height }}"{% if cover %} preserveAspectRatio="xMidYMid slice"{% endif %} role="img" aria-label="{{ label }}">
     <image href="{{ src }}" width="{{ image.width }}" height="{{ image.height }}"/>
     {% set keypoint_r = ([image.width, image.height] | max / 80) | round(1) %}
+    {% set colors = {} %}{% for c in classes or [] %}{% set _ = colors.update({c.name | lower: c.color}) %}{% endfor %}
     {% for a in image.annotations %}
-      {% set color = (classes | selectattr("id", "equalto", a.class_id) | first).color %}
+      {% set color = colors.get(a["class"] | lower) %}
       {% if image.matches is defined and image.matches is not none and loop.index0 not in image.matches %}<g opacity="0.25">{% else %}<g>{% endif %}
       {# An object with a polygon shows the polygon; its box would only repeat the outline. #}
       {% if a.segments %}
@@ -257,7 +258,7 @@
 {# Images in `columns` columns (4 if not given; fewer when one would be narrower than `min`), each a
    square the image covers, with its caption under it. An image: {"src", "caption"}; with
    "annotations" (and "width" and "height", the image's size they're measured in), they're drawn
-   on it, each in its class's colour (`classes`: [{"id", "color"}], as a project has them). #}
+   on it, each in its class's colour (`classes`: [{"name", "color"}], as a project has them). #}
 {% macro gallery(images, columns=none, min=none, classes=none) -%}
   <div class="gallery"{{ _grid(columns, min) }}>
     {%- for each in images %}

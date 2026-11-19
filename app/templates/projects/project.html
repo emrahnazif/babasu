@@ -3,8 +3,8 @@
 {% from "projects/macros.html" import downloads, image_tiles, no_classes %}
 {% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
-{% block about %}Project {{ project.name }} (id {{ project.id }}, {{ project.task }}): {{ project.image_count | plural("image") }}, {{ project.labelled_count | number }} labelled.
-  Classes: {% for c in project.classes %}{{ c.name }} (id {{ c.id }}) {{ c.annotation_count | plural("object") }}{{ ", " if not loop.last }}{% else %}none{% endfor %}.
+{% block about %}Project {{ project.name }} (id {{ project.id }}{{ ", " ~ project.task if project.task }}): {{ project.image_count | plural("image") }}, {{ project.labelled_count | number }} labelled.
+  Classes: {% for c in project.classes %}{{ c.name }} {{ c.annotation_count | plural("object") }}{{ ", " if not loop.last }}{% else %}none{% endfor %}.
   {% if error %}Its filter is refused: {{ error }}{% elif project.filter %}Filtered by {{ project.filter }}: {{ project.match_count | plural("image") }} match.{% endif %}
   {% if project.pages > 1 %}Page {{ project.page }} of {{ project.pages }}.{% endif %}{% endblock %}
 {% set params = {"where": project.filter} %}  {# these links keep the filter #}
@@ -157,7 +157,7 @@
 {% block content %}
   {% call ui.region("project-images", on="job-ended", when="projectId=" ~ project.id) %}
   {% if project.images %}
-    {{ image_tiles(project.id, project.images, project.classes, query=query(params), badges=true) }}
+    {{ image_tiles(project.images, project.classes, query=query(params), badges=true) }}
     {% if project.pages > 1 %}
       {{ ui.pagination(project.page, project.pages, note=project.match_count | plural("image"),
                        previous=query(params, page=project.page - 1) if project.page > 1,
@@ -204,18 +204,18 @@
           New objects go next to the ones there; an image is done once per class.
         </p>
       {% else %}
-        <p class="muted">The project has no auto-annotator: choose one in its settings.</p>
+        <p class="muted">No model knows these keypoints: choose an auto-annotator in the project's settings.</p>
       {% endif %}
       <table>
         <thead><tr><th>Class</th><th>Prompt</th><th>Images to do</th></tr></thead>
         <tbody>
           {% for class in project.classes %}
             <tr>
-              <td><label><input type="checkbox" name="use" value="{{ class.id }}" {% if auto.pending[class.id] %}checked{% endif %}>
+              <td><label><input type="checkbox" name="use" value="{{ class.name }}" {% if auto.pending[class.name] %}checked{% endif %}>
                 <span class="badge" style="--badge-color: {{ class.color }}">{{ class.name }}</span></label></td>
-              <td><input type="hidden" name="class_id" value="{{ class.id }}">
+              <td><input type="hidden" name="class_name" value="{{ class.name }}">
                 <input name="prompt" value="{{ class.prompt }}" placeholder="{{ class.name }}" maxlength="500" aria-label="Prompt for {{ class.name }}"></td>
-              <td id="pending-{{ class.id }}" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">{{ auto.pending[class.id] }}</td>
+              <td id="pending-{{ loop.index }}" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">{{ auto.pending[class.name] }}</td>
             </tr>
           {% endfor %}
         </tbody>

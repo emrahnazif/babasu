@@ -13,7 +13,7 @@
 {% macro class_row(c, saved) %}
   <tr{% if saved %} data-saved{% endif %}>
     <td>
-      {{ ui.hidden("class_id", c.id) }}
+      {{ ui.hidden("class_was", c.was) }}
       <input type="color" name="class_color" value="{{ c.color }}" aria-label="Colour">
     </td>
     <td><input name="class_name" value="{{ c.name }}" required maxlength="100" aria-label="Name"></td>
@@ -21,8 +21,8 @@
     {% if project %}
       <td class="muted">
         {% if saved %}
-          {% set count = counts.get(c.id, 0) %}
-          <span>{{ count }}</span><span hidden>Removed{% if count %}: {{ count | plural("annotation") }} hidden{% endif %}</span>
+          {% set count = counts.get(c.was | lower, 0) %}
+          <span>{{ count }}</span><span hidden>Removed{% if count %}, with {{ count | plural("annotation") }}{% endif %}</span>
         {% else %}New{% endif %}
       </td>
     {% endif %}
@@ -36,24 +36,24 @@
   {% set at = "/projects/" ~ project.id if project else "/projects" %}
   {% call ui.form(at ~ "/edit" if project else at, error=error) %}
     {{ ui.fields([
-      ui.input("name", "Name", values.name, required=true, maxlength=200, autofocus=not project),
+      ui.input("name", "Name", values.name, maxlength=200, autofocus=not project, placeholder="Untitled project"),
       ui.textarea("description", "Description", values.description, maxlength=2000),
-      ui.select("task", "Type", tasks.items() | list + [(none, "Classification (later)")], values.task),
-      ui.select("annotator", "Auto-annotator", annotators.items() | list + [("", "None")], values.annotator or "") if project,
+      ui.select("task", "Type", [("", "Not chosen")] + tasks.items() | list + [(none, "Classification (later)")], values.task or ""),
+      ui.select("annotator", "Auto-annotator", [("", "Suggested for its type")] + annotators.items() | list, values.annotator or "") if project,
     ]) }}
 
     {% call ui.section("Classes", ['The prompt is what the auto-annotator looks for, e.g. "hole in the road surface" for a class named pothole.',
-                                   "Removing a class hides its annotations without deleting them; adding a class by that name again brings them back." if project],
+                                   "Renaming a class renames its annotations; removing one deletes them (History can undo it)." if project],
                        id="classes-section") %}
       <table>
         <thead>
           <tr><th>Colour</th><th>Name</th><th>Prompt</th>{% if project %}<th>Annotations</th>{% endif %}<th></th></tr>
         </thead>
         <tbody id="classes" data-palette='{{ palette | tojson }}'>
-          {% for c in values.classes %}{{ class_row(c, c.id is not none) }}{% endfor %}
+          {% for c in values.classes %}{{ class_row(c, c.was is not none) }}{% endfor %}
         </tbody>
       </table>
-      <template id="class-row">{{ class_row({"id": none, "name": "", "color": palette[0], "prompt": ""}, false) }}</template>
+      <template id="class-row">{{ class_row({"was": none, "name": "", "color": palette[0], "prompt": ""}, false) }}</template>
       <div class="actions start"><button class="button secondary" type="button" data-add-class>Add class</button></div>
     {% endcall %}
 
@@ -61,9 +61,6 @@
   {% endcall %}
 
   {% if project %}
-    {{ ui.section("Duplicate project", 'A new project, "' ~ project.name ~ ' copy", with the same classes, images and annotations. Runs stay with this one.',
-                  children=ui.actions(ui.button("Duplicate", post=at ~ "/duplicate", variant="secondary"))) }}
-
     {% call ui.section("Delete project", "Removes its images, their annotations and its runs. History can undo it for 30 days.") %}
       {% if deletion.jobs %}
         {{ ui.text(deletion.jobs | plural("job") ~ " of this project " ~ ("is" if deletion.jobs == 1 else "are") ~ " queued or running: cancel "
@@ -77,8 +74,7 @@
                  actions=ui.button("Delete", variant="destructive", submit=true), children=[
       ui.text("This removes:"),
       ui.list([deletion.images | plural("image") ~ " and " ~ deletion.annotations | plural("annotation"),
-               deletion.runs | plural("run") ~ " (auto-annotate, Try and workflow runs on its images) and their results",
-               "the image files no other project or run uses, from the workspace"]),
+               deletion.runs | plural("run") ~ " (auto-annotate, Try and workflow runs on its images) and their results"]),
       ui.text("History can undo it for 30 days.", muted=true),
     ]) }}
   {% endif %}

@@ -11,7 +11,7 @@
       {% for project in projects %}
         {% call ui.card(project.name, project.description, action=ui.time(project.updated_at),
                         cover=project.covers or "No images yet", href="/projects/" ~ project.id) %}
-          {{ ui.text([tasks[project.task], project.image_count | plural("image"), project.class_count | plural("class"),
+          {{ ui.text([tasks[project.task] if project.task, project.image_count | plural("image"), project.class_count | plural("class"),
                       ((100 * project.labelled_count / project.image_count) | round | int) ~ "% labelled" if project.image_count]
                      | select | join(" · "), muted=true) }}
         {% endcall %}

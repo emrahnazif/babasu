@@ -1,5 +1,6 @@
 """Route modules (one per area), plus what they share."""
 
+import json
 import random
 import sqlite3
 from collections.abc import Iterator
@@ -17,7 +18,7 @@ from app.formatting import filesize
 
 # Not `from app import projects` (nor runs, vision): in this package those names are route modules.
 from app.projects import PROMPT, Annotation
-from app.runs import found_on, on_project
+from app.runs import found_on, matching
 from app.vision import downloads_first
 
 # The tag of API operations only the app's own pages use (the chat's, uploads): the agent's list
@@ -109,7 +110,7 @@ class KeypointOut(Answer):
 class AnnotationOut(Answer):
     """An Annotation as an answer has it: checked when it was written, not again on each read."""
 
-    class_id: int = Field(description=_said("class_id"))
+    class_: str = Field(alias="class", description=_said("class_"))
     bbox: tuple[float, float, float, float] | None = Field(None, description=_said("bbox"))
     segments: list[tuple[float, float]] | None = Field(None, description=_said("segments"))
     keypoints: list[KeypointOut] | None = Field(None, description=_said("keypoints"))
@@ -159,63 +160,56 @@ def check_writes(openapi: dict) -> None:
         raise RuntimeError(f"Writes that don't answer what they did (a Done response_model): {', '.join(missing)}")
 
 
-IMAGES = ("Which images: {\"message_id\": 57} (those attached to a message), {\"project_id\": 3, \"where\": "
-          "\"night\", \"count\": 10} (a project's, matching a filter, some at random), {\"run_id\": 31, \"found\": "
+IMAGES = ("Which images: {\"project_id\": 3, \"where\": \"night\", \"count\": 10} (a project's, matching a filter, "
+          "some at random), {\"where\": \"tomato\"} (every project's matching it), {\"run_id\": 31, \"found\": "
           "\"person\"} (those a run found that on) or {\"media_ids\": [...]}.")
 
 
 class Images(BaseModel):
-    """Which images, one way: by id; those attached to a chat message; a project's (those matching a
-    filter); or a run's (those it found a class on). Any of them, some at random (count)."""
+    """Which images, one way: by id; a project's, or every project's, matching a filter; or a run's
+    (those it found a class on). Any of them, some at random (count)."""
 
     model_config = ConfigDict(extra="forbid")
     media_ids: list[int] | None = Field(None, description="By id.")
-    message_id: int | None = Field(None, description="Those the person attached to a message of the chat.")
-    project_id: int | None = Field(None, description="A project's images (with where).")
-    where: str = Field("", max_length=2000, description=WHERE)
+    project_id: int | None = Field(None, description="A project's images (with where); without one, where looks in every project.")
+    where: str | None = Field(None, max_length=2000, description=WHERE)
     run_id: int | None = Field(None, description="A run's images (with found: those it found that on).")
     found: str | None = Field(None, description="With run_id: a class name; only the images the run found it on.")
     count: int | None = Field(None, ge=1, description="That many of them, picked at random; empty for all.")
 
     @model_validator(mode="after")
     def _one_way(self):
-        if sum(given is not None for given in (self.media_ids, self.message_id, self.project_id, self.run_id)) != 1:
-            raise ValueError("Name the images one way: media_ids, message_id, project_id (with where) or run_id (with found)")
-        if self.where and self.project_id is None:
-            raise ValueError("where filters a project's images: give project_id with it")
+        ways = (self.media_ids, self.project_id if self.project_id is not None else self.where, self.run_id)
+        if sum(given is not None for given in ways) != 1:
+            raise ValueError("Name the images one way: media_ids, project_id (with where), where alone (every "
+                             "project's) or run_id (with found)")
         if self.found and self.run_id is None:
             raise ValueError("found picks a run's images: give run_id with it")
         return self
 
-    def ids(self, conn: sqlite3.Connection) -> tuple[int | None, list[int]]:
-        """Which images: the project they're in (the one named, or the run's), if any, and their ids.
-        ValueError saying why there are none, or which ids aren't stored images."""
-        project_id = self.project_id
+    def ids(self, conn: sqlite3.Connection) -> list[int]:
+        """The images' ids. ValueError saying why there are none, or which ids aren't stored images."""
         if self.media_ids is not None:
             ids = list(dict.fromkeys(self.media_ids))
-            if missing := sorted(set(ids) - {i["media_id"] for i in media.listed(conn, ids)}):
+            stored = {r[0] for r in conn.execute("SELECT id FROM media WHERE id IN (SELECT value FROM json_each(?))",
+                                                 (json.dumps(ids),))}
+            if missing := sorted(set(ids) - stored):
                 raise ValueError(f"No stored images {missing}")
-        elif self.message_id is not None:
-            if not (ids := media.attached(conn, self.message_id)):
-                raise ValueError(f"Message {self.message_id} has no images attached")
-        elif self.project_id is not None:
-            ids = on_project(conn, self.project_id, Filter.parse(self.where))
+        elif self.run_id is not None:
+            ids = found_on(conn, self.run_id, self.found)
         else:
-            project_id, ids = found_on(conn, self.run_id, self.found)
+            ids = matching(conn, self.project_id, Filter.parse(self.where or ""))
         if self.count is not None and self.count < len(ids):
             ids = sorted(random.sample(ids, self.count))
-        return project_id, ids
+        return ids
 
     def resolve(self, conn: sqlite3.Connection) -> list[dict]:
-        """The images, as media.listed has them (named as their project names them, if they're a
-        project's or a run of one's). ValueError as ids()."""
-        project_id, ids = self.ids(conn)
-        return media.listed(conn, ids, project_id)
+        """The images, as media.listed has them. ValueError as ids()."""
+        return media.listed(conn, self.ids(conn))
 
 
 class ClassOut(Answer):
-    id: int = Field(description="The class's id in its project (what annotations' class_id refers to).")
-    name: str = Field(description="Its name, e.g. car.")
+    name: str = Field(description="Its name, e.g. car (what annotations' class says).")
     color: str = Field(description="The colour it's drawn in, #rrggbb.")
     prompt: str = Field(description=PROMPT)
 
