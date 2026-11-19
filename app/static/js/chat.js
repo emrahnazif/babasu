@@ -20,14 +20,10 @@ if (chat) {
   addEventListener("pagehide", () => { leaving = true; });
 
   const clone = (id) => chat.querySelector(`#${id}`).content.firstElementChild.cloneNode(true);
-  // Images drawn by the server as in a saved turn (partials/chat-images.html): those a step found,
-  // a project's (with their objects) or stored ones of no project; or those attached to a message.
+  // Images drawn by the server as in a saved turn (partials/chat-images.html), with their objects:
+  // those a step found, or those dropped with a message.
   const html = (url) => fetch(url).then((response) => (response.ok ? response.text() : ""));
-  function drawn(mediaIds, projectId) {
-    const query = new URLSearchParams(projectId == null ? {} : { project_id: projectId });
-    for (const mediaId of mediaIds) query.append("media_ids", mediaId);
-    return html(`/agent/images?${query}`);
-  }
+  const drawn = (mediaIds) => html(`/agent/images?${new URLSearchParams(mediaIds.map((id) => ["media_ids", id]))}`);
   const atBottom = () => messages.scrollHeight - messages.scrollTop - messages.clientHeight < 24;
 
   // Follow the reply only while the reader is at the bottom; scrolling up to read stops it.
@@ -101,7 +97,7 @@ if (chat) {
         shown.classList.toggle("selectable", state === "error"); // why it failed can be copied
         element.dataset.status = state;
         // The images it found.
-        if (images) drawn(images.media_ids, images.project_id).then((html) => element.insertAdjacentHTML("beforeend", html));
+        if (images) drawn(images).then((html) => element.insertAdjacentHTML("beforeend", html));
         // The picture it gave the model (a crop it looked at), as the model saw it.
         if (picture) {
           const shown = clone("chat-picture");

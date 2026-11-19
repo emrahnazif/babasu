@@ -14,9 +14,9 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
-from app import agent, db, media
+from app import agent, db, projects
 from app.routes import UI_ONLY, safe_next
-from app.templating import attached_images, page_name, shown_images, templates
+from app.templating import dropped_images, page_name, templates
 
 router = APIRouter(tags=[UI_ONLY])
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -31,8 +31,8 @@ class NewMessage(BaseModel):
     page_title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     # What the page shows, in its own words (base.html's meta "about"), for the agent.
     about: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] = ""
-    # Images attached to it, however many: files and folders on this computer (the drop zone's paths),
-    # stored as an import (a missing one or a file that isn't an image is in the import's log).
+    # Images dropped with it, however many: files and folders on this computer (the drop zone's paths),
+    # imported into a project made for them (a missing one or a file that isn't an image is in the import's log).
     paths: list[str] = []
 
 
@@ -56,21 +56,20 @@ def send_message(message: NewMessage) -> StreamingResponse:
 
 
 @router.get("/agent/images", response_class=HTMLResponse)
-def step_images(request: Request, conn: DB, media_ids: Annotated[list[int], Query()], project_id: int | None = None):
-    """The images a step of the agent found, drawn (partials/chat-images.html): a project's, with
-    their objects, or (no project_id) stored ones of no project; fetched by chat.js when the step ends."""
-    shown = shown_images(conn, {"project_id": project_id, "media_ids": media_ids})
-    if shown is None:
-        raise HTTPException(404, "No such project")
-    return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": shown})
+def step_images(request: Request, conn: DB, media_ids: Annotated[list[int], Query()]):
+    """The images a step of the agent found, drawn with their objects (partials/chat-images.html);
+    fetched by chat.js when the step ends."""
+    return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": projects.images(conn, media_ids)})
 
 
 @router.get("/agent/attached/{message_id}", response_class=HTMLResponse)
 def attached_images_part(request: Request, conn: DB, message_id: int):
-    """The images the person attached to a message, drawn (partials/chat-images.html): the first
-    few, and how many more; fetched by chat.js once they're stored."""
-    count = len(media.attached(conn, message_id))
-    return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": attached_images(conn, message_id, count)})
+    """The images the person dropped with a message (in the project made for them), drawn
+    (partials/chat-images.html): the first few, and how many more; fetched by chat.js once they're stored."""
+    row = conn.execute("SELECT project_id FROM message WHERE id = ? AND project_id IS NOT NULL", (message_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "No images were dropped with that message")
+    return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": dropped_images(conn, row["project_id"])})
 
 
 @router.get("/agent/pictures/{message_id}")

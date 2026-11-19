@@ -51,11 +51,11 @@ def agent_chat(request: Request, page_title: str) -> dict:
             agent.set_page(conn, conversation_id, page, page_name(page_title))
         turns = agent.turns(conn, conversation_id)
         for turn in turns:
-            if turn.get("attached"):
-                turn["shown"] = attached_images(conn, turn["message_id"], turn["attached"])
+            if turn.get("project_id") is not None:
+                turn["shown"] = dropped_images(conn, turn["project_id"])
             for part in turn.get("parts", []):
                 if part.get("images"):
-                    part["shown"] = shown_images(conn, part["images"])
+                    part["shown"] = projects.images(conn, part["images"])
         agent_id = agent.conversation_agent(conn, conversation_id)
     running = agent.running(conversation_id)
     if running and turns and turns[-1]["role"] == "agent":
@@ -65,24 +65,14 @@ def agent_chat(request: Request, page_title: str) -> dict:
     return {"turns": turns, "running": running, "agents": s.agents, "agent_id": found[0].id if found else None}
 
 
-def shown_images(conn, images: dict) -> dict | None:
-    """The images a step of the agent found, as partials/chat-images.html draws them: a project's
-    ({"project_id", "media_ids"}: with their objects), or stored ones of no project (project_id
-    null, e.g. a run on images attached to a message: as tiles)."""
-    if images.get("project_id") is not None:
-        return projects.images(conn, images["project_id"], images["media_ids"])
-    return {"project_id": None, "tiles": [{"src": i["thumb_url"], "width": i["width"], "height": i["height"], "caption": i["name"]}
-                                          for i in media.listed(conn, images["media_ids"])]}
+SHOWN_DROPPED = 8  # images the chat shows under the message they were dropped with; the rest are counted
 
 
-SHOWN_ATTACHED = 8  # images the chat shows under the message they're attached to; the rest are counted
-
-
-def attached_images(conn, message_id: int, count: int) -> dict:
-    """The images attached to a message (`count` of them), as partials/chat-images.html draws them:
-    the first few, and how many more."""
-    first = media.attached(conn, message_id, SHOWN_ATTACHED)
-    return shown_images(conn, {"media_ids": first}) | {"more": max(count - SHOWN_ATTACHED, 0)}
+def dropped_images(conn, project_id: int) -> dict:
+    """The images dropped with a message, in the project made for them, as partials/chat-images.html
+    draws them: the first few, and how many more."""
+    first = projects.sample(conn, project_id=project_id, first=SHOWN_DROPPED)
+    return projects.images(conn, first) | {"more": max(projects.image_count(conn, project_id) - SHOWN_DROPPED, 0)}
 
 
 def query(params: dict, **changes) -> str:
