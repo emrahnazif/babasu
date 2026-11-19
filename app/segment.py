@@ -47,11 +47,11 @@ Point = tuple[float, float]
 class Prompt(BaseModel):
     """What to segment, in the image's own pixels: points to include or leave out, and/or a box."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     points: list[Point] = Field(default=[], description="x, y clicks.")
     labels: list[int] = Field(default=[], description="One per point: 1 includes it, 0 leaves it out.")
     box: tuple[float, float, float, float] | None = Field(default=None, description="x1, y1, x2, y2.")
-    class_id: int = Field(description="The class the object is for; the answer is an annotation of it.")
+    class_: projects.ClassName = Field(alias="class", description="The class the object is for (its name); the answer is an annotation of it.")
 
     @model_validator(mode="after")
     def _a_prompt(self):
@@ -148,9 +148,9 @@ def prepare(conn, path: Path) -> None:
     _model(conn).prepare(_pixels(path))
 
 
-def segment(conn, path: Path, prompt: Prompt, task: projects.Task) -> projects.Annotation | None:
-    """The object the prompt points at, as an annotation of `prompt.class_id`: its box, and for a
-    segmentation (or keypoints) project its polygon too; None if nothing was found. Raises
+def segment(conn, path: Path, prompt: Prompt, task: projects.Task | None) -> projects.Annotation | None:
+    """The object the prompt points at, as an annotation of `prompt.class_`: its box, and unless the
+    project is a detection one its polygon too; None if nothing was found. Raises
     Superseded if a newer call came while this one waited; LookupError or Loading as _model()."""
     global _latest
     with _numbering:
@@ -171,7 +171,7 @@ def segment(conn, path: Path, prompt: Prompt, task: projects.Task) -> projects.A
         return None
     best = pf.detections.Detections()
     best.add_detection(found[0])  # ranked by the model's own score, best first
-    annotation = next(iter(annotators.to_annotations(best, [prompt.class_id])), None)
+    annotation = next(iter(annotators.to_annotations(best, [prompt.class_])), None)
     if annotation and task == "detection":
         return annotation.model_copy(update={"segments": None})
     return annotation

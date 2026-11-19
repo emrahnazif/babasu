@@ -229,16 +229,18 @@ def needs(conn: sqlite3.Connection, params: dict) -> list[int]:
 
 
 def create(conn: sqlite3.Connection, workflow_id: str | None, workflow: Workflow, media_ids: list[int],
-           project_id: int | None = None, name: str | None = None, classes: list[int] | None = None,
-           annotates: bool = False) -> int:
+           name: str | None = None, classes: list[str] | None = None, annotates: bool = False) -> int:
     """Create a run of a workflow (resolve: its id, None for one not saved) over stored images (no
-    repeats), without its job (launch() starts one), and commit it; returns its id. `classes`: the
-    project classes its prompts stand for, in order; `annotates`: its results become the project's
-    annotations. ValueError: unknown images."""
-    found = conn.execute("SELECT count(*) FROM media WHERE id IN (SELECT value FROM json_each(?))",
-                         (json.dumps(media_ids),)).fetchone()[0]
-    if not media_ids or found != len(media_ids):
+    repeats) of one project, without its job (launch() starts one), and commit it; returns its id.
+    `classes`: the class names its prompts stand for, in order; `annotates`: its results become the
+    project's annotations. ValueError: unknown images, or images of several projects."""
+    rows = conn.execute("SELECT count(*), count(DISTINCT project_id), min(project_id) FROM media "
+                        "WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(media_ids),)).fetchone()
+    if not media_ids or rows[0] != len(media_ids):
         raise ValueError("Give stored images (media ids) to run on")
+    if rows[1] > 1:
+        raise ValueError("Give images of one project to run on")
+    project_id = rows[2]
     with conn:
         return conn.execute(
             """INSERT INTO run (workflow_id, workflow, project_id, name, classes, annotates)
@@ -249,9 +251,10 @@ def create(conn: sqlite3.Connection, workflow_id: str | None, workflow: Workflow
         ).fetchone()[0]
 
 
-def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict, project_id: int | None = None) -> int:
+def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict) -> int:
     """Start the job that does a run's work (a job kind built on execute(), given the run id) and
     return its id."""
+    project_id = conn.execute("SELECT project_id FROM run WHERE id = ?", (run_id,)).fetchone()[0]
     job_id = jobs.start(conn, kind, {"run_id": run_id} | params, project_id)
     with conn:
         conn.execute("UPDATE run SET job_id = ? WHERE id = ?", (job_id, run_id))
@@ -259,12 +262,12 @@ def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict, proje
 
 
 def start(conn: sqlite3.Connection, workflow_id: str | None, media_ids: list[int], overrides: dict | None = None,
-          project_id: int | None = None, name: str | None = None, prompts: list[str] | None = None,
+          name: str | None = None, prompts: list[str] | None = None,
           document: dict | None = None) -> tuple[int, int, str]:
     """Create a run of a workflow (a saved one, or a `document` not saved yet: trying a draft)
     over stored images and start its job; returns (run id, job id, its name).
-    `prompts`: what to look for, given to every prompted node (see execute()); none given, a
-    project's run of a workflow that takes prompts finds its class prompts. `overrides`:
+    `prompts`: what to look for, given to every prompted node (see execute()); none given, a run
+    of a workflow that takes prompts finds its project's class prompts. `overrides`:
     parameter values as mozo's run takes them, by name or one node's ("dino.threshold").
     ValueError as create(). The models it uses that aren't downloaded are downloaded first (the job
     waits). The workflow's own problems (a missing file, prompts it can't take) fail the job,
@@ -272,28 +275,29 @@ def start(conn: sqlite3.Connection, workflow_id: str | None, media_ids: list[int
     media_ids = list(dict.fromkeys(media_ids))
     workflow_id, workflow = resolve(workflow_id, document)
     name = name or run_name(workflow.name or workflow_id or "Draft", len(media_ids))
-    run_id = create(conn, workflow_id, workflow, media_ids, project_id, name)
-    if prompts is None and project_id is not None and workflow.prompt_parameters:
-        prompts = [c["prompt"] for c in projects.get(conn, project_id)["classes"]]
+    run_id = create(conn, workflow_id, workflow, media_ids, name)
+    if prompts is None and workflow.prompt_parameters:
+        project_id = conn.execute("SELECT project_id FROM run WHERE id = ?", (run_id,)).fetchone()[0]
+        prompts = [c["prompt"] for c in projects.classes(conn, project_id)]
     params = {"media_ids": media_ids, "overrides": overrides, "prompts": prompts}
-    return run_id, launch(conn, run_id, KIND, params, project_id), name
+    return run_id, launch(conn, run_id, KIND, params), name
 
 
-def on_project(conn: sqlite3.Connection, project_id: int, filter) -> list[int]:
-    """A project's images matching `filter`. ValueError if there's no such project or none match."""
-    media_ids = projects.sample(conn, project_id, filter)
-    if media_ids is None:
+def matching(conn: sqlite3.Connection, project_id: int | None, filter) -> list[int]:
+    """A project's images matching `filter` (every project's, without one). ValueError if there's no
+    such project or none match."""
+    if project_id is not None and projects.get(conn, project_id) is None:
         raise ValueError(f"There is no project {project_id}")
+    media_ids = projects.sample(conn, filter, project_id)
     if not media_ids:
         raise ValueError("No images match that filter")
     return media_ids
 
 
-def found_on(conn: sqlite3.Connection, run_id: int, found: str | None = None) -> tuple[int | None, list[int]]:
-    """A run's project (None: images given by id) and its images: those it found `found` on (a
-    class name, any case), or all it has results for. ValueError if there's no such run or none."""
-    run = conn.execute("SELECT project_id FROM run WHERE id = ?", (run_id,)).fetchone()
-    if run is None:
+def found_on(conn: sqlite3.Connection, run_id: int, found: str | None = None) -> list[int]:
+    """A run's images: those it found `found` on (a class name, any case), or all it has results
+    for. ValueError if there's no such run or none."""
+    if conn.execute("SELECT 1 FROM run WHERE id = ?", (run_id,)).fetchone() is None:
         raise ValueError(f"There is no run {run_id}")
     media_ids = [r[0] for r in conn.execute(
         """SELECT DISTINCT media_id FROM run_result r WHERE run_id = :run AND (:found IS NULL OR EXISTS
@@ -301,7 +305,7 @@ def found_on(conn: sqlite3.Connection, run_id: int, found: str | None = None) ->
         {"run": run_id, "found": found})]
     if not media_ids:
         raise ValueError(f"Run {run_id} found no {found}" if found else f"Run {run_id} has no results yet")
-    return run["project_id"], media_ids
+    return media_ids
 
 
 def _kept(workflow: Workflow) -> dict[str, str]:
@@ -433,16 +437,15 @@ PAGE_SIZE = 30  # images a page of a run (each with its results, one a label)
 
 def _results(conn: sqlite3.Connection, run_id: int, page: int | None = None, shapes: bool = False) -> list[dict]:
     """Per image and label, by image (all of them, or one page of PAGE_SIZE images): media id,
-    sha256, the image's file name in the run's project (without one, its own name) and
+    sha256, the image's file name and
     the objects found per class; with `shapes`, the result too, mozo's annotation line (detections
     with boxes, classes, scores and masks; the image's width and height)."""
     images = "" if page is None else \
         "AND r.media_id IN (SELECT DISTINCT media_id FROM run_result WHERE run_id = :run ORDER BY media_id LIMIT :size OFFSET :skip)"
     rows = conn.execute(
-        f"""SELECT r.media_id, m.sha256, {media.NAME} AS filename, r.label, r.objects
+        f"""SELECT r.media_id, m.sha256, m.name AS filename, r.label, r.objects
                    {", r.result" if shapes else ""}
-            FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
-            LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
+            FROM run_result r JOIN media m ON m.id = r.media_id
             WHERE r.run_id = :run {images} ORDER BY r.media_id, r.label""",
         {"run": run_id, "size": PAGE_SIZE, "skip": ((page or 1) - 1) * PAGE_SIZE},
     ).fetchall()
@@ -455,9 +458,8 @@ def finds(conn: sqlite3.Connection, run_id: int, media_id: int) -> dict | None:
     detections, all labels' in order (class_name, confidence, bbox [x1, y1, x2, y2], …); None if
     the run has no result for the image."""
     rows = conn.execute(
-        f"""SELECT {media.NAME} AS filename, r.result
-           FROM run_result r JOIN run ON run.id = r.run_id JOIN media m ON m.id = r.media_id
-           LEFT JOIN project_media pm ON pm.project_id = run.project_id AND pm.media_id = r.media_id
+        """SELECT m.name AS filename, r.result
+           FROM run_result r JOIN media m ON m.id = r.media_id
            WHERE r.run_id = ? AND r.media_id = ? ORDER BY r.label""",
         (run_id, media_id),
     ).fetchall()
@@ -507,8 +509,7 @@ def rename(conn: sqlite3.Connection, run_id: int, name: str) -> bool:
 
 
 def delete(conn: sqlite3.Connection, run_id: int) -> dict | None:
-    """Delete a run and its results, and the images nothing else uses any more (media.remove_unused);
-    the run as it was (name, images), or None if there's no such run. ValueError while its job is
+    """Delete a run and its results; the run as it was (name, images), or None if there's no such run. ValueError while its job is
     queued or running."""
     row = _run(conn, run_id)
     if row is None:
@@ -516,7 +517,5 @@ def delete(conn: sqlite3.Connection, run_id: int) -> dict | None:
     if row["status"] in jobs.ACTIVE:
         raise ValueError("The run's job is still going; cancel it first")
     with conn:
-        used = [r[0] for r in conn.execute("SELECT DISTINCT media_id FROM run_result WHERE run_id = ?", (run_id,))]
         conn.execute("DELETE FROM run WHERE id = ?", (run_id,))
-        media.remove_unused(conn, used)
     return row
