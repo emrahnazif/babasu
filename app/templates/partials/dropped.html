@@ -1,8 +1,8 @@
 {# What a drop zone shows of the files and folders dropped on it (routes/files.py, fetched by
-   js/drop-zone.js): how many images they hold and what was dropped, the first few images, and
-   what isn't found or isn't an image. #}
+   js/drop-zone.js): how many images they hold, the first few, and what isn't found or isn't an
+   image. #}
 {% import "components.html" as ui %}
-{{ ui.text(count | plural("image"), note=names | join(", ") ~ (" and " ~ unnamed | number ~ " more" if unnamed else "")) }}
+{{ ui.text(count | plural("image")) }}
 {%- if missing %}{{ ui.text("Not found: " ~ missing | join(", "), error=true) }}{% endif %}
 {%- if others %}{{ ui.text("Not an image (" ~ image_formats ~ "): " ~ others | join(", "), error=true) }}{% endif %}
 {{ ui.gallery(shown, columns=6, min="4rem") }}

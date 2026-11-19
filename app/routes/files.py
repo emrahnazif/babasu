@@ -15,7 +15,6 @@ from app.templating import query, templates
 
 router = APIRouter(tags=[UI_ONLY])
 SHOWN = 12  # images a drop zone shows; the rest are counted
-NAMED = 3  # of what was dropped, the names it says; the rest are counted
 
 
 @router.post("/files/preview", response_class=HTMLResponse)
@@ -26,7 +25,6 @@ def preview(request: Request, paths: Annotated[list[str], Form()] = []):
     images, others, missing = imports.find_images(paths)
     return templates.TemplateResponse(request, "partials/dropped.html", {
         "count": len(images), "missing": missing, "others": [name for _, name in others],
-        "names": [Path(path).name or path for path in paths[:NAMED]], "unnamed": max(len(paths) - NAMED, 0),
         "shown": [{"src": "/files/thumb" + query({"path": file})} for file, _ in images[:SHOWN]]})
 
 
