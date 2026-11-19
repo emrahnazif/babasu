@@ -1,5 +1,5 @@
 # Filters
-How a project's images are picked by what's in them: the filter's text form, used by the page, the API and your tools.
+How images are picked by what's in them, a project's or every project's: the filter's text form, used by the page, the API and your tools.
 
 A filter is a list of terms, all of which must hold. The project page shows it as chips the person can change; its text form is in the page's address (?where=) and in your tools' `where`.
 
@@ -18,7 +18,7 @@ Examples:
 - `(circle edge)`: images where a circle touches the edge.
 - `objects:0`: images without objects.
 
-A filter naming a class the project doesn't have is refused with why. Only active classes count (see projects: removing a class).
+A filter naming a class the project doesn't have (or, across projects, no image has) is refused with why. Class names match ignoring case.
 
 ## Measuring
 `describe` (and /api/projects/ID/stats) measures the images matching a filter: objects per class, the spread of object widths, heights, areas or aspect, or how many images have how many objects.

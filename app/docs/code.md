@@ -30,51 +30,30 @@ A run that's stopped (time) or crashes ends the process, and so do 30 minutes wi
 ## A project's images
 `api.images(project_id)` goes through them all; `api.images(project_id, "car")` through those matching a filter (read docs: filters). Don't go through a filter while changing what it matches: it reads a page at a time (`GET /api/projects/{id}?page=N`), and the pages move under you. Go through all of them instead and pick in the code.
 
-An image from `api.images` has `media_id`, `filename`, `width`, `height`, `objects` (how many of each class) and `annotations`: objects with `class_id` and `bbox` [x, y, w, h] in pixels, `segments` (an outline) or `keypoints`, and `score` on a model's. Write an image's objects back with `PUT /api/projects/{id}/images/{media_id}/annotations` and the whole list: leave out what goes, change what changes.
-
-A class is known by its id in its project: read them with `GET /api/projects/{id}/classes` (id, name, prompt, color). Adding or changing classes (`PATCH` …/classes) answers them too, with the new ones' ids.
+An image from `api.images` has `media_id`, `filename`, `width`, `height`, `objects` (how many of each class) and `annotations`: objects with `class` (its name) and `bbox` [x, y, w, h] in pixels, `segments` (an outline) or `keypoints`, and `score` on a model's. Write an image's objects back with `PUT /api/images/{media_id}/annotations` and the whole list: leave out what goes, change what changes. A class name the project hasn't had becomes a class.
 
 ## Delete one class's objects
 ```python
 project_id = 1
-classes = api.get(f"/api/projects/{project_id}/classes")
-star = next(c["id"] for c in classes if c["name"] == "star")
 changed = removed = 0
 for image in api.images(project_id):
-    kept = [a for a in image["annotations"] if a["class_id"] != star]
+    kept = [a for a in image["annotations"] if a["class"] != "star"]
     if len(kept) < len(image["annotations"]):
-        api.put(f"/api/projects/{project_id}/images/{image['media_id']}/annotations", kept)
+        api.put(f"/api/images/{image['media_id']}/annotations", kept)
         changed, removed = changed + 1, removed + len(image["annotations"]) - len(kept)
 print(f"Removed {removed} star objects from {changed} images")
 ```
-
-## Merge one class into another
-The objects of triangle become squares, then the triangle class goes.
-
-```python
-project_id = 1
-classes = {c["name"]: c["id"] for c in api.get(f"/api/projects/{project_id}/classes")}
-source, target = classes["triangle"], classes["square"]
-moved = 0
-for image in api.images(project_id):
-    if any(a["class_id"] == source for a in image["annotations"]):
-        objects = [a | {"class_id": target} if a["class_id"] == source else a for a in image["annotations"]]
-        api.put(f"/api/projects/{project_id}/images/{image['media_id']}/annotations", objects)
-        moved += sum(a["class_id"] == source for a in image["annotations"])
-api.patch(f"/api/projects/{project_id}/classes", {"remove": [source]})
-print(f"Moved {moved} triangle objects to square, and removed the triangle class")
-```
+(`PATCH /api/projects/{id}/classes` with `{"remove": ["star"]}` does it in one call, and removes the class.)
 
 ## Combine projects into a new one
-The images of two projects that have a circle go into a new project, each with only its circles. Images aren't copied: projects share the stored file (`POST /api/projects/{id}/images` adds a set of them, each under its name). An image in both projects is added once (`already_there` the second time).
+The images of two projects that have a circle go into a new project, each with only its circles. The files aren't copied: `POST /api/projects/{id}/images` copies a set of images in, with their objects; an image whose file the new project has already is copied once (`already_there` the second time).
 
 ```python
-created = api.post("/api/projects", {"name": "Circles", "task": "detection", "classes": [{"name": "circle"}]})
-new_id, circle_here = created["id"], created["classes"][0]["id"]
+new_id = api.post("/api/projects", {"name": "Circles"})["id"]
 for project_id in (1, 6):
     print(api.post(f"/api/projects/{new_id}/images", {"images": {"project_id": project_id, "where": "circle"}})["did"])
-    circle = {c["name"]: c["id"] for c in api.get(f"/api/projects/{project_id}/classes")}["circle"]
-    for image in api.images(project_id, "circle"):  # only reading: the filter is safe here
-        circles = [a | {"class_id": circle_here} for a in image["annotations"] if a["class_id"] == circle]
-        api.put(f"/api/projects/{new_id}/images/{image['media_id']}/annotations", circles)
+for image in api.images(new_id):
+    circles = [a for a in image["annotations"] if a["class"] == "circle"]
+    if len(circles) < len(image["annotations"]):
+        api.put(f"/api/images/{image['media_id']}/annotations", circles)
 ```

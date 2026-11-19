@@ -7,12 +7,12 @@ An auto-annotator (the project's `annotator` setting) is a workflow: an image an
 - **Grounding DINO**: boxes; Apache-2.0.
 - **Grounding DINO → EdgeTAM**: boxes, then outlines; Apache-2.0 (the permissive choice).
 
-A project points at one (its settings). The models an auto-annotator uses that aren't downloaded are downloaded first, by itself: the run waits for the download (the dialog says which models and how big; so does downloads_first in what POST /api/projects/ID/annotate returns).
+A project may point at one (its settings); without one, the one suggested for its type is used. The models an auto-annotator uses that aren't downloaded are downloaded first, by itself: the run waits for the download (the dialog says which models and how big; so does downloads_first in what POST /api/projects/ID/annotate returns).
 
 For one object at a time, as a person works, there's the click tool in the image editor (see annotating).
 
 ## A run
-- It runs over the project's images matching a filter (all of them, some picked at random, or the ones given, e.g. the open image), for all classes or some.
+- It runs over the project's images matching a filter (all of them, some picked at random, or the ones given, e.g. the open image), for all its classes or the ones named (by name; a name the project hasn't had yet becomes a class, found by its name).
 - **Once per class:** an image is auto-annotated once for each class. Running again only does what's new: a class added since, images added since. With **again**, the images are done again. The image page's button always does its image again.
 - Objects are **added** next to the ones there, never replacing them. A new object overlapping one of its class almost entirely (90%) is already there, and left out.
 - Objects scoring below the **minimum score** are left out, beyond the auto-annotator's own threshold.

@@ -1,26 +1,23 @@
 # Projects and classes
-A project is a dataset: images, their annotations, classes and a type; how classes, removing and duplicating work.
+A project is what someone is working on: its images, their annotations and its classes; nothing in it is required. How classes, copying and deleting work.
 
 ## A project
-- A **name**, a **description**, a **type** (task) and an **auto-annotator** (the `annotator` setting).
+- A **name**, a **description**, a **type** (task) and an **auto-annotator** (the `annotator` setting); all optional. Images dropped in the chat make a project of their own, named after them.
 - The **type** is detection (boxes), segmentation (outlines) or keypoints (points); classification comes later. The type is a default, not a restriction: every project can hold every shape. It decides which auto-annotator is suggested. It can be changed any time; the annotations stay as they are.
-- The **auto-annotator** is the workflow that auto-annotates it (see auto-annotate). A new project gets the one suggested for its type (SAM 3 for detection and segmentation, none for keypoints).
+- The **auto-annotator** is the workflow that auto-annotates it (see auto-annotate). Without one, it's the one suggested for its type (SAM 3 for detection, segmentation or no type; none for keypoints).
 
 ## Images
-- Imported from files or folders, on the project's page. An image is stored once by its content, however many projects use it; each project has its own file name for it and its own annotations.
-- An image's **annotations** (objects) each have a class and one or more shapes: a box, a polygon, keypoints. An object a model made has a **score** (its confidence) until someone edits it.
+- Imported from files or folders, on the project's page, or dropped in the chat. Each image is in one project and has its own id (media_id; its page is /images/MEDIA_ID). The same file in two projects is two images, each with its own annotations; the file is stored once.
+- An image's **annotations** (objects) each have a class (its name) and one or more shapes: a box, a polygon, keypoints. An object a model made has a **score** (its confidence) until someone edits it.
 - An image is **labelled** when it has at least one object.
 
 ## Classes
-- Each class has an **id**, a **name**, a **colour** and a **prompt**: the text auto-annotators look for. The prompt is the name unless changed, and a good prompt can find more ("hole in the road surface" for pothole).
-- Names are unique in a project, ignoring case. Ids are never reused.
-- **Removing a class** doesn't delete its annotations: they're hidden (not shown, not counted, not in filters or statistics). Adding a class with that name again brings it back with its annotations, under its old id.
+- A class is a name on objects: annotating an object of a class the project hasn't had makes it one. Names are matched ignoring case, and kept as the project first spelt them.
+- Each class has a **colour** and a **prompt**: the text auto-annotators look for. The prompt is the name unless changed, and a good prompt can find more ("hole in the road surface" for pothole).
+- **Renaming a class** renames its objects; renaming it to another class's name merges them. **Removing a class** deletes its objects (History can undo it).
 
-## Duplicating
-A new project with the same description, type, annotator, classes (removed ones too), images and annotations; named "<name> copy" unless given a name. The image files are shared, so it takes no space. Runs stay with the original, so in the copy auto-annotate treats every image as not done yet.
-
-## Frozen projects
-A frozen project never changes; to change it, duplicate it. (Freezing comes with training.)
+## Copying and moving images
+POST /api/projects/ID/changes copies or moves the images matching a filter to another project, with their objects (the files aren't copied). POST /api/projects/ID/images copies a set of images in (see workflows: image sets). An image whose file the project has already is left as it is.
 
 ## Deleting
-Deleting a project removes its images (from it), their annotations and its runs, and the image files no other project or run uses. It can be undone for 30 days (see app: History). It's refused while one of its jobs is queued or running: cancel them first.
+Deleting a project removes its images, their annotations and its runs. It can be undone for 30 days (see app: History). It's refused while one of its jobs is queued or running: cancel them first.
