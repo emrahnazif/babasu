@@ -139,11 +139,11 @@ LABEL_SIZE = 100  # characters of a step's label: what the person reads at a gla
 @dataclass(frozen=True)
 class Outcome:
     """A call that ran (or failed): its result for the model (JSON text), and what the person sees
-    of it: its note, the images it found ({"project_id", "media_ids"}) and the picture it gave the model."""
+    of it: its note, the images it found (their media ids) and the picture it gave the model."""
 
     result: str
     note: str
-    images: dict | None = None
+    images: list[int] | None = None
     picture: bytes | None = None
 
 
@@ -164,8 +164,7 @@ def call(conn: sqlite3.Connection, name: str, arguments: str, sees_images: bool)
         result = yield from result
     result, picture = (result.result, result.picture) if isinstance(result, Seen) else (result, None)
     shown = found.shows(args, result) if found.shows else None
-    images = {"project_id": shown[0], "media_ids": shown[1]} if shown and shown[1] else None
-    return Outcome(json.dumps(result, ensure_ascii=False), found.note(args, result), images, picture)
+    return Outcome(json.dumps(result, ensure_ascii=False), found.note(args, result), shown or None, picture)
 
 
 def _problem(args: type[BaseModel], error: dict) -> str:
@@ -353,18 +352,19 @@ def _answer(method: str, path: str, body=None) -> object:
 SHOWN = 4  # images a step draws at most
 
 
-def _shown(args, answer) -> tuple[int, list[int]] | None:
-    """The images an answer is about, drawn in its step: a project's images (a page of them, one, or
-    a change's examples), or a run's on its project."""
+def _shown(args, answer) -> list[int] | None:
+    """The images an answer is about, drawn in its step: a page of images, one image, a change's
+    examples, or a run's."""
     if not isinstance(answer, dict):
         return None
-    if found := re.match(r"/api/projects/(\d+)", _api_path(args.path)):
+    path = _api_path(args.path)
+    if re.match(r"/api/(projects|images)\b", path):
         images = answer.get("images")  # a page of images; in some answers, how many (a Try's)
         ids = answer.get("examples") or ([i["media_id"] for i in images] if isinstance(images, list) else []) or \
             ([answer["media_id"]] if "media_id" in answer else [])
-        return int(found[1]), ids[:SHOWN]
-    if re.match(r"/api/runs/\d+", _api_path(args.path)) and answer.get("project_id"):
-        return answer["project_id"], list(dict.fromkeys(r["media_id"] for r in answer.get("results", [])))[:SHOWN]
+        return ids[:SHOWN]
+    if re.match(r"/api/runs/\d+", path):
+        return list(dict.fromkeys(r["media_id"] for r in answer.get("results", [])))[:SHOWN]
     return None
 
 
@@ -386,8 +386,8 @@ def _read_note(args: ReadArgs, answer) -> str:
     "Read anything in the app: any GET of its API. Answers are short (one too long is refused, saying how to ask "
     "for less). The main ones: /api/projects (every project, with its counts); /api/projects/ID (one, with a page "
     "of its images; ?where=FILTER for some, ?images=0 for the project alone); /api/projects/ID/stats?field=class "
-    "(objects per class); /api/projects/ID/images/MEDIA_ID (one image and its objects); /api/images?message_id=ID "
-    "(the images attached to a message, or any image set: how many, the first with their ids); /api/runs, /api/runs/ID "
+    "(objects per class); /api/images/MEDIA_ID (one image and its objects); /api/images?where=FILTER (every project's "
+    "images matching it, or any image set: how many, the first with their ids and projects); /api/runs, /api/runs/ID "
     "(what a run found); /api/workflows; /api/workflows/nodes; /api/jobs; /api/vision/models; /api/search?q=NAME; "
     "/api/history. A page's path works too (/projects/3 reads /api/projects/3); find_api finds any other.",
     ReadArgs,
@@ -421,10 +421,11 @@ def _change_note(args: ChangeArgs, answer) -> str:
 @tool(
     "Change anything the app's pages can: any write of its API, checked as the pages' changes are (a refusal says "
     "why); its answer says what it did (did), and History can undo it. The main ones: POST /api/projects (a new "
-    "project with its classes and images); POST /api/projects/ID/images (add images, named as run takes them); PATCH /api/projects/ID (name, type, annotator); PATCH /api/projects/ID/classes (add, rename, remove classes, e.g. "
+    "project, nothing required); POST /api/projects/ID/images (copy images into it, named as run takes them); PATCH "
+    "/api/projects/ID (name, type, annotator); PATCH /api/projects/ID/classes (add, rename, remove classes, e.g. "
     "{\"add\": [{\"name\": \"truck\"}]}); POST /api/projects/ID/annotate (auto-annotate the images matching where, "
-    "for its classes or class_ids: a job); POST /api/projects/ID/try (an annotator on a few images, nothing kept); "
-    "PUT /api/projects/ID/images/MEDIA_ID/annotations (one image's objects); POST /api/projects/ID/changes (many "
+    "for its classes or the classes named, new ones too: a job); POST /api/projects/ID/try (an annotator on a few images, nothing kept); "
+    "PUT /api/images/MEDIA_ID/annotations (one image's objects); POST /api/projects/ID/changes (many "
     "images at once: delete objects, change their class, remove, copy or move images; only a preview unless "
     "dry_run is false); POST /api/projects/ID/import (images from files and folders); POST /api/workflows (save "
     "one). find_api has what each takes, and any other.",
@@ -522,13 +523,13 @@ def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
 
 
 class PageArgs(Args):
-    path: str = Field(description="The page's path, with its ids and query, e.g. /projects/3/images/42.")
+    path: str = Field(description="The page's path, with its ids and query, e.g. /images/42.")
 
 
 @tool(
     "Open a page of the app for the person, once you've answered: when they ask to see or open something, or "
     "it's what you're building (the workflow you're changing); anything else, link in your reply. Its path, e.g. "
-    "/projects/3?where=car (the images matching a filter), /projects/3/images/42, /workflows/ID/edit.",
+    "/projects/3?where=car (the images matching a filter), /images/42, /workflows/ID/edit.",
     PageArgs,
     label="Opening a page",
     opens=True,
@@ -623,11 +624,10 @@ MARGIN = 0.15  # of an object's size, kept around its crop: what's next to it he
 
 class LookArgs(Args):
     media_id: int = Field(description="The image (its media_id).")
-    project_id: int | None = Field(None, description="Its project: to look closely at one of its objects (object).")
     run_id: int | None = Field(None, description="A run: to see what it found on the image, drawn, or one of its "
                                "finds closely (object).")
-    object: int | None = Field(None, ge=0, description="#n: one of the project's objects on the image (its "
-                               "annotations), or of the run's finds, to look at closely.")
+    object: int | None = Field(None, ge=0, description="#n: one of the image's objects (its annotations), or "
+                               "with run_id of the run's finds, to look at closely.")
     box: list[float] | None = Field(None, min_length=4, max_length=4, description="Or a part of it: [x, y, w, h] in pixels.")
 
 
@@ -644,7 +644,7 @@ def look(conn: sqlite3.Connection, args: LookArgs) -> Seen:
     stored = conn.execute("SELECT sha256, ext FROM media WHERE id = ?", (args.media_id,)).fetchone()
     if stored is None:
         raise ToolError(f"There's no image {args.media_id}: an image's id is its media_id, as its page says "
-                        "(/projects/ID/images/MEDIA_ID) and a project's answer lists them.")
+                        "(/images/MEDIA_ID) and a project's answer lists them.")
     found = None
     if args.run_id is not None:
         found = runs.finds(conn, args.run_id, args.media_id)
@@ -652,19 +652,14 @@ def look(conn: sqlite3.Connection, args: LookArgs) -> Seen:
             raise ToolError(f"Run {args.run_id} has no result for image {args.media_id}.")
         name = found["filename"]
         objects = [(f"{d.get('class_name')} {d.get('confidence') or 0:.2f}", tuple(d["bbox"])) for d in found["detections"]]
-    elif args.project_id is not None:
-        shown = projects.images(conn, args.project_id, [args.media_id])
-        if not shown or not shown["images"]:
-            raise ToolError(f"Project {args.project_id} has no image {args.media_id}.")
-        image, names = shown["images"][0], projects.class_names(shown)
-        name, objects = image["filename"], [(names[a["class_id"]], projects.corners(a)) for a in image["annotations"]]
     else:
-        name, objects = f"image {args.media_id}", []
+        image = projects.images(conn, [args.media_id])["images"][0]
+        name, objects = image["filename"], [(a["class"], projects.corners(a)) for a in image["annotations"]]
     what, part = name, None
     if args.object is not None:
         if args.object >= len(objects):
             raise ToolError(f"{name} has no object #{args.object}: " + (f"its objects are #0 to #{len(objects) - 1}."
-                            if objects else "give project_id (its objects) or run_id (a run's finds) with it."))
+                            if objects else "it has none (run_id: a run's finds)."))
         label, part = objects[args.object]
         what = f"{label} (#{args.object}) on {name}"
     elif args.box:
