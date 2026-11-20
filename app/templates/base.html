@@ -32,6 +32,7 @@
   <script type="module" src="{{ url_for('static', path='js/shortcuts.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/menu.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/select.js') }}"></script>
+  <script type="module" src="{{ url_for('static', path='js/go.js') }}"></script>
   {% block scripts %}{% endblock %}
 </head>
 <body>
@@ -47,10 +48,12 @@
       </div>
     </div>
 
-    {# The sidebar toggle stays at the top left, open or collapsed. #}
+    {# The sidebar toggle stays at the top left, open or collapsed, with back and forward (js/go.js). #}
     {% if collapsible %}
       <div class="app__toggle">
         <button class="icon-button" id="sidebar-toggle" type="button" data-shortcut="mod+b" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("panel") }}</button>
+        <button class="icon-button" type="button" data-go="-1" data-shortcut="mod+[" aria-label="Back" title="Back">{{ icon("chevron-left") }}</button>
+        <button class="icon-button" type="button" data-go="1" data-shortcut="mod+]" aria-label="Forward" title="Forward">{{ icon("chevron-right") }}</button>
       </div>
     {% endif %}
 
