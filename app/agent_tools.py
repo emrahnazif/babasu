@@ -22,7 +22,6 @@ import json
 import re
 import sqlite3
 import threading
-import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -30,15 +29,15 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlencode
 
-import pixelflow as pf
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app import code as code_mode  # `code` is run_code's argument
-from app import config, jobs, media, projects, runs
+from app import config, jobs, media, projects
 from app.formatting import number, plural
 from app.routes import IMAGES, UI_ONLY, fields_at
 
@@ -353,8 +352,8 @@ SHOWN = 4  # images a step draws at most
 
 
 def _shown(args, answer) -> list[int] | None:
-    """The images an answer is about, drawn in its step: a page of images, one image, a change's
-    examples, or a run's."""
+    """The images an answer is about, drawn in its step: a page of images, one image, or a change's
+    examples."""
     if not isinstance(answer, dict):
         return None
     path = _api_path(args.path)
@@ -363,8 +362,6 @@ def _shown(args, answer) -> list[int] | None:
         ids = answer.get("examples") or ([i["media_id"] for i in images] if isinstance(images, list) else []) or \
             ([answer["media_id"]] if "media_id" in answer else [])
         return ids[:SHOWN]
-    if re.match(r"/api/runs/\d+", path):
-        return list(dict.fromkeys(r["media_id"] for r in answer.get("results", [])))[:SHOWN]
     return None
 
 
@@ -387,8 +384,7 @@ def _read_note(args: ReadArgs, answer) -> str:
     "for less). The main ones: /api/projects (every project, with its counts); /api/projects/ID (one, with a page "
     "of its images; ?where=FILTER for some, ?images=0 for the project alone); /api/projects/ID/stats?field=class "
     "(objects per class); /api/images/MEDIA_ID (one image and its objects); /api/images?where=FILTER (every project's "
-    "images matching it, or any image set: how many, the first with their ids and projects); /api/runs, /api/runs/ID "
-    "(what a run found); /api/workflows; /api/workflows/nodes; /api/jobs; /api/vision/models; /api/search?q=NAME; "
+    "images matching it, or any image set: how many, the first with their ids and projects); /api/workflows; /api/workflows/nodes; /api/jobs; /api/vision/models; /api/search?q=NAME; "
     "/api/history. A page's path works too (/projects/3 reads /api/projects/3); find_api finds any other.",
     ReadArgs,
     label="Reading the app's data",
@@ -581,40 +577,43 @@ def _waited(conn: sqlite3.Connection, job_id: int, seconds: int) -> Iterator[dic
     return job
 
 
-RUN_WAIT = 60  # seconds the run tool waits for its results; a longer run goes on (wait, or its page)
+FIND_WAIT = 60  # seconds the find tool waits; a longer run goes on (wait for its job)
 
 
-class RunArgs(Args):
+class FindArgs(Args):
     images: dict[str, Any] = Field(description=IMAGES)  # checked by the API (routes.Images), refusals naming its fields
-    prompts: list[str] | None = Field(None, description="What to find, e.g. [\"person\", \"car\"]; empty: a project's class prompts.")
+    classes: list[str] | None = Field(None, description="What to find, by class name, e.g. [\"person\", \"car\"]; "
+                                      "empty: what the workflow finds by itself.")
     workflow_id: str | None = Field(None, description="Which workflow (GET /api/workflows says what each does); empty: the default.")
+    again: bool = Field(False, description="Also images already looked at for these classes (replacing what a model found then).")
 
 
-def _ran_note(run: dict) -> str:
-    """What a run found, in a few words: "person 23 on 7 of 9 images; car 2 on 1"."""
-    if run["status"] in jobs.ACTIVE:
-        return f"Still running on {plural(run['images'], 'image')} (job {run['job_id']}): its page shows the results when it's done"
-    if run["status"] != "succeeded":
-        return f"The run {run['status']}" + (f": {run['error']}" if run.get("error") else "")
-    found = [(name, c) for classes in run["found"].values() for name, c in classes.items()]
-    if not found:
-        return f"Found nothing on {plural(run['images'], 'image')}"
-    first, *others = found
-    return "; ".join([f"{first[0]} {number(first[1]['objects'])} on {number(first[1]['images'])} of {plural(run['images'], 'image')}"]
-                     + [f"{name} {number(c['objects'])} on {number(c['images'])}" for name, c in others])
+def _found_note(found: dict) -> str:
+    """What a find found, in a few words: "Found person 23, car 2 on 9 images"."""
+    if found["status"] in jobs.ACTIVE:
+        return f"Still running on {plural(found['images'], 'image')} (job {found['job_id']})"
+    if found["status"] != "succeeded":
+        return f"The run {found['status']}" + (f": {found['error']}" if found.get("error") else "")
+    counted = ", ".join(f"{name} {number(n)}" for name, n in found["found"].items()) or "nothing"
+    return f"Found {counted} on {plural(found['images'], 'image')}"
 
 
-@tool("Find things in images: run a workflow over them (the default finds and outlines what the prompts name) and wait "
-      "for what it found: per class, how many objects on how many images, and the run's page to link. A run not done "
-      "in a minute goes on: its page shows the results, or wait for its job.", RunArgs,
-      label="Running a workflow", note=lambda args, run: run["did"])
-def run(conn: sqlite3.Connection, args: RunArgs) -> Iterator[dict]:
-    body = {"images": args.images, "prompts": args.prompts, "workflow_id": args.workflow_id}
-    started = _request("POST", "/api/runs", {k: v for k, v in body.items() if v is not None}).json()
-    job = yield from _waited(conn, started["job_id"], RUN_WAIT)
-    ran = {"run_id": started["run_id"], "job_id": started["job_id"], "page": f"/runs/{started['run_id']}", "status": job["status"],
-           "images": started["images"], "found": runs.found(conn, started["run_id"]), "error": job["error"]}
-    return ran | {"did": _ran_note(ran)}
+@tool("Find things in images with a model: run a workflow over them (the default finds and outlines the classes "
+      "named) and wait for it. What it finds is kept as the images' annotations, in their projects; it answers how "
+      "many of each class and the projects' pages to link. Before running a model, see whether the images are "
+      "annotated already (GET /api/images?where=CLASS). A run not done in a minute goes on: wait for its job.",
+      FindArgs, label="Finding objects", note=lambda args, found: found["did"])
+def find(conn: sqlite3.Connection, args: FindArgs) -> Iterator[dict]:
+    body = {"images": args.images, "classes": args.classes, "workflow_id": args.workflow_id, "again": args.again}
+    started = _request("POST", "/api/annotate", {k: v for k, v in body.items() if v not in (None, False)}).json()
+    job = yield from _waited(conn, started["job_id"], FIND_WAIT)
+    where = {"where": "|".join(args.classes)} if args.classes else {}
+    pages = [f"/projects/{p}" + (f"?{urlencode(where)}" if where else "") for p in dict.fromkeys(
+        r[0] for r in conn.execute("SELECT project_id FROM media WHERE id IN (SELECT value FROM json_each(?))",
+                                   (json.dumps(job["params"]["media_ids"]),)))]
+    found = {"job_id": started["job_id"], "status": job["status"], "images": started["images"],
+             "found": (job["result"] or {}).get("found", {}), "pages": pages, "error": job["error"]}
+    return found | {"did": _found_note(found)}
 
 
 # --- Looking ---
@@ -624,17 +623,13 @@ MARGIN = 0.15  # of an object's size, kept around its crop: what's next to it he
 
 class LookArgs(Args):
     media_id: int = Field(description="The image (its media_id).")
-    run_id: int | None = Field(None, description="A run: to see what it found on the image, drawn, or one of its "
-                               "finds closely (object).")
-    object: int | None = Field(None, ge=0, description="#n: one of the image's objects (its annotations), or "
-                               "with run_id of the run's finds, to look at closely.")
+    object: int | None = Field(None, ge=0, description="#n: one of the image's objects (its annotations), to look at closely.")
     box: list[float] | None = Field(None, min_length=4, max_length=4, description="Or a part of it: [x, y, w, h] in pixels.")
 
 
 @tool(
-    "Look at an image yourself: all of it, one of its objects closely, a part of it, or what a run found on it "
-    "(drawn): whether an object really is what it's labelled, what a model missed or got wrong. The picture "
-    "comes after the results.",
+    "Look at an image yourself: all of it, one of its objects closely, or a part of it: whether an object really "
+    "is what it's labelled, what a model missed or got wrong. The picture comes after the results.",
     LookArgs,
     label="Looking at an image",
     note=lambda args, seen: seen["looked_at"],
@@ -645,38 +640,23 @@ def look(conn: sqlite3.Connection, args: LookArgs) -> Seen:
     if stored is None:
         raise ToolError(f"There's no image {args.media_id}: an image's id is its media_id, as its page says "
                         "(/images/MEDIA_ID) and a project's answer lists them.")
-    found = None
-    if args.run_id is not None:
-        found = runs.finds(conn, args.run_id, args.media_id)
-        if found is None:
-            raise ToolError(f"Run {args.run_id} has no result for image {args.media_id}.")
-        name = found["filename"]
-        objects = [(f"{d.get('class_name')} {d.get('confidence') or 0:.2f}", tuple(d["bbox"])) for d in found["detections"]]
-    else:
-        image = projects.images(conn, [args.media_id])["images"][0]
-        name, objects = image["filename"], [(a["class"], projects.corners(a)) for a in image["annotations"]]
+    image = projects.images(conn, [args.media_id])["images"][0]
+    name, objects = image["filename"], [(a["class"], projects.corners(a)) for a in image["annotations"]]
     what, part = name, None
     if args.object is not None:
         if args.object >= len(objects):
             raise ToolError(f"{name} has no object #{args.object}: " + (f"its objects are #0 to #{len(objects) - 1}."
-                            if objects else "it has none (run_id: a run's finds)."))
+                            if objects else "it has none."))
         label, part = objects[args.object]
         what = f"{label} (#{args.object}) on {name}"
     elif args.box:
         x, y, w, h = args.box
         what, part = f"part of {name}", (x, y, x + w, y + h)
-    path = media.path(stored["sha256"], stored["ext"])
-    if found and not part:  # what the run found, drawn, each labelled with its place
-        detections = pf.Detections.from_dict(found["detections"])
-        drawn = pf.annotate.box(pf.read_image(str(path)), detections)
-        drawn = pf.annotate.label(drawn, detections, texts=[f"#{i} {label}" for i, (label, _) in enumerate(objects)])
-        picture, what = pf.to_pil(drawn), f"what run {args.run_id} found on {name} ({plural(len(objects), 'object')})"
-    else:
-        picture = Image.open(path)
-        if part:
-            x1, y1, x2, y2 = part
-            dx, dy = (x2 - x1) * MARGIN, (y2 - y1) * MARGIN
-            part = (max(0, x1 - dx), max(0, y1 - dy), min(picture.width, x2 + dx), min(picture.height, y2 + dy))
+    picture = Image.open(media.path(stored["sha256"], stored["ext"]))
+    if part:
+        x1, y1, x2, y2 = part
+        dx, dy = (x2 - x1) * MARGIN, (y2 - y1) * MARGIN
+        part = (max(0, x1 - dx), max(0, y1 - dy), min(picture.width, x2 + dx), min(picture.height, y2 + dy))
     return Seen({"looked_at": what}, media.picture(picture, part))
 
 
