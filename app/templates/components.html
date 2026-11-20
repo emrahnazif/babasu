@@ -258,23 +258,31 @@
 {# Images in `columns` columns (4 if not given; fewer when one would be narrower than `min`), each a
    square the image covers, with its caption under it. An image: {"src", "caption"}; with
    "annotations" (and "width" and "height", the image's size they're measured in), they're drawn
-   on it, each in its class's colour (`classes`: [{"name", "color"}], as a project has them). #}
+   on it, each in its class's colour (`classes`: [{"name", "color"}], as a project has them);
+   "mark": see _mark. #}
 {% macro gallery(images, columns=none, min=none, classes=none) -%}
   <div class="gallery"{{ _grid(columns, min) }}>
     {%- for each in images %}
     <figure>
       {%- if each.annotations %}{{ annotated(each, classes, each.src, label=each.caption, cover=true) }}
       {%- else %}{{ image(each.src) }}{% endif %}
+      {{- _mark(each.mark) }}
       {%- if each.caption %}<figcaption>{{ each.caption }}</figcaption>{% endif -%}
     </figure>
     {%- endfor %}
   </div>
 {%- endmacro %}
 
+{# Over an image's bottom left corner: {"icon", "text"} (e.g. a play sign and a length), and
+   "label" (for whoever can't see an icon on its own). #}
+{% macro _mark(mark) -%}
+  {%- if mark %}<span class="badge plain mark"{{ {"title": mark.label, "aria-label": mark.label} | xmlattr if mark.label }}>{{ _icon(mark.icon) if mark.icon }}{{ mark.text }}</span>{% endif -%}
+{%- endmacro %}
+
 {# Images in rows, like a photo library: each keeps its shape, a row's images share a height and the
    row fills the width. An image: {"src", "width", "height"}, and "href" (where it leads),
    "caption" (its name, for whoever can't see it), "annotations" (drawn as in a gallery), "badge"
-   ({"text", "icon"}: the icon at its corner, the text on hover). #}
+   ({"text", "icon"}: the icon at its corner, the text on hover), "mark" (_mark). #}
 {% macro tiles(images, classes=none) -%}
   <div class="justified">
     {%- for each in images %}
@@ -282,6 +290,7 @@
     <{{ tag }}{{ {"class": "tile", "href": each.href, "style": "--ratio: " ~ (each.width / each.height) | round(3)} | xmlattr }}>
       {{- annotated(each, classes, each.src, label=each.caption) -}}
       {%- if each.badge %}<span class="badge plain" title="{{ each.badge.text }}" aria-label="{{ each.badge.text }}">{{ _icon(each.badge.icon) }}</span>{% endif -%}
+      {{- _mark(each.mark) }}
     </{{ tag }}>
     {%- endfor %}
   </div>

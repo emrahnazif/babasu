@@ -28,7 +28,9 @@ def preview(request: Request, paths: Annotated[list[str], Form()] = []):
     counted = [plural(len(found) - videos, "image")] * (videos < len(found) or not videos) + [plural(videos, "video")] * bool(videos)
     return templates.TemplateResponse(request, "partials/dropped.html", {
         "counted": " and ".join(counted), "missing": missing, "others": [name for _, name in others],
-        "shown": [{"src": "/files/thumb" + query({"path": file})} for file, _ in found[:SHOWN]]})
+        "shown": [{"src": "/files/thumb" + query({"path": file}),
+                   "mark": {"icon": "play", "label": "Video"} if media.is_video(file.name) else None}
+                  for file, _ in found[:SHOWN]]})
 
 
 @router.get("/files/thumb")
