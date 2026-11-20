@@ -12,8 +12,8 @@ dependencies = [
     "python-multipart>=0.0.33",
     "pillow>=13.0.0",
     "openai>=3.49.0",
-    "mozo>=1.7.0",
-    "pixelflow>=0.7",
+    "mozo>=1.8.0",
+    "pixelflow>=0.9",
 ]
 
 [dependency-groups]
@@ -23,9 +23,3 @@ dev = [
 
 [tool.uv]
 package = false
-
-# Until pixelflow 0.8 and mozo 1.8 are released, babasu runs on the local checkouts (todo.md §9).
-# At release: drop this and raise the requirements above.
-[tool.uv.sources]
-pixelflow = { path = "../pixelflow", editable = true }
-mozo = { path = "../../Intranet/mozo", editable = true }

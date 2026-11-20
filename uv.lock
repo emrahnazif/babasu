@@ -68,10 +68,10 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "jinja2", specifier = ">=3.1" },
-    { name = "mozo", editable = "../../Intranet/mozo" },
+    { name = "mozo", specifier = ">=1.8.0" },
     { name = "openai", specifier = ">=3.49.0" },
     { name = "pillow", specifier = ">=13.0.0" },
-    { name = "pixelflow", editable = "../pixelflow" },
+    { name = "pixelflow", specifier = ">=0.9" },
     { name = "platformdirs", specifier = ">=4.14.5" },
     { name = "python-multipart", specifier = ">=0.0.33" },
     { name = "pywebview", specifier = ">=5.3" },
@@ -370,7 +370,8 @@ wheels = [
 
 [[package]]
 name = "mozo"
-source = { editable = "../../Intranet/mozo" }
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "fastapi" },
@@ -385,26 +386,10 @@ dependencies = [
     { name = "torchvision" },
     { name = "uvicorn" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "click" },
-    { name = "coremltools", marker = "extra == 'coreml'", specifier = ">=8.0,<10.0" },
-    { name = "fastapi" },
-    { name = "ftfy" },
-    { name = "httpx", marker = "extra == 'test'" },
-    { name = "numpy" },
-    { name = "onnxruntime", marker = "extra == 'onnx'" },
-    { name = "opencv-python-headless" },
-    { name = "pillow" },
-    { name = "pixelflow", specifier = ">=0.8" },
-    { name = "python-multipart" },
-    { name = "regex" },
-    { name = "torch" },
-    { name = "torchvision" },
-    { name = "uvicorn" },
+sdist = { url = "https://files.pythonhosted.org/packages/94/17/a7acfc971b04ee127e6a3b2ebc566f5d6e2f1040462aa4c37d4fca8b7091/mozo-1.8.0.tar.gz", hash = "sha256:da0c293ccb921a656abbcc6abb40408e3c26e2692bee7e86fb147937748e4201", size = 9637517, upload-time = "2026-11-20T09:15:29.08Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/72/7f95fefcc0e69c6ac4c0a94b23b402b112e1c74c97fa648ea2ae985de5bf/mozo-1.8.0-py3-none-any.whl", hash = "sha256:141bc3f254cbe03fc9edf583559e9530c6448eeb84fff0d68392156ab209bc85", size = 9745449, upload-time = "2026-11-20T09:15:26.948Z" },
 ]
-provides-extras = ["onnx", "coreml", "test"]
 
 [[package]]
 name = "mpmath"
@@ -707,7 +692,8 @@ wheels = [
 
 [[package]]
 name = "pixelflow"
-source = { editable = "../pixelflow" }
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
@@ -715,19 +701,10 @@ dependencies = [
     { name = "scipy" },
     { name = "shapely" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.21.0" },
-    { name = "opencv-python", specifier = ">=4.8.0" },
-    { name = "pillow", specifier = ">=9.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.10.0" },
-    { name = "scipy", specifier = ">=1.10.0" },
-    { name = "shapely", specifier = ">=2.0.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/06/61/5cf4f0c2b812b4dd97f2333bc0ec43c8d018c2c651e8cf5a7a085ad1cb49/pixelflow-0.9.0.tar.gz", hash = "sha256:38f8be589fe9a146f6bac0697d1f0b635cfbf5f05b6f177bb65f459796196dbe", size = 250981, upload-time = "2026-11-20T09:03:36.577Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/96/d90b2bfc33c2e0d478aee557916b059334d13713dbe2ff732b804604f827/pixelflow-0.9.0-py3-none-any.whl", hash = "sha256:0202c12fbeb721bad7f9da118aef52f3aa29a2788ae680eacdbd755717488695", size = 295964, upload-time = "2026-11-20T09:03:35.22Z" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "platformdirs"

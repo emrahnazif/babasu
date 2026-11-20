@@ -3,8 +3,8 @@ MEDIA_DIR, named by the SHA-256 of its content, whichever projects have it. A vi
 original, as it came: never re-encoded.
 
 Each file also gets a small WebP thumbnail next to it (<sha256>.thumb.webp; a video's is a frame),
-and a video its frames' times (<sha256>.frames.json: what reading a frame exactly needs,
-pf.VideoReader.read_frame) and the frames shown so far, as JPEGs (<sha256>.frames/<n>.jpg). A file
+and a video its frames' times (<sha256>.frames.json: which frames it's worked at, and when) and the
+frames shown so far, as JPEGs (<sha256>.frames/<n>.jpg). A file
 goes when no row and no history entry names it any more (history.purge, forget).
 """
 
@@ -14,6 +14,7 @@ import json
 import secrets
 import shutil
 import sqlite3
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -205,16 +206,26 @@ def frame_file(sha256: str, ext: str, number: int) -> Path:
     after. IndexError if the video has no such frame."""
     kept = path(sha256, "frames") / f"{number}.jpg"
     if not kept.exists():
-        with pf.VideoReader(str(path(sha256, ext))) as video:
-            pixels = video.read_frame(number, frames(sha256, ext))
+        video, lock = _reader(sha256, ext)
+        with lock:
+            pixels = video.read_frame(number)
         buffer = io.BytesIO()
         pf.to_pil(pixels).save(buffer, format="JPEG", quality=FRAME_QUALITY)
         _write(kept, buffer.getvalue())
     return kept
 
 
+@lru_cache(maxsize=4)
+def _reader(sha256: str, ext: str) -> tuple[pf.VideoReader, threading.Lock]:
+    """A stored video's reader, kept open for the videos being worked on: it learns the frames'
+    times as far as it's asked once (pf.VideoReader.read_frame), so a frame is then a seek and a few
+    decodes, not a decode from the start. One frame read at a time (the lock)."""
+    return pf.VideoReader(str(path(sha256, ext))), threading.Lock()
+
+
 def forget(sha256: str, ext: str) -> None:
     """Remove a stored file and everything made from it: its thumbnail, a video's frame times and frames."""
+    _reader.cache_clear()  # a reader open on the file
     for kind in (ext, "thumb.webp", "frames.json"):
         path(sha256, kind).unlink(missing_ok=True)
     shutil.rmtree(path(sha256, "frames"), ignore_errors=True)
