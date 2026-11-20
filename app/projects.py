@@ -582,9 +582,12 @@ def _media_row(conn: sqlite3.Connection, media_id: int) -> sqlite3.Row | None:
 
 def set_sample_fps(conn: sqlite3.Connection, media_id: int, sample_fps: float) -> dict | None:
     """Set the rate a video is worked at, frames a second (its own at most): its file name and the
-    rate set. None if it's no video. Caller commits."""
-    row = conn.execute(f"""UPDATE media SET sample_fps = min(?, fps), updated_at = {db.NOW}
-                           WHERE id = ? AND type LIKE 'video/%' RETURNING name, sample_fps""", (sample_fps, media_id)).fetchone()
+    rate set. Another rate is other frames, so what workflows looked for on it is to do again
+    (analysed is emptied). None if it's no video. Caller commits."""
+    row = conn.execute(f"""UPDATE media SET sample_fps = min(?, fps), updated_at = {db.NOW},
+                             analysed = CASE WHEN min(?, fps) = sample_fps THEN analysed ELSE '{{}}' END
+                           WHERE id = ? AND type LIKE 'video/%' RETURNING name, sample_fps""",
+                       (sample_fps, sample_fps, media_id)).fetchone()
     return row and {"filename": row["name"], "sample_fps": row["sample_fps"]}
 
 

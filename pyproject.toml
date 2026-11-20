@@ -12,8 +12,8 @@ dependencies = [
     "python-multipart>=0.0.33",
     "pillow>=13.0.0",
     "openai>=3.49.0",
-    "mozo>=1.8.0",
-    "pixelflow>=0.9",
+    "mozo>=1.9.0",
+    "pixelflow>=0.10",
 ]
 
 [dependency-groups]

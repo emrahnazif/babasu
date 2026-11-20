@@ -1,0 +1,74 @@
+{
+  "name": "SAM 3, tracked",
+  "description": "Finds and outlines every object matching each prompt; on a video, follows each from frame to frame, so it's counted once.",
+  "nodes": [
+    {
+      "id": "image",
+      "type": "read_media",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "parameters": {}
+      }
+    },
+    {
+      "id": "find",
+      "type": "sam3",
+      "position": {
+        "x": 0,
+        "y": 150
+      },
+      "data": {
+        "parameters": {
+          "text": [],
+          "variant": "sam3",
+          "threshold": 0.5
+        }
+      }
+    },
+    {
+      "id": "track",
+      "type": "track",
+      "position": {
+        "x": 0,
+        "y": 300
+      },
+      "data": {
+        "parameters": {
+          "tracker": "bytetrack",
+          "lost_after": 1.0
+        }
+      }
+    },
+    {
+      "id": "keep",
+      "type": "save_to_babasu",
+      "position": {
+        "x": 0,
+        "y": 450
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "image",
+      "sourceHandle": "image",
+      "target": "find",
+      "targetHandle": "image"
+    },
+    {
+      "source": "find",
+      "sourceHandle": "detections",
+      "target": "track",
+      "targetHandle": "detections"
+    },
+    {
+      "source": "track",
+      "sourceHandle": "detections",
+      "target": "keep",
+      "targetHandle": "detections"
+    }
+  ]
+}
