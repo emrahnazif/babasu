@@ -21,6 +21,14 @@ document.addEventListener("input", (event) => {
   for (const echo of menu.querySelectorAll("[data-search-echo]")) echo.textContent = text;
 });
 
+// A menu closing forgets what was typed in its search field: it opens on all its items again.
+document.addEventListener("toggle", (event) => {
+  const field = event.newState === "closed" && event.target.matches?.(".menu") && event.target.querySelector(".menu__search");
+  if (!field?.value) return;
+  field.value = "";
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}, true); // toggle doesn't bubble
+
 // ↑/↓ move between a menu's items (from its search field too), Home/End jump to the first or
 // last; Enter or Space picks (they're links and buttons), Esc closes (the popover). Items of a
 // menu nested in it (e.g. a select in a panel) are that menu's own.

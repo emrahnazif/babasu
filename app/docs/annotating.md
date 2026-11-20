@@ -2,7 +2,7 @@
 Working on one image in the editor: changing objects by hand, and the click tool that outlines an object from a click or a box, and its models (EdgeTAM, SAM 2, SAM 3).
 
 ## The editor
-The image page (/images/MEDIA_ID) shows the image with its objects in their classes' colours. Selecting an object lets it be moved, resized, reshaped or deleted; the class menu in the toolbar changes the selected object's class, or, with nothing selected, the class new objects get. Every change is saved at once. ← and → go to the previous and next image of the project's filter. A project without classes only shows its objects.
+The image page (/images/MEDIA_ID) shows the image with its objects in their classes' colours. Selecting an object lets it be moved, resized, reshaped or deleted; the class menu in the toolbar changes the selected object's class, or, with nothing selected, the class new objects get; typing a name the project hasn't had there makes a new class. Every change is saved at once. ← and → go to the previous and next image of the project's filter.
 
 ## The click tool
 The icon next to the class menu opens its menu: the model, and Turn off / Turn on (S). The choice stays as left, for every project. It's a different job from the auto-annotator, which finds every object of the classes from their prompts, in bulk, as a job. The click tool finds the one object the person points at, as they work.

@@ -5,8 +5,7 @@
 //        data-save="/api/…" data-source="/api/…" data-project-id="3">
 // Annotations are in the original image's pixels, the format babasu stores, except that MarkinJS
 // calls an annotation's class `class_id` (any string): the class name goes in there on the way in,
-// and comes back as `class` on the way out. Without data-save (a project without classes) the
-// editor only shows them. When a job of the
+// and comes back as `class` on the way out. When a job of the
 // project ends (js/jobs.js's "job-ended", e.g. auto-annotating), the annotations are read again
 // from data-source: what the job added shows up.
 //
@@ -16,8 +15,10 @@
 // about them (the toolbar's count is a js/refresh-region.js region listening to it).
 //
 // The class in the toolbar (#class-shown) is the selected object's, or with nothing selected the
-// class new objects get; picking one in #class-menu changes both. New objects come from the click
-// tool (js/click-tool.js).
+// class new objects get; picking one in #class-menu changes both. A name typed there that isn't a
+// class (New class, or Enter) becomes one; the project keeps it, with a colour of its own, once an
+// object of it is saved, and the editor reads the classes back then. New objects come from the
+// click tool (js/click-tool.js), which waits for a class when the project has none.
 import { clickTool } from "./click-tool.js";
 import { toast } from "./toast.js";
 
@@ -29,22 +30,22 @@ if (canvas) {
     annotations: JSON.parse(canvas.dataset.annotations).map(toMarkin),
     colors: Object.fromEntries(classes.map((c) => [c.name, c.color])),
   });
-  document.addEventListener("job-ended", async (event) => {
-    if (event.detail.projectId !== canvas.dataset.projectId) return;
+  // The image as the app has it now: its annotations, and its project's classes.
+  const source = async () => {
     try {
       const response = await fetch(canvas.dataset.source);
-      if (response.ok) editor.load((await response.json()).annotations.map(toMarkin));
+      return response.ok ? await response.json() : null;
     } catch {
-      // The app didn't answer; the page shows what it had.
+      return null; // the app didn't answer; the page shows what it had
     }
+  };
+  document.addEventListener("job-ended", async (event) => {
+    if (event.detail.projectId !== canvas.dataset.projectId) return;
+    const image = await source();
+    if (image) editor.load(image.annotations.map(toMarkin));
   });
-  const url = canvas.dataset.save;
-  if (url) {
-    editor.on("change", saver(url));
-    clickTool(editor, canvas, classTool(editor, classes));
-  } else {
-    editor.disable();
-  }
+  editor.on("change", saver(canvas.dataset.save));
+  clickTool(editor, canvas, classTool(editor, classes, source));
 }
 
 function toMarkin({ class: name, ...annotation }) {
@@ -78,26 +79,67 @@ function saver(url) {
   };
 }
 
-// Returns a function giving the class new objects get.
-function classTool(editor, classes) {
+// Returns a function giving the class new objects get (null until the project has one).
+function classTool(editor, classes, source) {
   const shown = document.querySelector("#class-shown");
-  let newClass = classes[0].name; // the class new objects get
+  const menu = document.querySelector("#class-menu");
+  const search = menu.querySelector(".menu__search");
+  let newClass = classes[0]?.name ?? null; // the class new objects get
 
   const show = (name) => {
     const c = classes.find((c) => c.name === name);
     shown.textContent = name;
+    shown.classList.toggle("plain", !c?.color);
     shown.style.setProperty("--badge-color", c?.color ?? "");
   };
   editor.on("select", ({ annotation }) => show(annotation.class_id));
-  editor.on("deselect", () => show(newClass)); // a select follows if the selection moved
+  editor.on("deselect", () => newClass && show(newClass)); // a select follows if the selection moved
 
-  document.querySelector("#class-menu").addEventListener("click", (event) => {
-    const item = event.target.closest("[data-class-name]");
-    if (!item) return;
-    newClass = item.dataset.className;
+  function choose(name) {
+    newClass = name;
     const selected = editor.getSelection();
-    if (selected) editor.updateAnnotation(selected.id, { class_id: newClass });
-    show(newClass);
+    if (selected) editor.updateAnnotation(selected.id, { class_id: name });
+    show(name);
+    menu.hidePopover();
+  }
+
+  // A typed name: the class spelt that way, ignoring case, or a new one (no colour until the project keeps it).
+  function typed(text) {
+    const name = text.trim();
+    if (!name) return;
+    const known = classes.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    if (known) return choose(known.name);
+    classes.push({ name, color: "" });
+    const item = document.getElementById("class-item").content.firstElementChild.cloneNode(true);
+    item.dataset.className = name;
+    item.append(name);
+    menu.querySelector("[data-new-class]").before(item);
+    choose(name);
+  }
+
+  // Once saved, a new class has its colour: the classes are read back.
+  document.addEventListener("annotations-saved", async () => {
+    if (classes.every((c) => c.color)) return;
+    const image = await source();
+    if (!image) return;
+    classes.splice(0, classes.length, ...image.project.classes);
+    editor.setOptions({ colors: Object.fromEntries(classes.map((c) => [c.name, c.color])) });
+    for (const item of menu.querySelectorAll("[data-class-name]")) {
+      const c = classes.find((c) => c.name === item.dataset.className);
+      if (c) item.querySelector(".menu__swatch").style.setProperty("--swatch-color", c.color);
+    }
+    show(shown.textContent);
+  });
+
+  menu.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-class-name]");
+    if (item) choose(item.dataset.className);
+    else if (event.target.closest("[data-new-class]")) typed(search.value);
+  });
+  search.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault(); // or, the menu closed and focus back on its button, Enter opens it again
+    typed(search.value);
   });
   return () => newClass;
 }

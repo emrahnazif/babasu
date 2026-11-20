@@ -86,7 +86,13 @@ export function clickTool(editor, canvas, currentClass) {
 
   // The object at these points, or null if nothing's there; undefined if this answer doesn't count
   // (overtaken by a newer request, or failed: said once in a toast).
+  let warned = false; // said once that a class is needed first
   async function ask(points, labels, box = null) {
+    if (!classOf()) {
+      if (!warned) toast("Type a class first", "In the class menu: the objects you add get it.");
+      warned = true;
+      return undefined;
+    }
     inFlight?.abort();
     const controller = (inFlight = new AbortController());
     try {

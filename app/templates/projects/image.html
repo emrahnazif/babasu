@@ -2,14 +2,20 @@
    through the images the project page was showing (its filter comes along in the URL). In the
    middle, the class (the selected object's, or new objects'). In the main bar, Auto-annotate (the
    project's auto-annotator on this image; the editor shows what it added when the job ends) and
-   Edit project, as on the project page. A project without classes only shows its annotations. #}
+   Edit project, as on the project page. Typing a name in the class menu that the project hasn't had
+   makes a new class. #}
 {% extends "base.html" %}
 {% from "projects/macros.html" import downloads, no_classes %}
 {% set project, params = image.project, {"where": image.filter} %}
-{% set editable = project.classes %}
 {% set main_bleed = true %}
 {% set crumbs = [(project.name, "/projects/" ~ project.id ~ query(params)), (image.filename, None)] %}
 {% block about %}Image {{ image.filename }} (media_id {{ image.media_id }}) of project {{ project.name }} (id {{ project.id }}); its objects, by place: {% set listed = image.annotations[:40] %}{% for a in listed %}#{{ loop.index0 }} {{ a["class"] }}{{ ", " if not loop.last }}{% else %}none{% endfor %}{% if image.annotations | length > listed | length %} and {{ image.annotations | length - listed | length }} more{% endif %}.{% endblock %}
+
+{# A class in the class menu; js/annotation-editor.js clones the template of one for a new class. #}
+{% macro class_item(class) %}
+  <button class="menu__item" type="button" data-class-name="{{ class.name }}">
+    <span class="menu__swatch" style="--swatch-color: {{ class.color }}"></span>{{ class.name }}</button>
+{% endmacro %}
 
 {% macro step(media_id, label, icon_name, key) %}
   {% if media_id %}
@@ -24,7 +30,7 @@
 
 {# The main bar: the project's own actions, as on the project page. #}
 {% block actions %}
-  {% if editable and annotator %}
+  {% if project.classes and annotator %}
     <form method="post" action="/images/{{ image.media_id }}/annotate" data-background-form>
       <button class="icon-button" type="submit" aria-label="Auto-annotate"
               title="Auto-annotate this image with {{ annotators[annotator] }}{% if to_download %}; downloads {{ downloads(to_download) }} first{% endif %}">{{ icon("sparkles") }}</button>
@@ -44,18 +50,17 @@
     <span>{{ image.position }} of {{ image.match_count }}</span>
     {{ step(image.next_id, "Next image", "chevron-right", "arrowright") }}
   </div>
-  {% if editable %}
-    {% set first = project.classes[0] %}
+  {% set first = project.classes[0] if project.classes else none %}
     <div class="topbar__center">
       <button class="topbar__button" type="button" popovertarget="class-menu" title="Class">
-        <span class="badge" id="class-shown" style="--badge-color: {{ first.color }}">{{ first.name }}</span>{{ icon("chevron-up-down") }}</button>
+        <span class="badge{% if not first %} plain{% endif %}" id="class-shown"{% if first %} style="--badge-color: {{ first.color }}"{% endif %}>{{ first.name if first else "Type a class" }}</span>{{ icon("chevron-up-down") }}</button>
       <div id="class-menu" class="menu" popover>
         <input class="menu__search" type="search" placeholder="Class…" aria-label="Class" autocomplete="off" autofocus>
-        {% for class in project.classes %}
-          <button class="menu__item" type="button" data-class-name="{{ class.name }}">
-            <span class="menu__swatch" style="--swatch-color: {{ class.color }}"></span>{{ class.name }}</button>
-        {% endfor %}
+        {% for class in project.classes %}{{ class_item(class) }}{% endfor %}
+        <button class="menu__item" type="button" data-new-class data-search-typed hidden>
+          {{ icon("plus") }}<span>New class “<span data-search-echo></span>”</span></button>
       </div>
+      <template id="class-item">{{ class_item({"name": "", "color": ""}) }}</template>
       {# Click to segment (js/click-tool.js): its menu picks the model (one not downloaded downloads)
          and turns it off and on. The models' list is refreshed when a job ends or the tool changes. #}
       {% set t = click_tool %}
@@ -77,7 +82,6 @@
           <span class="menu__check"></span>{{ "Turn off" if t.on else "Turn on" }}</button>
       </div>
     </div>
-  {% endif %}
   <div class="topbar__right">
     <span id="image-count" class="muted" data-refresh-on="job-ended annotations-saved" data-refresh-if="projectId={{ project.id }}">
       {{ image.width }} × {{ image.height }} · {{ image.annotations | length | plural("annotation") }}</span>
@@ -92,10 +96,10 @@
       <svg viewBox="0 0 {{ image.width }} {{ image.height }}"
            data-annotations='{{ image.annotations | tojson }}' data-classes='{{ project.classes | tojson }}'
            data-source="/api/images/{{ image.media_id }}" data-project-id="{{ project.id }}"
-           {% if editable %}data-save="/api/images/{{ image.media_id }}/annotations"
+           data-save="/api/images/{{ image.media_id }}/annotations"
              data-segment="/api/images/{{ image.media_id }}/segment"
              data-prepare="/api/images/{{ image.media_id }}/prepare"
-             {% if image.next_id %}data-prepare-next="/api/images/{{ image.next_id }}/prepare"{% endif %}{% endif %}></svg>
+             {% if image.next_id %}data-prepare-next="/api/images/{{ image.next_id }}/prepare"{% endif %}></svg>
     </div>
     {# The click tool's object being shaped: its points, and Add and Discard next to it; Refine
        next to a selected object, to shape it again. #}
