@@ -36,8 +36,8 @@ def trash(conn: sqlite3.Connection, path: Path) -> Path:
 def _record_file(conn: sqlite3.Connection, op: str, path: Path, moved: Path) -> None:
     """A file's move in history, as the triggers record a row's write."""
     action = db.current_action()
-    conn.execute("INSERT OR IGNORE INTO action (id, source, label) VALUES (?, ?, ?)",
-                 (action.id, action.source, action.label))
+    conn.execute("INSERT OR IGNORE INTO action (id, source, label, root) VALUES (?, ?, ?, ?)",
+                 (action.id, action.source, action.label, action.id))
     conn.execute("INSERT INTO history (action_id, tbl, op, key, before) VALUES (?, 'file', ?, "
                  "json_object('path', ?), json_object('trash', ?))",
                  (action.id, op, *(p.relative_to(config.DATA_DIR).as_posix() for p in (path, moved))))
@@ -64,16 +64,17 @@ _NAMES = {"project": ("project", "projects"), "media": ("image", "images"), "fil
 _DONE = {"insert": "added", "update": "changed", "delete": "deleted", "trash": "moved to the trash",
          "untrash": "back from the trash"}
 
-# The undo that undid action `a`, unless that undo was undone in turn.
-_UNDONE_BY = """(SELECT u.id FROM action u WHERE u.undoes = a.id
-                 AND NOT EXISTS (SELECT 1 FROM action r WHERE r.undoes = u.id))"""
-# Every action with how many undos deep it is: 0 done, odd an undo, even a redo (an undo undone).
-_CHAIN = """WITH RECURSIVE chain(id, depth) AS (
-              SELECT id, 0 FROM action WHERE undoes IS NULL
-              UNION ALL SELECT a.id, depth + 1 FROM action a JOIN chain ON a.undoes = chain.id)"""
-# An action's entries (mine) joined to the later entries of other actions on the same rows and files (h).
-_LATER = """history mine JOIN history h ON h.tbl = mine.tbl AND h.key = mine.key AND h.id > mine.id
-            AND h.action_id != mine.action_id"""
+# The last action of action `{0}`'s chain (action.root): the end of its line of undos and redos.
+# An action is undone when that one is an odd number of undos deeper.
+_LAST = "(SELECT id FROM action WHERE root = {0}.root ORDER BY depth DESC, rowid DESC LIMIT 1)"
+# An action's entries (mine, of action m) joined to the later entries (h, of action ha) on the same
+# rows and files, by other chains; not a chain begun after m and undone since: its changes and
+# undos cancel out.
+_LATER = """history mine JOIN action m ON m.id = mine.action_id
+            JOIN history h ON h.tbl = mine.tbl AND h.key = mine.key AND h.id > mine.id
+            JOIN action ha ON ha.id = h.action_id AND ha.root != m.root
+            WHERE NOT ((SELECT max(depth) FROM action WHERE root = ha.root) % 2 = 1
+                       AND coalesce((SELECT rowid FROM action WHERE id = ha.root), 0) > m.rowid)"""
 
 
 def actions(conn: sqlite3.Connection, limit: int = 100, action_id: str | None = None) -> list[dict]:
@@ -81,18 +82,21 @@ def actions(conn: sqlite3.Connection, limit: int = 100, action_id: str | None = 
     kind (do, undo, redo), label, at, what it changed (in words), the undo that undid it or the
     action it undid, if any, and whether a later action changed the same things (`changed_since`:
     it can't be undone before that one is)."""
+    which, params = ("WHERE id = ?", [action_id]) if action_id else ("", [])
     rows = conn.execute(
-        f"""{_CHAIN}
-            SELECT a.id, source, label, at, undoes, depth, {_UNDONE_BY} AS undone_by,
-                   EXISTS (SELECT 1 FROM {_LATER} WHERE mine.action_id = a.id) AS changed_since
-            FROM action a JOIN chain USING (id) WHERE ? IS NULL OR a.id = ?
-            ORDER BY a.rowid DESC LIMIT ?""", (action_id, action_id, limit)).fetchall()
+        f"""SELECT a.id, a.source, a.label, a.at, a.depth, last.id AS last, last.depth AS last_depth,
+                   (SELECT id FROM action WHERE root = a.root AND depth = a.depth - 1 ORDER BY rowid DESC LIMIT 1) AS undoes,
+                   EXISTS (SELECT 1 FROM {_LATER} AND mine.action_id = last.id) AS changed_since
+            FROM (SELECT rowid AS n, * FROM action {which} ORDER BY rowid DESC LIMIT ?) a
+            JOIN action last ON last.id = {_LAST.format("a")}
+            ORDER BY a.n DESC""", (*params, limit)).fetchall()
     found = []
     for r in rows:
         kind = "do" if r["depth"] == 0 else "undo" if r["depth"] % 2 else "redo"
+        undone = (r["last_depth"] - r["depth"]) % 2 == 1
         found.append({"id": r["id"], "source": r["source"], "kind": kind, "label": r["label"],
                       "at": r["at"], "changed": _changed(conn, r["id"]), "undoes": r["undoes"],
-                      "undone_by": r["undone_by"], "changed_since": bool(r["changed_since"])})
+                      "undone_by": r["last"] if undone else None, "changed_since": bool(r["changed_since"])})
     return found
 
 
@@ -133,13 +137,14 @@ def latest(conn: sqlite3.Connection, redo: bool = False) -> str | None:
     """The action to undo next, as an editor's Undo picks it: the newest done (or redone) and not
     undone, so undoing again goes further back. With `redo`, the one Redo undoes: the newest undo
     not undone, unless something new was done since. None if there's none."""
-    rows = conn.execute(f"""{_CHAIN} SELECT a.id, depth, {_UNDONE_BY} AS undone_by
-                            FROM action a JOIN chain USING (id) ORDER BY a.rowid DESC""")
+    rows = conn.execute("""SELECT id, depth, (SELECT max(depth) FROM action WHERE root = a.root) AS last_depth
+                           FROM action a ORDER BY rowid DESC""")
     for r in rows:
         undoing = r["depth"] % 2 == 1
         if redo and r["depth"] == 0:
             return None  # something new was done: nothing to redo
-        if not r["undone_by"] and undoing == redo:
+        undone = (r["last_depth"] - r["depth"]) % 2 == 1
+        if not undone and undoing == redo:
             return r["id"]
     return None
 
@@ -150,26 +155,29 @@ def undo(conn: sqlite3.Connection, action_id: str) -> dict:
     action that names it, which undoing redoes. Returns the new action as actions() shows it.
     LookupError if there's no such action; Refused if a later action changed the same rows (undo
     that first), or a row or file can't go back."""
-    action = conn.execute(f"SELECT label, {_UNDONE_BY} AS undone_by FROM action a WHERE id = ?", (action_id,)).fetchone()
+    action = conn.execute(f"""SELECT a.label, a.depth, last.id AS last, last.root, last.depth AS last_depth
+                              FROM action a JOIN action last ON last.id = {_LAST.format("a")} WHERE a.id = ?""",
+                          (action_id,)).fetchone()
     if action is None:
         raise LookupError(f"No action {action_id} in the last {DAYS} days")
-    if action["undone_by"]:
+    if (action["last_depth"] - action["depth"]) % 2 == 1:
         raise Refused("It's undone already; undoing that undo does it again.")
-    later = conn.execute(f"SELECT DISTINCT l.id FROM {_LATER} JOIN action l ON l.id = h.action_id "
-                         "WHERE mine.action_id = ?", (action_id,)).fetchall()
+    action_id = action["last"]  # a redo further on has the same effect: undo that, so the chain stays a line
+    later = conn.execute(f"SELECT DISTINCT {_LAST.format('ha')} AS id FROM {_LATER} AND mine.action_id = ?",
+                         (action_id,)).fetchall()  # each chain's last: undo that first
     if later:
         named = [actions(conn, action_id=r["id"])[0] for r in later]
         raise Refused("Changed again since by " + "; ".join(f"“{a['label']}” ({a['at']})" for a in named)
                       + ": undo that first.")
 
     moved: list[tuple[Path, Path]] = []  # files moved (where they are, where they were), put back if this fails
-    with db.action(db.current_action().source, action["label"]):  # the kind (undo, redo) comes from `undoes`
+    with db.action(db.current_action().source, action["label"]):  # the kind (undo, redo) comes from its depth
         undoing = db.current_action()
         try:
             conn.execute("BEGIN")
             conn.execute("PRAGMA defer_foreign_keys = ON")  # rows go back in any order; checked at the commit
-            conn.execute("INSERT INTO action (id, source, label, undoes) VALUES (?, ?, ?, ?)",
-                         (undoing.id, undoing.source, undoing.label, action_id))
+            conn.execute("INSERT INTO action (id, source, label, root, depth) VALUES (?, ?, ?, ?, ?)",
+                         (undoing.id, undoing.source, undoing.label, action["root"], action["last_depth"] + 1))
             for entry in conn.execute("SELECT * FROM history WHERE action_id = ? ORDER BY id DESC", (action_id,)).fetchall():
                 if entry["tbl"] == "file":
                     _undo_file(conn, entry, moved)

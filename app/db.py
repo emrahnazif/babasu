@@ -129,8 +129,8 @@ def _history_triggers(conn: sqlite3.Connection, table: str) -> list[str]:
                                          AND tbl = '{table}' AND key = {row("NEW", keys)})"""}
     return [
         f"""CREATE TRIGGER history_{table}_{op} AFTER {op.upper()} ON {table} {once.get(op, "")} BEGIN
-              INSERT OR IGNORE INTO action (id, source, label)
-                VALUES (current_action('id'), current_action('source'), current_action('label'));
+              INSERT OR IGNORE INTO action (id, source, label, root)
+                VALUES (current_action('id'), current_action('source'), current_action('label'), current_action('id'));
               INSERT INTO history (action_id, tbl, op, key, before)
                 VALUES (current_action('id'), '{table}', '{op}', {key}, {before});
             END"""
