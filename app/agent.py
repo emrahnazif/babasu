@@ -21,8 +21,7 @@ from contextlib import closing
 
 import openai
 
-from app import agent_tools, code, config, db, imports, jobs, projects, settings
-from app.formatting import plural
+from app import agent_tools, code, config, db, imports, jobs, settings
 
 MAX_ROUNDS = 20  # model calls per turn; each round may run tools (work of several steps takes many)
 # Tokens one model call may write, its thinking included: a reply, a script or a workflow fits many
@@ -33,15 +32,18 @@ REPLY_TOKENS = 8_192
 TITLE_LENGTH = 60
 
 # What every agent is told about the app; the agent's own instructions follow.
-APP_PROMPT = f"""You are the person's assistant inside {config.APP_NAME}, a local computer vision app: projects of \
-images, their objects (annotations), vision models and workflows.
+APP_PROMPT = f"""You are the person's assistant inside {config.APP_NAME}, a local computer vision app: projects (what \
+the person is working on: images and their objects, or annotations), vision models and workflows. Nothing about a \
+project is required, and a class is just a name: annotating or finding one a project hasn't had makes it.
 
 Answer any question fully, as you would anywhere. In their app you do the work: they don't see your tools, so talk \
 about their projects, images and what's in them, with no tool names, API paths or code unless they ask for code.
 
 How you work:
-- Look first. Each message comes with the page it was written on and what's on it, and the images attached to it \
-("this project", "these images" are that page's, or those attached).
+- Look first. Each message comes with the page it was written on and what's on it, and the project made from the \
+images dropped with it ("this project", "these images" are that page's, or those dropped).
+- Asked what's in images ("find", "count", "which"): first see what's annotated already (a project's images, or every \
+project's: GET /api/images?where=CLASS); run a model (find) on images only for what isn't.
 - When what's in the images matters, see for yourself: look at them.
 - A change to many images: say what the preview shows, then change it if they asked for it.
 - A workflow is built in steps, tried on a few images before it's saved: read_docs workflows.
@@ -332,11 +334,11 @@ def _on_page(message: dict, current: bool) -> str:
 
 
 def _attached(message: dict) -> str:
-    """The line the model gets before a message the person dropped images with: how many, and the
-    project made for them, the same line for three or thousands."""
+    """The line the model gets before a message the person dropped images with: the project made for
+    them, the same line for three or thousands, and the same later however the project changes."""
     if message["project_id"] is None:
         return ""
-    return (f'(Attached: {plural(message["attached"], "image")}, in project {message["project_id"]}, made for them: '
+    return (f'(Images dropped with this message, in project {message["project_id"]} made for them: '
             f'the images {{"project_id": {message["project_id"]}}}.)\n\n')
 
 
@@ -564,10 +566,9 @@ def run_turn(
             yield ending("error", "Set up an agent first: Settings → Models, then Agents.")
             return
         if paths:  # a project for them, filled by an import (a job: its log says what was skipped), before the model is asked
+            project_id, job_id = imports.into_new_project(conn, paths)
             with conn:
-                project_id = projects.create(conn, imports.name_for(paths))
                 conn.execute("UPDATE message SET project_id = ? WHERE id = ?", (project_id, message_id))
-            job_id = jobs.start(conn, imports.KIND, {"paths": paths, "project_id": project_id}, project_id)
             for job in jobs.watched(conn, job_id, stop):
                 yield {"type": "storing", "done": job["done"], "total": job["total"]}
             if stop.is_set():
