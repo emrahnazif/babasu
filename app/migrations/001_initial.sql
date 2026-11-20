@@ -25,6 +25,7 @@ CREATE TABLE media (
   name        TEXT NOT NULL,                      -- the file name it came with, e.g. train/0001.jpg
   split       TEXT,                               -- 'train', 'val', 'test' or NULL
   annotations TEXT NOT NULL DEFAULT '[]',         -- JSON list of projects.Annotation
+  analysed    TEXT NOT NULL DEFAULT '{}',         -- JSON: workflow id -> the class names it looked for here (runs.pending)
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   UNIQUE (project_id, sha256)
@@ -86,7 +87,7 @@ CREATE TRIGGER annotation_update AFTER UPDATE OF annotations ON media BEGIN
   SELECT media_id, idx, class, x, y, w, h, edge FROM annotation_source WHERE media_id = NEW.id;
 END;
 
--- Background jobs (imports, auto-annotating, workflow runs…). See app/jobs.py and product.md "Jobs".
+-- Background jobs (imports, workflow runs, downloads…). See app/jobs.py and product.md "Jobs".
 CREATE TABLE job (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,  -- never reused: logs are named by id
   kind        TEXT NOT NULL,
@@ -107,30 +108,6 @@ CREATE TABLE job (
 ) STRICT;
 
 CREATE INDEX job_status ON job(status);
-
--- A workflow run and what it kept per image (app/runs.py).
-CREATE TABLE run (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  job_id      INTEGER REFERENCES job(id) ON DELETE SET NULL,          -- the job that ran it
-  workflow_id TEXT,                                                    -- runs.workflows() id, when it ran; empty: not saved
-  workflow    TEXT NOT NULL,                                           -- JSON: the workflow as it ran (mozo's {nodes, edges})
-  project_id  INTEGER REFERENCES project(id) ON DELETE CASCADE,       -- the project its images are in
-  name        TEXT NOT NULL,
-  classes     TEXT,
-  annotates   INTEGER NOT NULL DEFAULT 0 CHECK (annotates IN (0, 1)),
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-) STRICT;
-
-CREATE TABLE run_result (
-  run_id      INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
-  media_id    INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
-  label       TEXT NOT NULL,                   -- the save_to_babasu node's label (or its id)
-  result      TEXT NOT NULL,                   -- JSON: one mozo annotation_line (detections, width, height)
-  objects     TEXT NOT NULL DEFAULT '{}',      -- JSON: per class name, [how many, total confidence]
-  PRIMARY KEY (run_id, media_id, label)
-) STRICT, WITHOUT ROWID;
-
-CREATE INDEX run_result_media_id ON run_result(media_id);
 
 -- The agent chat: conversations and their messages, in the shape the chat completions API uses
 -- (app/agent.py).

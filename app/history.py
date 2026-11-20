@@ -60,8 +60,7 @@ def _where(key: dict) -> tuple[str, dict]:
 # --- Reading ---
 
 # How the history page and the agent name what an action changed.
-_NAMES = {"project": ("project", "projects"), "media": ("image", "images"), "run": ("run", "runs"),
-          "run_result": ("run result", "run results"), "file": ("file", "files")}
+_NAMES = {"project": ("project", "projects"), "media": ("image", "images"), "file": ("file", "files")}
 _DONE = {"insert": "added", "update": "changed", "delete": "deleted", "trash": "moved to the trash",
          "untrash": "back from the trash"}
 

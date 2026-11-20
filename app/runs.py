@@ -1,21 +1,23 @@
-"""Workflows and their runs: a mozo workflow over stored images, as a job, with its results kept
-in babasu.
+"""Workflows and running them: a mozo workflow over stored images, as a job, keeping in babasu
+what reaches its save nodes.
 
 Workflows are mozo's JSON files: the built-ins ship with the app (app/workflows), the user's are in
 the workspace (config.WORKFLOWS_DIR). A workflow's id is its file name; a built-in's can't be
-taken by a saved one. A workflow says what to keep with save_to_babasu nodes: one run of a
-workflow with two of them (say SAM 3, and Grounding DINO → EdgeTAM) keeps two labelled results
-per image.
+taken by a saved one. A workflow says what to keep with its save nodes, and each keeps what reaches
+it: save_to_babasu as the input image's annotations, save_image_to_babasu as a new image. Two of
+them keep twice; the workflow decides, not the app.
 """
 
+import io
 import json
-import math
+import random
 import sqlite3
-from collections.abc import Callable
+from collections import Counter
 from contextlib import closing
 from pathlib import Path
 
-from mozo.workflow import Detections, Workflow, WorkflowError, annotation_line, catalogue, node
+import pixelflow as pf
+from mozo.workflow import Detections, Image, Workflow, WorkflowError, catalogue, node
 
 from app import config, db, history, jobs, media, projects, settings, vision
 
@@ -25,17 +27,6 @@ KIND = "workflow_run"  # job kind
 # The built-in workflows' ids (their names are in their files).
 BUILTIN = ("sam3", "grounding-dino", "grounding-dino-edgetam")
 FINDER = "sam3"  # what a run runs when no workflow is named: it finds and outlines what its prompts name
-
-
-@node(category="Output")
-def save_to_babasu(detections: Detections, label: str = "") -> Detections:
-    """Keep these detections in babasu, per image, under `label` (empty: the node's id).
-
-    The node only marks what to keep and passes it on: the run job stores what arrives here,
-    since it knows the run, the image and the database. mozo's save_annotations writes the same
-    results to a file instead.
-    """
-    return detections
 
 
 def _files() -> dict[str, Path]:
@@ -81,7 +72,7 @@ def _listed(id: str, workflow: Workflow) -> dict:
     it takes prompts, what a run keeps, what it still downloads, its models."""
     models = workflow.check(device=config.DEVICE).models
     return _entry(id, workflow) | {"default": id == FINDER, "prompts": bool(workflow.prompt_parameters),
-                                   "keeps": list(_kept(workflow).values()), "to_download": sum(m.size for m in models),
+                                   "keeps": _kept(workflow), "to_download": sum(m.size for m in models),
                                    "models": [use._asdict() for use in models]}
 
 
@@ -100,14 +91,13 @@ def document(id: str) -> dict | None:
 
 
 def detail(id: str, workflow: Workflow) -> dict:
-    """A loaded workflow with its graph (mozo's {nodes, edges}), what a run keeps (its
-    save_to_babasu labels), which parameters take the prompts, the models it uses (each with its
+    """A loaded workflow with its graph (mozo's {nodes, edges}), what a run keeps (_kept), which parameters take the prompts, the models it uses (each with its
     licence and the bytes still to download for config.DEVICE, 0 once downloaded) and the files
     it names that are missing."""
     found = workflow.check(device=config.DEVICE)
     return _entry(id, workflow) | {
         "graph": workflow.to_dict(),
-        "kept": list(_kept(workflow).values()),
+        "kept": _kept(workflow),
         "prompt_parameters": list(workflow.prompt_parameters),
         "models": [use._asdict() for use in found.models],
         "missing_files": [{"node": node, "parameter": name, "path": path} for node, name, path in found.missing],
@@ -153,12 +143,11 @@ def nodes(names: list[str] | None = None) -> list[dict]:
 
 
 def check_workflow(document: dict) -> dict:
-    """What a workflow document is, without saving it: what a run keeps (its save_to_babasu
-    labels), which parameters take the prompts, its models (size: bytes left to download for
+    """What a workflow document is, without saving it: what a run keeps (_kept), which parameters take the prompts, its models (size: bytes left to download for
     config.DEVICE) and missing files. ValueError if mozo doesn't load it (why)."""
     workflow = _loaded(document)
     found = workflow.check(device=config.DEVICE)
-    return {"kept": list(_kept(workflow).values()), "prompt_parameters": list(workflow.prompt_parameters),
+    return {"kept": _kept(workflow), "prompt_parameters": list(workflow.prompt_parameters),
             "models": [{"family": m.family, "variant": m.variant, "size": m.size} for m in found.models],
             "missing_files": [path for _, _, path in found.missing]}
 
@@ -166,14 +155,14 @@ def check_workflow(document: dict) -> dict:
 def save_workflow(workflow_id: str, document: dict) -> dict:
     """Save a workflow in the workspace as `<id>.json` (new, or replacing a saved one) and return
     it as workflows() lists it. ValueError: a bad id, a built-in's id, a document mozo refuses, or
-    one that keeps nothing (no save_to_babasu)."""
+    one that keeps nothing (no save node)."""
     if not settings.SLUG.fullmatch(workflow_id):
         raise ValueError("A workflow's id is lowercase letters, digits and dashes, e.g. sam3-vs-dino")
     if workflow_id in BUILTIN:
         raise ValueError(f"{workflow_id!r} is a built-in workflow; save under another id")
     workflow = _loaded(document)
     if not _kept(workflow):
-        raise ValueError("Nothing reaches a save_to_babasu node, so a run would keep nothing")
+        raise ValueError("Nothing reaches a save node (save_to_babasu, save_image_to_babasu), so a run would keep nothing")
     settings.write_file(config.WORKFLOWS_DIR / f"{workflow_id}.json", json.dumps(workflow.to_dict(), indent=2, ensure_ascii=False))
     return _listed(workflow_id, workflow)
 
@@ -188,8 +177,7 @@ def create_workflow(document: dict) -> dict:
 
 
 def delete_workflow(workflow_id: str) -> bool:
-    """Delete a saved workflow (a built-in can't be); False if there's no such saved one. Its runs
-    keep their own copy of it."""
+    """Delete a saved workflow (a built-in can't be); False if there's no such saved one."""
     path = _files().get(workflow_id)
     if workflow_id in BUILTIN or path is None:
         return False
@@ -198,12 +186,7 @@ def delete_workflow(workflow_id: str) -> bool:
     return True
 
 
-# --- Runs ---
-
-
-def run_name(label: str, images: int) -> str:
-    """A run's name: "<label> · N images"."""
-    return f"{label} · {images:,} image{'' if images == 1 else 's'}"
+# --- Running ---
 
 
 def _missing(workflow: Workflow) -> list:
@@ -220,155 +203,154 @@ def to_download(workflow_id: str) -> list[dict]:
 
 def needs(conn: sqlite3.Connection, params: dict) -> list[int]:
     """What a run's job waits for (a job kind's `needs`): the downloads of the models its workflow
-    uses that aren't downloaded, as the run keeps the workflow."""
-    row = conn.execute("SELECT workflow FROM run WHERE id = ?", (params["run_id"],)).fetchone()
-    if row is None:
-        return []
-    missing = _missing(_loaded(json.loads(row["workflow"])))
+    uses that aren't downloaded."""
+    missing = _missing(_loaded(params["workflow"]))
     return [job for use in missing if (job := vision.ensure(conn, use.family, use.variant))]
 
 
-def create(conn: sqlite3.Connection, workflow_id: str | None, workflow: Workflow, media_ids: list[int],
-           name: str | None = None, classes: list[str] | None = None, annotates: bool = False) -> int:
-    """Create a run of a workflow (resolve: its id, None for one not saved) over stored images (no
-    repeats) of one project, without its job (launch() starts one), and commit it; returns its id.
-    `classes`: the class names its prompts stand for, in order; `annotates`: its results become the
-    project's annotations. ValueError: unknown images, or images of several projects."""
-    rows = conn.execute("SELECT count(*), count(DISTINCT project_id), min(project_id) FROM media "
-                        "WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(media_ids),)).fetchone()
-    if not media_ids or rows[0] != len(media_ids):
-        raise ValueError("Give stored images (media ids) to run on")
-    if rows[1] > 1:
-        raise ValueError("Give images of one project to run on")
-    project_id = rows[2]
-    with conn:
-        return conn.execute(
-            """INSERT INTO run (workflow_id, workflow, project_id, name, classes, annotates)
-               VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
-            (workflow_id, json.dumps(workflow.to_dict()), project_id,
-             name or run_name(workflow.name or workflow_id or "Draft", len(media_ids)),
-             classes and json.dumps(classes), annotates),
-        ).fetchone()[0]
+def pending(conn: sqlite3.Connection, media_ids: list[int], workflow: str | None, classes: list[str]) -> dict[int, list[str]]:
+    """Image -> those of `classes` (names) the workflow hasn't looked for on it yet (media.analysed),
+    in their order; images with none left are left out. A draft (no id) has looked for nothing."""
+    path = json.dumps(workflow or "")  # '$."sam3"': the workflow's list in analysed
+    rows = conn.execute(
+        """SELECT m.id, c.value FROM media m, json_each(?) c WHERE m.id IN (SELECT value FROM json_each(?))
+            AND NOT EXISTS (SELECT 1 FROM json_each(m.analysed, '$.' || ?) d WHERE lower(d.value) = lower(c.value))
+            ORDER BY c.key""", (json.dumps(classes), json.dumps(media_ids), path))
+    todo: dict[int, list[str]] = {}
+    for media_id, name in rows:
+        todo.setdefault(media_id, []).append(name)
+    return {m: todo[m] for m in media_ids if m in todo}
 
 
-def launch(conn: sqlite3.Connection, run_id: int, kind: str, params: dict) -> int:
-    """Start the job that does a run's work (a job kind built on execute(), given the run id) and
-    return its id."""
-    project_id = conn.execute("SELECT project_id FROM run WHERE id = ?", (run_id,)).fetchone()[0]
-    job_id = jobs.start(conn, kind, {"run_id": run_id} | params, project_id)
-    with conn:
-        conn.execute("UPDATE run SET job_id = ? WHERE id = ?", (job_id, run_id))
-    return job_id
-
-
-def start(conn: sqlite3.Connection, workflow_id: str | None, media_ids: list[int], overrides: dict | None = None,
-          name: str | None = None, prompts: list[str] | None = None,
-          document: dict | None = None) -> tuple[int, int, str]:
-    """Create a run of a workflow (a saved one, or a `document` not saved yet: trying a draft)
-    over stored images and start its job; returns (run id, job id, its name).
-    `prompts`: what to look for, given to every prompted node (see execute()); none given, a run
-    of a workflow that takes prompts finds its project's class prompts. `overrides`:
-    parameter values as mozo's run takes them, by name or one node's ("dino.threshold").
-    ValueError as create(). The models it uses that aren't downloaded are downloaded first (the job
-    waits). The workflow's own problems (a missing file, prompts it can't take) fail the job,
-    which says why."""
-    media_ids = list(dict.fromkeys(media_ids))
+def start(conn: sqlite3.Connection, media_ids: list[int], workflow_id: str | None = None, classes: list[str] | None = None,
+          prompts: list[str] | None = None, again: bool = False, min_score: float = 0.0, overrides: dict | None = None,
+          document: dict | None = None, count: int | None = None, tried: bool = False) -> dict:
+    """Run a workflow (a saved one, the default finder unless named, or a `document` not saved yet:
+    trying a draft) over stored images, as a job: what reaches its save nodes is kept (run_job).
+    `classes`: the names it looks for, each by its prompt (`prompts`, in the same order; else its
+    prompt in the images' project, or for images of several projects or a class it hasn't had, its
+    name), given to every prompted node; a name an image's project hasn't had becomes a class there.
+    Each image runs only for the classes this workflow hasn't looked for on it (`count` of those at
+    random), unless `again`, which replaces what its models found before (annotations with a score)
+    of those classes. `tried`: a Try (a project page shows its images: annotators.latest_try).
+    Returns {job_id, images}. ValueError: no images, or nothing left to do. The models it uses that
+    aren't downloaded are downloaded first (the job waits)."""
     workflow_id, workflow = resolve(workflow_id, document)
-    name = name or run_name(workflow.name or workflow_id or "Draft", len(media_ids))
-    run_id = create(conn, workflow_id, workflow, media_ids, name)
-    if prompts is None and workflow.prompt_parameters:
-        project_id = conn.execute("SELECT project_id FROM run WHERE id = ?", (run_id,)).fetchone()[0]
-        prompts = [c["prompt"] for c in projects.classes(conn, project_id)]
-    params = {"media_ids": media_ids, "overrides": overrides, "prompts": prompts}
-    return run_id, launch(conn, run_id, KIND, params), name
-
-
-def matching(conn: sqlite3.Connection, project_id: int | None, filter) -> list[int]:
-    """A project's images matching `filter` (every project's, without one). ValueError if there's no
-    such project or none match."""
-    if project_id is not None and projects.get(conn, project_id) is None:
-        raise ValueError(f"There is no project {project_id}")
-    media_ids = projects.sample(conn, filter, project_id)
+    media_ids = list(dict.fromkeys(media_ids))
     if not media_ids:
-        raise ValueError("No images match that filter")
-    return media_ids
+        raise ValueError("No images to run on")
+    if classes and not workflow.prompt_parameters:
+        raise ValueError(f"{workflow.name or workflow_id or 'The workflow'} takes no prompts, so it can't look for classes")
+    if classes and not again and workflow_id:
+        media_ids = list(pending(conn, media_ids, workflow_id, classes))
+        if not media_ids:
+            raise ValueError("Nothing to do: these images are done for these classes (again does them again)")
+    if count is not None and count < len(media_ids):
+        media_ids = random.sample(media_ids, count)
+    found = [r[0] for r in conn.execute(
+        "SELECT DISTINCT project_id FROM media WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(media_ids),))]
+    if classes and prompts is None and len(found) == 1:
+        listed = {c["name"].casefold(): c["prompt"] for c in projects.including(projects.classes(conn, found[0]), classes)}
+        prompts = [listed[c.casefold()] for c in classes]
+    params = {"media_ids": media_ids, "workflow": workflow.to_dict(), "workflow_id": workflow_id, "classes": classes or [],
+              "prompts": prompts or classes or None, "again": again, "min_score": min_score, "overrides": overrides,
+              "tried": tried}
+    job_id = jobs.start(conn, KIND, params, found[0] if len(found) == 1 else None)
+    return {"job_id": job_id, "images": len(media_ids)}
 
 
-def found_on(conn: sqlite3.Connection, run_id: int, found: str | None = None) -> list[int]:
-    """A run's images: those it found `found` on (a class name, any case), or all it has results
-    for. ValueError if there's no such run or none."""
-    if conn.execute("SELECT 1 FROM run WHERE id = ?", (run_id,)).fetchone() is None:
-        raise ValueError(f"There is no run {run_id}")
-    media_ids = [r[0] for r in conn.execute(
-        """SELECT DISTINCT media_id FROM run_result r WHERE run_id = :run AND (:found IS NULL OR EXISTS
-           (SELECT 1 FROM json_each(r.objects) WHERE lower(key) = lower(:found))) ORDER BY media_id""",
-        {"run": run_id, "found": found})]
-    if not media_ids:
-        raise ValueError(f"Run {run_id} found no {found}" if found else f"Run {run_id} has no results yet")
-    return media_ids
+@node(category="Output")
+def save_to_babasu(detections: Detections) -> Detections:
+    """Keep these detections in babasu as the image's annotations, in its project.
+
+    The node only marks what to keep and passes it on: the run job stores what arrives here,
+    since it knows the image and the database. mozo's save_annotations writes them to a file instead.
+    """
+    return detections
 
 
-def _kept(workflow: Workflow) -> dict[str, str]:
-    """The save_to_babasu nodes: node id -> the label its results are kept under."""
-    return {step.id: step.parameters.get("label") or step.id
-            for step in workflow.steps.values() if step.spec.name == "save_to_babasu"}
+@node(category="Output")
+def save_image_to_babasu(image: Image, project: int | None = None, label: str = "") -> Image:
+    """Keep this image in babasu as a new image (a drawn, cropped or edited copy): in `project` (its
+    id), or the input image's project when empty, named after the input and `label`.
+
+    As save_to_babasu, the node only marks it; the run job stores it. mozo's save_image writes files.
+    """
+    return image
 
 
-# Called as each image finishes, in the transaction that stores its results: (connection, the
-# image's media row: id, sha256, ext, width, height, its results: label -> detections). What it
-# writes commits with the results, or not at all; raising fails the job before the image counts.
-OnImage = Callable[[sqlite3.Connection, sqlite3.Row, dict[str, Detections]], None]
+def _saves(workflow: Workflow) -> list:
+    """The workflow's save nodes, in order."""
+    return [step for step in workflow.steps.values() if step.spec.name in ("save_to_babasu", "save_image_to_babasu")]
+
+
+def _kept(workflow: Workflow) -> list[str]:
+    """What a run of the workflow keeps, a save node at a time: "annotations", or "image (label)"."""
+    return ["annotations" if step.spec.name == "save_to_babasu" else f"image ({step.parameters.get('label') or step.id})"
+            for step in _saves(workflow)]
+
+
+def annotations(detections: Detections, classes: list[str], min_score: float = 0.0) -> list[projects.Annotation]:
+    """Detections as annotations, box and polygon (from the mask, as pixelflow outlines it) with
+    the confidence as score. A detection's class: the class its prompt stood for (`classes`, by its
+    class_id, a prompt's index), else the name the model gave it."""
+    found = []
+    for d in detections.masks_to_segments():
+        if d.confidence is not None and d.confidence < min_score:
+            continue
+        index = None if d.class_id is None else int(d.class_id)
+        name = classes[index] if index is not None and 0 <= index < len(classes) else d.class_name or f"class {index}"
+        bbox = None
+        if d.bbox:
+            x1, y1, x2, y2 = d.bbox
+            bbox = (x1, y1, x2 - x1, y2 - y1)
+        if bbox is None and not d.segments:
+            continue
+        found.append(projects.Annotation(class_=name, bbox=bbox, segments=d.segments, score=d.confidence))
+    return found
+
+
+def _png(image) -> bytes:
+    """An image a workflow made (an array, as pixelflow has them), as a PNG to store."""
+    buffer = io.BytesIO()
+    pf.to_pil(image).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 @jobs.kind(KIND, lane="gpu", title="Run workflow", needs=needs)
-def run_job(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict | None = None,
-            prompts: list[str] | None = None) -> dict:
-    return execute(ctx, run_id, media_ids, overrides, prompts)
+def run_job(ctx: jobs.Context, media_ids: list[int], workflow: dict, workflow_id: str | None, classes: list[str],
+            prompts: list[str] | None = None, again: bool = False, min_score: float = 0.0,
+            overrides: dict | None = None, tried: bool = False) -> dict:
+    """A workflow over images, keeping what reaches its save nodes as each image finishes (one
+    transaction per image): save_to_babasu's detections become the image's annotations (with
+    `again`, first replacing those a model found before of `classes`); save_image_to_babasu's image
+    becomes a new image. The image is marked analysed for `classes` by this workflow (not a draft,
+    which has no id). `tried` only marks a Try. Crash-safe and safe to retry: a retry skips the images already analysed for them."""
+    ctx.advance(0, "Starting…")
+    flow = _loaded(workflow)
+    saves = _saves(flow)
+    saves_annotations = any(step.spec.name == "save_to_babasu" for step in saves)
+    if not saves:
+        raise ValueError("The workflow has no save node (save_to_babasu, save_image_to_babasu), so a run would keep nothing")
+    overrides = overrides or {}
+    if prompts is not None:
+        overrides = {key: prompts for key in flow.prompt_parameters} | overrides
+    found = flow.check(device=config.DEVICE, **overrides)
+    if found.missing:
+        raise ValueError("Missing files: " + ", ".join(path for _, _, path in found.missing))
+    if found.downloads:  # a run never starts a download: that's the Models page's job, with progress
+        left = ", ".join(f"{family} {variant}" for _, family, variant, _ in found.downloads)
+        raise ValueError(f"Download these models first (Models page): {left}")
 
-
-def execute(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dict | None = None,
-            prompts: list[str] | None = None, on_image: OnImage | None = None) -> dict:
-    """A run's work, inside a job: the workflow over the images, keeping each image's results.
-    `prompts` go to every prompted node (mozo's prompt_parameters: a detection's class_id is its
-    prompt's index), so one list reaches SAM 3 and Grounding DINO side by side. A job kind built
-    on runs (auto-annotate) does more per image with `on_image`.
-
-    Crash-safe and safe to retry: each image's results are committed together as it finishes,
-    and a retry skips the images the run already has."""
     with closing(db.connect()) as conn:
-        row = conn.execute("SELECT workflow, name FROM run WHERE id = ?", (run_id,)).fetchone()
-        if row is None:
-            raise ValueError("The run was deleted")
-        with conn:
-            conn.execute("UPDATE run SET job_id = ? WHERE id = ?", (ctx.job_id, run_id))
-        ctx.advance(0, row["name"])
-        workflow = Workflow.from_dict(json.loads(row["workflow"]))
-        kept = _kept(workflow)
-        if not kept:
-            raise ValueError("The workflow has no save_to_babasu node, so a run would keep nothing")
-        if prompts is not None:
-            if not workflow.prompt_parameters:
-                raise ValueError("The workflow takes no prompts")
-            overrides = {key: prompts for key in workflow.prompt_parameters} | (overrides or {})
-        overrides = overrides or {}
-        found = workflow.check(device=config.DEVICE, **overrides)
-        if found.missing:
-            raise ValueError("Missing files: " + ", ".join(path for _, _, path in found.missing))
-        if found.downloads:  # a run never starts a download: that's the Models page's job, with progress
-            left = ", ".join(f"{family} {variant}" for _, family, variant, _ in found.downloads)
-            raise ValueError(f"Download these models first (Models page): {left}")
-
-        done = {r[0] for r in conn.execute("SELECT DISTINCT media_id FROM run_result WHERE run_id = ?", (run_id,))}
-        images = {
-            str(media.path(r["sha256"], r["ext"])): r
-            for r in conn.execute(
-                "SELECT id, sha256, ext, width, height FROM media WHERE id IN (SELECT value FROM json_each(?))",
-                (json.dumps([m for m in media_ids if m not in done]),),
-            )
-        }
+        todo = set(pending(conn, media_ids, workflow_id, classes)) if classes and not again and workflow_id else set(media_ids)
+        images = {str(media.path(r["sha256"], r["ext"])): r for r in conn.execute(
+            "SELECT id, project_id, sha256, ext, name, annotations, analysed FROM media WHERE id IN (SELECT value FROM json_each(?))",
+            (json.dumps(sorted(todo)),))}
         ctx.total(len(media_ids))
         ctx.advance(len(media_ids) - len(images))
-        failed = 0
+        failed, objects, made, known = 0, Counter(), 0, {}  # known: each project's classes, read once
+        replaced = {c.casefold() for c in classes} if again else set()
 
         def skip(item, event) -> None:
             nonlocal failed
@@ -377,145 +359,31 @@ def execute(ctx: jobs.Context, run_id: int, media_ids: list[int], overrides: dic
             ctx.advance()
 
         # Closing the results stops the pipeline: no image starts a node after that.
-        with closing(workflow.run_many(list(images), models=vision.load, on_error=skip, **overrides)) as results:
+        with closing(flow.run_many(list(images), models=vision.load, on_error=skip, **overrides)) as results:
             for path, outputs in results:
                 image = images[path]
-                found = {label: outputs[node] for node, label in kept.items()}
+                kept = [projects.Annotation(**a) for a in json.loads(image["annotations"])
+                        if not (a.get("score") is not None and a["class"].casefold() in replaced)]
                 with conn:
-                    conn.executemany(
-                        "INSERT OR REPLACE INTO run_result (run_id, media_id, label, result, objects) VALUES (?, ?, ?, ?, ?)",
-                        [(run_id, image["id"], label,
-                          annotation_line(detections, label=image["sha256"], width=image["width"], height=image["height"]),
-                          _objects(detections))
-                         for label, detections in found.items()],
-                    )
-                    if on_image:
-                        on_image(conn, image, found)
+                    for step in saves:
+                        if step.spec.name == "save_to_babasu":
+                            new = annotations(outputs[step.id], classes, min_score)
+                            kept += new
+                            objects.update(a.class_ for a in new)
+                        else:
+                            label = step.parameters.get("label") or step.id
+                            name = f"{Path(image['name']).stem}-{label}.png"
+                            target = step.parameters.get("project") or image["project_id"]
+                            made += media.store(conn, target, _png(outputs[step.id]), name)[1]
+                    if saves_annotations:
+                        stored = known.setdefault(image["project_id"], projects.stored_classes(conn, image["project_id"]))
+                        projects.save(conn, image["id"], image["project_id"], [a.stored() for a in kept], stored)
+                    if classes and workflow_id:
+                        analysed = json.loads(image["analysed"])
+                        done = analysed.setdefault(workflow_id, [])
+                        done += [c for c in classes if c.casefold() not in {d.casefold() for d in done}]
+                        conn.execute("UPDATE media SET analysed = ? WHERE id = ?", (json.dumps(analysed), image["id"]))
                 ctx.advance()
                 if ctx.cancelled:
                     break
-    return {"images": ctx.done - failed, "failed": failed}
-
-
-_RUNS = """SELECT run.id, run.name, run.workflow_id, run.project_id, run.job_id, run.created_at,
-                  run.classes, run.annotates, job.status AS status,
-                  (SELECT count(DISTINCT media_id) FROM run_result WHERE run_id = run.id) AS images
-           FROM run LEFT JOIN job ON job.id = run.job_id"""
-
-
-def _dict(row: sqlite3.Row) -> dict:
-    return dict(row) | {"classes": row["classes"] and json.loads(row["classes"]), "annotates": bool(row["annotates"])}
-
-
-def list_all(conn: sqlite3.Connection, workflow_id: str | None = None, limit: int | None = None) -> list[dict]:
-    """Every run (of one workflow if given; the newest `limit`), newest first: its name, workflow,
-    project, when, the project classes its prompts stood for (None: other prompts or none) and
-    whether it annotated the project, its job's status, and how many images have results."""
-    rows = conn.execute(f"{_RUNS} WHERE ? IS NULL OR run.workflow_id = ? ORDER BY run.id DESC LIMIT ?",
-                        (workflow_id, workflow_id, limit or -1))
-    return [_dict(r) for r in rows]
-
-
-def _run(conn: sqlite3.Connection, run_id: int) -> dict | None:
-    row = conn.execute(f"{_RUNS} WHERE run.id = ?", (run_id,)).fetchone()
-    return row and _dict(row)
-
-
-def _objects(detections: Detections) -> str:
-    """What a result found per class (its name; "class N" without one): [how many, the sum of their
-    scores], as it's stored with the result."""
-    found: dict[str, list] = {}
-    for d in detections:
-        counted = found.setdefault(d.class_name or f"class {d.class_id}", [0, 0.0])
-        counted[0] += 1
-        counted[1] += d.confidence or 0
-    return json.dumps(found)
-
-
-PAGE_SIZE = 30  # images a page of a run (each with its results, one a label)
-
-
-def _results(conn: sqlite3.Connection, run_id: int, page: int | None = None, shapes: bool = False) -> list[dict]:
-    """Per image and label, by image (all of them, or one page of PAGE_SIZE images): media id,
-    sha256, the image's file name and
-    the objects found per class; with `shapes`, the result too, mozo's annotation line (detections
-    with boxes, classes, scores and masks; the image's width and height)."""
-    images = "" if page is None else \
-        "AND r.media_id IN (SELECT DISTINCT media_id FROM run_result WHERE run_id = :run ORDER BY media_id LIMIT :size OFFSET :skip)"
-    rows = conn.execute(
-        f"""SELECT r.media_id, m.sha256, m.name AS filename, r.label, r.objects
-                   {", r.result" if shapes else ""}
-            FROM run_result r JOIN media m ON m.id = r.media_id
-            WHERE r.run_id = :run {images} ORDER BY r.media_id, r.label""",
-        {"run": run_id, "size": PAGE_SIZE, "skip": ((page or 1) - 1) * PAGE_SIZE},
-    ).fetchall()
-    return [dict(r) | {"objects": {name: n for name, (n, _) in json.loads(r["objects"]).items()}}
-            | ({"result": json.loads(r["result"])} if shapes else {}) for r in rows]
-
-
-def finds(conn: sqlite3.Connection, run_id: int, media_id: int) -> dict | None:
-    """What a run found on one image: the image's file name (as _results names it) and its
-    detections, all labels' in order (class_name, confidence, bbox [x1, y1, x2, y2], …); None if
-    the run has no result for the image."""
-    rows = conn.execute(
-        """SELECT m.name AS filename, r.result
-           FROM run_result r JOIN media m ON m.id = r.media_id
-           WHERE r.run_id = ? AND r.media_id = ? ORDER BY r.label""",
-        (run_id, media_id),
-    ).fetchall()
-    if not rows:
-        return None
-    return {"filename": rows[0]["filename"], "detections": [d for r in rows for d in json.loads(r["result"])["detections"]]}
-
-
-def get(conn: sqlite3.Connection, run_id: int) -> dict | None:
-    """The run with all its results, shapes included (see _results)."""
-    run = _run(conn, run_id)
-    return None if run is None else run | {"results": _results(conn, run_id, shapes=True)}
-
-
-def found(conn: sqlite3.Connection, run_id: int) -> dict[str, dict[str, dict]]:
-    """What a run found, per label and class: how many objects, on how many images, and their
-    average score."""
-    rows = conn.execute(
-        """SELECT r.label, o.key AS name, sum(json_extract(o.value, '$[0]')) AS objects, count(DISTINCT r.media_id) AS images,
-                  round(sum(json_extract(o.value, '$[1]')) / sum(json_extract(o.value, '$[0]')), 3) AS average_score
-           FROM run_result r, json_each(r.objects) o
-           WHERE r.run_id = ? GROUP BY r.label, name ORDER BY r.label, objects DESC""",
-        (run_id,),
-    )
-    by_label: dict[str, dict[str, dict]] = {}
-    for r in rows:
-        by_label.setdefault(r["label"], {})[r["name"]] = {"objects": r["objects"], "images": r["images"],
-                                                          "average_score": r["average_score"]}
-    return by_label
-
-
-def results_page(conn: sqlite3.Connection, run_id: int, page: int = 1, shapes: bool = False) -> dict | None:
-    """The run, what it found (`found`), and one page of its images' results (see _results). None
-    if there's no such run."""
-    run = _run(conn, run_id)
-    if run is None:
-        return None
-    pages = max(1, math.ceil(run["images"] / PAGE_SIZE))
-    page = min(max(page, 1), pages)
-    return run | {"found": found(conn, run_id), "page": page, "pages": pages,
-                  "results": _results(conn, run_id, page, shapes)}
-
-
-def rename(conn: sqlite3.Connection, run_id: int, name: str) -> bool:
-    with conn:
-        return conn.execute("UPDATE run SET name = ? WHERE id = ?", (name, run_id)).rowcount > 0
-
-
-def delete(conn: sqlite3.Connection, run_id: int) -> dict | None:
-    """Delete a run and its results; the run as it was (name, images), or None if there's no such run. ValueError while its job is
-    queued or running."""
-    row = _run(conn, run_id)
-    if row is None:
-        return None
-    if row["status"] in jobs.ACTIVE:
-        raise ValueError("The run's job is still going; cancel it first")
-    with conn:
-        conn.execute("DELETE FROM run WHERE id = ?", (run_id,))
-    return row
+    return {"images": ctx.done - failed, "failed": failed, "found": dict(objects)} | ({"images_saved": made} if made else {})
