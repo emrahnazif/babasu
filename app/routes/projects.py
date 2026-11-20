@@ -12,7 +12,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_valida
 from app import annotators, db, imports, jobs, media, projects, runs, segment
 from app.filters import WHERE, Filter, FilterError, ObjectCondition, Range
 from app.formatting import plural
-from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, Started, ToDownload, started
+from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, Started, ToDownload
 from app.templating import query, templates
 
 router = APIRouter()
@@ -21,8 +21,6 @@ Page = Annotated[int, Query(ge=1, description="Which page of the matching images
 # Which images: the filter's text form (app/filters.py), e.g. ?where=(car size:8..16) -person
 Where = Annotated[str, Query(max_length=2000, description=WHERE)]
 FINDER = "The workflow that auto-annotates it, from GET /api/workflows (e.g. sam3); null for none."
-ANNOTATOR = "Another annotator than the project's, from GET /api/workflows; empty: the project's."
-CLASSES = "Which classes, by name (a name the project hasn't yet is a new class, found by its name); empty for all of its classes."
 
 
 # A number field of a form: empty means "no limit".
@@ -162,19 +160,6 @@ class ProjectForm(ProjectChanges):
         return [projects.ClassChange(**row) for row in self.rows()]
 
 
-class AutoAnnotate(BaseModel):
-    """Which of the project's images to auto-annotate, and how (see annotators.start)."""
-
-    model_config = ConfigDict(extra="forbid")
-    where: str = Field("", max_length=2000, description=WHERE)
-    count: int | None = Field(None, ge=1, description="How many of the images, picked at random among those with work left; empty for all.")
-    annotator: annotators.Finder | None = Field(None, description=ANNOTATOR)
-    classes: list[projects.ClassName] | None = Field(None, description=CLASSES)
-    min_score: float = Field(0.0, ge=0, le=1, description="Leave out objects scoring below this (0..1), beyond the annotator's own threshold.")
-    again: bool = Field(False, description="Also run images already auto-annotated for a class (objects already there are still not added twice).")
-    media_ids: list[int] | None = Field(None, description="Only these images (their ids; /images/42 is image 42); empty for all that match.")
-
-
 class AutoAnnotateForm(BaseModel):
     """The auto-annotate dialog: each class's prompt (class_name and prompt in the same order), the
     classes to run (`use`), and whether to save the prompts, run (saving them too), or try them."""
@@ -186,16 +171,6 @@ class AutoAnnotateForm(BaseModel):
     min_score: float = Field(0.0, ge=0, le=1)
     again: bool = False
     step: Literal["run", "save", "try"] = "run"  # not "action": a field by that name hides the form's action
-
-
-class TryAnnotator(BaseModel):
-    """Which images to try the annotator on, and with what (see annotators.try_)."""
-
-    model_config = ConfigDict(extra="forbid")
-    where: str = Field("", max_length=2000, description=WHERE)
-    annotator: annotators.Finder | None = Field(None, description=ANNOTATOR)
-    classes: list[projects.ClassName] | None = Field(None, description=CLASSES)
-    prompts: dict[str, Prompt] | None = Field(None, description="Other prompts to try, by class name, e.g. {\"car\": \"red car\"}; not saved.")
 
 
 class ImageImport(BaseModel):
@@ -316,7 +291,6 @@ class Stats(Answer):
 class Deletion(Answer):
     images: int = Field(description="Images the project has.")
     annotations: int = Field(description="Their objects.")
-    runs: int = Field(description="The project's runs.")
     jobs: int = Field(description="Its jobs queued or running; deleting is refused while there are any.")
 
 
@@ -397,7 +371,7 @@ def _update(conn: sqlite3.Connection, project_id: int, changed: ProjectChanges,
 
 
 def _delete(conn: sqlite3.Connection, project_id: int) -> None:
-    """Delete the project with its images and runs. 409 while its jobs run."""
+    """Delete the project with its images. 409 while its jobs run."""
     _exists(conn, project_id)
     try:
         projects.remove(conn, project_id)
@@ -761,7 +735,7 @@ def api_update_project(project_id: int, changes: ProjectPatch, conn: DB) -> dict
 
 @router.get("/api/projects/{project_id}/deletion", response_model=Deletion)
 def api_deletion(project_id: int, conn: DB) -> dict:
-    """What deleting the project would remove (images, annotations, runs), and how many of its jobs
+    """What deleting the project would remove (images, annotations), and how many of its jobs
     are queued or running (deleting is refused while they are)."""
     _exists(conn, project_id)
     return projects.deletion(conn, project_id)
@@ -769,15 +743,15 @@ def api_deletion(project_id: int, conn: DB) -> dict:
 
 @router.delete("/api/projects/{project_id}", response_model=Done)
 def api_delete_project(project_id: int, conn: DB) -> dict:
-    """Deletes a project with its images (from it), their annotations and its runs; History can
+    """Deletes a project with its images and their annotations; History can
     undo it for 30 days. 409 while one of its jobs is queued or running."""
     project = projects.get(conn, project_id)
     if project is None:
         raise HTTPException(404, "Project not found")
     gone = projects.deletion(conn, project_id)
     _delete(conn, project_id)
-    return {"did": f"Deleted project {project['name']} with {plural(gone['images'], 'image')}, "
-                    f"{plural(gone['annotations'], 'object')} and {plural(gone['runs'], 'run')}"}
+    return {"did": f"Deleted project {project['name']} with {plural(gone['images'], 'image')} and "
+                    f"{plural(gone['annotations'], 'object')}"}
 
 
 @router.get("/api/images/{media_id}", response_model=ImageDetail, response_model_exclude_unset=True)
@@ -788,7 +762,7 @@ def api_image(media_id: int, conn: DB, where: Where = "") -> dict:
 
 
 class ImagesAdd(BaseModel):
-    """Images to copy into this project (another project's, a run's), with their annotations."""
+    """Images to copy into this project (another project's), with their annotations."""
 
     model_config = ConfigDict(extra="forbid")
     images: Images = Field(description=IMAGES)
@@ -973,30 +947,6 @@ def api_auto_annotate_overview(project_id: int, conn: DB, where: Where = "") -> 
     if found is None:
         raise HTTPException(404, "Project not found")
     return found
-
-
-@router.post("/api/projects/{project_id}/annotate", status_code=202, response_model=Started, response_model_exclude_unset=True)
-def api_auto_annotate(project_id: int, request: AutoAnnotate, conn: DB) -> dict:
-    """Starts auto-annotating the images matching `where` with the project's annotator (or the one
-    given): each class is found from its prompt and the objects are added next to the ones there
-    (never replacing them; one already there is left out). An image is done once per class, so
-    running again does only what's new (a class or images added since; `again` does them again).
-    Returns {run_id, job_id, images, downloads_first: the models it downloads before it starts};
-    follow the job at /api/jobs/{job_id}. 422 with why it can't start (no classes, no annotator)."""
-    begun = _started(lambda: annotators.start(conn, project_id, Filter.parse(request.where), request.count,
-                                              request.annotator, request.classes, request.min_score, request.again,
-                                              request.media_ids))
-    classes = request.classes or [c["name"] for c in projects.classes(conn, project_id)]
-    return begun | started(conn, begun["job_id"], f"Started auto-annotating {plural(begun['images'], 'image')} for {', '.join(classes)}")
-
-
-@router.post("/api/projects/{project_id}/try", status_code=202, response_model=Started, response_model_exclude_unset=True)
-def api_try_annotator(project_id: int, request: TryAnnotator, conn: DB) -> dict:
-    """Starts a Try: the annotator on a few images, nothing written to the project. Follow the job
-    at /api/jobs/{job_id}, then read the run at /api/runs/{run_id}."""
-    begun = _started(lambda: annotators.try_(conn, project_id, Filter.parse(request.where), request.annotator,
-                                             request.classes, request.prompts))
-    return begun | started(conn, begun["job_id"], f"Started a Try on {plural(begun['images'], 'image')}")
 
 
 @router.post("/api/projects/{project_id}/import", status_code=202, response_model=Started, response_model_exclude_unset=True)

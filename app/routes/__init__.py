@@ -17,8 +17,7 @@ from app.filters import WHERE, Filter
 from app.formatting import filesize
 
 # Not `from app import projects` (nor runs, vision): in this package those names are route modules.
-from app.projects import PROMPT, Annotation
-from app.runs import found_on, matching
+from app.projects import PROMPT, Annotation, sample
 from app.vision import downloads_first
 
 # The tag of API operations only the app's own pages use (the chat's, uploads): the agent's list
@@ -131,10 +130,9 @@ class ToDownload(Answer):
 
 
 class Started(Done):
-    """A write that starts a job: what it does is the job's (follow it, or its run)."""
+    """A write that starts a job: what it does is the job's (follow it)."""
 
     job_id: int = Field(description="Follow it at /api/jobs/{job_id}.")
-    run_id: int | None = Field(None, description="Its run: GET /api/runs/{run_id}, the page /runs/{run_id}.")
     images: int | None = Field(None, description="How many images it runs on.")
     downloads_first: list[ToDownload] | None = Field(None, description="The models it downloads before it starts.")
 
@@ -161,30 +159,23 @@ def check_writes(openapi: dict) -> None:
 
 
 IMAGES = ("Which images: {\"project_id\": 3, \"where\": \"night\", \"count\": 10} (a project's, matching a filter, "
-          "some at random), {\"where\": \"tomato\"} (every project's matching it), {\"run_id\": 31, \"found\": "
-          "\"person\"} (those a run found that on) or {\"media_ids\": [...]}.")
+          "some at random), {\"where\": \"tomato\"} (every project's matching it) or {\"media_ids\": [...]}.")
 
 
 class Images(BaseModel):
-    """Which images, one way: by id; a project's, or every project's, matching a filter; or a run's
-    (those it found a class on). Any of them, some at random (count)."""
+    """Which images, one way: by id, or a project's (or every project's) matching a filter; any of
+    them, some at random (count)."""
 
     model_config = ConfigDict(extra="forbid")
     media_ids: list[int] | None = Field(None, description="By id.")
     project_id: int | None = Field(None, description="A project's images (with where); without one, where looks in every project.")
     where: str | None = Field(None, max_length=2000, description=WHERE)
-    run_id: int | None = Field(None, description="A run's images (with found: those it found that on).")
-    found: str | None = Field(None, description="With run_id: a class name; only the images the run found it on.")
     count: int | None = Field(None, ge=1, description="That many of them, picked at random; empty for all.")
 
     @model_validator(mode="after")
     def _one_way(self):
-        ways = (self.media_ids, self.project_id if self.project_id is not None else self.where, self.run_id)
-        if sum(given is not None for given in ways) != 1:
-            raise ValueError("Name the images one way: media_ids, project_id (with where), where alone (every "
-                             "project's) or run_id (with found)")
-        if self.found and self.run_id is None:
-            raise ValueError("found picks a run's images: give run_id with it")
+        if (self.media_ids is None) == (self.project_id is None and self.where is None):
+            raise ValueError("Name the images one way: media_ids, or project_id and/or where (every project's)")
         return self
 
     def ids(self, conn: sqlite3.Connection) -> list[int]:
@@ -195,10 +186,11 @@ class Images(BaseModel):
                                                  (json.dumps(ids),))}
             if missing := sorted(set(ids) - stored):
                 raise ValueError(f"No stored images {missing}")
-        elif self.run_id is not None:
-            ids = found_on(conn, self.run_id, self.found)
         else:
-            ids = matching(conn, self.project_id, Filter.parse(self.where or ""))
+            if self.project_id is not None and conn.execute("SELECT 1 FROM project WHERE id = ?", (self.project_id,)).fetchone() is None:
+                raise ValueError(f"There is no project {self.project_id}")
+            if not (ids := sample(conn, Filter.parse(self.where or ""), self.project_id)):
+                raise ValueError("No images match that filter")
         if self.count is not None and self.count < len(ids):
             ids = sorted(random.sample(ids, self.count))
         return ids

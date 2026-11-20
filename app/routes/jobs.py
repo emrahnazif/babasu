@@ -68,7 +68,7 @@ class JobListed(Answer):
 
 
 class JobOut(JobListed):
-    params: dict = Field(description="What it was asked to do (its kind's arguments, e.g. a run's run_id and media_ids).")
+    params: dict = Field(description="What it was asked to do (its kind's arguments, e.g. a run's workflow and media_ids).")
     result: dict | None = Field(description="What it did, when it's finished (by kind, e.g. {images, failed}).")
 
 

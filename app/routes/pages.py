@@ -3,7 +3,7 @@
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import annotators, db, runs
@@ -19,21 +19,6 @@ def home(request: Request):
     and the models the first find downloads, said before anyone asks."""
     return templates.TemplateResponse(request, "pages/home.html", {
         "finder": annotators.FINDERS[runs.FINDER], "to_download": runs.to_download(runs.FINDER)})
-
-
-@router.get("/runs/{run_id}", response_class=HTMLResponse)
-def run_page(request: Request, run_id: int, conn: DB, page: Annotated[int, Query(ge=1)] = 1):
-    """A run: what it found per class, and a page of its images with what it found drawn."""
-    run = runs.results_page(conn, run_id, page, shapes=True)
-    if run is None:
-        raise HTTPException(404, "No such run")
-    run = annotators.annotated(conn, run)
-    workflow = run["workflow_id"] and runs.load(run["workflow_id"])
-    tiles = [{"src": r["thumb_url"], "width": r["width"], "height": r["height"], "annotations": r["annotations"],
-              "caption": (", ".join(f"{name} {n}" for name, n in r["objects"].items()) or "nothing found")
-                         + (f" · {r['filename']}" if run["project_id"] else "")} for r in run["results"]]
-    return templates.TemplateResponse(request, "runs/run.html", {
-        "run": run, "tiles": tiles, "workflow": workflow.name if workflow else run["workflow_id"] or "a workflow not saved"})
 
 
 @router.get("/components", response_class=HTMLResponse)
@@ -55,7 +40,7 @@ def workflows(request: Request):
 
 @router.post("/workflows/{workflow_id}/delete")
 def delete_workflow(workflow_id: str):
-    """Delete a saved workflow (its runs keep their copy) and go back to the list."""
+    """Delete a saved workflow and go back to the list."""
     if not runs.delete_workflow(workflow_id):
         raise HTTPException(404, "No such saved workflow (built-ins can't be deleted)")
     return RedirectResponse("/workflows", status_code=303)

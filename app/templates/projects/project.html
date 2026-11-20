@@ -230,22 +230,15 @@
       {% if auto.to_download %}
         <p class="muted">Try and Run download {{ downloads(auto.to_download) }} first.</p>
       {% endif %}
-      {# The latest Try: the ticked classes' prompts, as typed, on a few of the images; nothing is
-         saved. Refreshed when it starts (the form is sent) and when it ends. #}
+      {# The latest Try: the ticked classes' prompts, as typed, on a few of the images, with what it
+         found (kept, as any run's). Refreshed when it starts (the form is sent) and when it ends. #}
       <div id="try-results" data-refresh-on="submitted job-ended" data-refresh-if="projectId={{ project.id }}">
         {% if tried and tried.status in ("queued", "running") %}
           <p class="muted">Trying on a few images…</p>
         {% elif tried and tried.status == "failed" %}
           <p class="error">The try failed; the jobs list says why.</p>
         {% elif tried %}
-          <div class="grid">
-            {% for image in tried.results %}
-              <figure class="thumb">
-                {{ ui.annotated(image, project.classes, image.thumb_url, label=image.filename) }}
-                <figcaption>{{ image.annotations | length | plural("object") }} · {{ image.filename }}</figcaption>
-              </figure>
-            {% endfor %}
-          </div>
+          {{ image_tiles(tried.images, tried.classes) }}
         {% endif %}
       </div>
       <div class="actions">

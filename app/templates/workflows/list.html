@@ -19,7 +19,7 @@
       ui.text(models, muted=true) if models,
       [[ui.button("Delete", variant="secondary", popover=delete),
         ui.dialog(delete, "Delete " ~ w.name ~ "?", form="/workflows/" ~ w.id ~ "/delete", alert=true,
-                  description="Runs made with it keep their results and their own copy of it. History can undo it for 30 days.",
+                  description="What its runs kept stays in the projects. History can undo it for 30 days.",
                   actions=ui.button("Delete", variant="destructive", submit=true))] if not w.builtin,
        ui.button("Edit", href="/workflows/" ~ w.id ~ "/edit", variant="secondary"),
        ui.button("Use", href="#") if not w.error],
