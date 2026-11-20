@@ -107,4 +107,3 @@ templates.env.globals["tasks"] = projects.TASKS
 templates.env.globals["annotators"] = annotators.FINDERS
 templates.env.globals["media_suffixes"] = ",".join(sorted(media.SUFFIXES))
 templates.env.globals["agent_chat"] = agent_chat
-templates.env.globals["unified_title_bar"] = False  # macOS desktop window: app/desktop.py

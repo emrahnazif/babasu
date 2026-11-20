@@ -35,9 +35,9 @@
   {% block scripts %}{% endblock %}
 </head>
 <body>
-  <div class="app{% if collapsed %} app--collapsed{% endif %}{% if unified_title_bar %} app--unified-title-bar{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
+  <div class="app{% if collapsed %} app--collapsed{% endif %}" style="--sidebar-width: {{ s.sidebar_width }}px">
     <div class="app__sidebar-bar">
-      <div class="topbar" data-window-drag>
+      <div class="topbar">
         {% if collapsible %}
           <div class="topbar__right">
             <button class="icon-button" type="button" popovertarget="chat-history" data-shortcut="mod+k" aria-label="Search chats" title="Search chats">{{ icon("chat-bubble-left-right") }}</button>
@@ -47,9 +47,9 @@
       </div>
     </div>
 
-    {# The sidebar toggle stays at the top left, open or collapsed (next to the macOS traffic lights). #}
+    {# The sidebar toggle stays at the top left, open or collapsed. #}
     {% if collapsible %}
-      <div class="app__toggle" data-window-drag>
+      <div class="app__toggle">
         <button class="icon-button" id="sidebar-toggle" type="button" data-shortcut="mod+b" aria-label="Toggle sidebar" title="Toggle sidebar" aria-expanded="{{ 'false' if collapsed else 'true' }}">{{ icon("panel") }}</button>
       </div>
     {% endif %}
@@ -63,7 +63,7 @@
          aria-valuemin="{{ sidebar_min_width }}" aria-valuemax="{{ sidebar_max_width }}" aria-valuenow="{{ s.sidebar_width }}"></div>
 
     <header class="app__main-bar">
-     <div class="topbar" data-window-drag>
+     <div class="topbar">
       <div class="topbar__left">
         {# Where you are: the section (a menu to switch to another), then the page's `crumbs`,
            (label, href) pairs set at the top of its template; the last one is this page. #}
