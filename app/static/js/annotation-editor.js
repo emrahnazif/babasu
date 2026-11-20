@@ -1,8 +1,9 @@
 // The annotation editor on an image page: MarkinJS (static/vendor) draws an image's annotations
 // over it, in its classes' colours, and lets people change them. The page renders MarkinJS's
 // structure (an <img> and an <svg> over it in a data-markin-stage) and the data, on the <svg>:
-//   <svg viewBox="0 0 W H" data-annotations="[…]" data-classes="[{name, color}, …]"
-//        data-save="/api/…" data-source="/api/…" data-project-id="3">
+//   <svg viewBox="0 0 W H" data-annotations="[…]" data-hidden="[…]" data-classes="[{name, color}, …]"
+//        data-unnamed="#c82e2d" data-save="/api/…" data-source="/api/…" data-project-id="3">
+// data-hidden: the annotations of the classes the project hides; not drawn, saved back as they are.
 // Annotations are in the original image's pixels, the format babasu stores, except that MarkinJS
 // calls an annotation's class `class_id` (any string): the class name goes in there on the way in,
 // and comes back as `class` on the way out. When a job of the
@@ -18,7 +19,7 @@
 // class new objects get; picking one in #class-menu changes both. A name typed there that isn't a
 // class (New class, or Enter) becomes one; the project keeps it, with a colour of its own, once an
 // object of it is saved, and the editor reads the classes back then. New objects come from the
-// click tool (js/click-tool.js), which waits for a class when the project has none.
+// click tool (js/click-tool.js), which asks for a name when the project has no class yet.
 import { clickTool } from "./click-tool.js";
 import { toast } from "./toast.js";
 
@@ -26,9 +27,10 @@ const canvas = document.querySelector("svg[data-annotations]");
 
 if (canvas) {
   const classes = JSON.parse(canvas.dataset.classes);
+  let hidden = JSON.parse(canvas.dataset.hidden);
   const editor = MarkinJS.create(canvas, {
     annotations: JSON.parse(canvas.dataset.annotations).map(toMarkin),
-    colors: Object.fromEntries(classes.map((c) => [c.name, c.color])),
+    colors: colors(classes, canvas.dataset.unnamed),
   });
   // The image as the app has it now: its annotations, and its project's classes.
   const source = async () => {
@@ -42,9 +44,12 @@ if (canvas) {
   document.addEventListener("job-ended", async (event) => {
     if (event.detail.projectId !== canvas.dataset.projectId) return;
     const image = await source();
-    if (image) editor.load(image.annotations.map(toMarkin));
+    if (!image) return;
+    const hides = new Set(image.project.classes.filter((c) => c.hidden).map((c) => c.name.toLowerCase()));
+    hidden = image.annotations.filter((a) => hides.has(a.class.toLowerCase()));
+    editor.load(image.annotations.filter((a) => !hides.has(a.class.toLowerCase())).map(toMarkin));
   });
-  editor.on("change", saver(canvas.dataset.save));
+  editor.on("change", saver(canvas.dataset.save, () => hidden));
   clickTool(editor, canvas, classTool(editor, classes, source));
 }
 
@@ -52,7 +57,13 @@ function toMarkin({ class: name, ...annotation }) {
   return { ...annotation, class_id: name };
 }
 
-function saver(url) {
+// MarkinJS's colours: each class's, and an object's with no class yet ("").
+function colors(classes, unnamed) {
+  return { "": unnamed, ...Object.fromEntries(classes.map((c) => [c.name, c.color])) };
+}
+
+// `kept`: the annotations saved with what the editor has (the hidden classes').
+function saver(url, kept) {
   let waiting = null; // the newest list not sent yet
   let sending = false;
   return async function save(annotations) {
@@ -61,7 +72,8 @@ function saver(url) {
     sending = true;
     while (waiting) {
       // MarkinJS's ids are its own handles on the annotations; babasu doesn't store them.
-      const body = JSON.stringify(waiting.map(({ id, class_id, class: _, ...annotation }) => ({ class: class_id, ...annotation })));
+      const drawn = waiting.map(({ id, class_id, class: _, ...annotation }) => ({ class: class_id, ...annotation }));
+      const body = JSON.stringify([...drawn, ...kept()]);
       waiting = null;
       try {
         const response = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body });
@@ -79,7 +91,8 @@ function saver(url) {
   };
 }
 
-// Returns a function giving the class new objects get (null until the project has one).
+// Returns {current() (the class new objects get; null until the project has one), add(name) (a
+// class typed, chosen)}.
 function classTool(editor, classes, source) {
   const shown = document.querySelector("#class-shown");
   const menu = document.querySelector("#class-menu");
@@ -122,8 +135,8 @@ function classTool(editor, classes, source) {
     if (classes.every((c) => c.color)) return;
     const image = await source();
     if (!image) return;
-    classes.splice(0, classes.length, ...image.project.classes);
-    editor.setOptions({ colors: Object.fromEntries(classes.map((c) => [c.name, c.color])) });
+    classes.splice(0, classes.length, ...image.project.classes.filter((c) => !c.hidden));
+    editor.setOptions({ colors: colors(classes, canvas.dataset.unnamed) });
     for (const item of menu.querySelectorAll("[data-class-name]")) {
       const c = classes.find((c) => c.name === item.dataset.className);
       if (c) item.querySelector(".menu__swatch").style.setProperty("--swatch-color", c.color);
@@ -141,5 +154,5 @@ function classTool(editor, classes, source) {
     event.preventDefault(); // or, the menu closed and focus back on its button, Enter opens it again
     typed(search.value);
   });
-  return () => newClass;
+  return { current: () => newClass, add: typed };
 }

@@ -5,7 +5,8 @@
 //   - Then every click shapes it: inside it leaves that part out, outside it adds to it
 //     (Option/Alt flips that); another drag replaces the box; Backspace takes back the last point
 //     (then the box). Enter or Add keeps it as an annotation of the current class; Esc or Discard
-//     drops it.
+//     drops it. With no class yet, a name field comes with Add: the name typed (or "object") becomes
+//     the class, and until then the object is drawn in the canvas's data-unnamed colour.
 //   - A selected object can be refined (R, or Refine next to it): it becomes the candidate, its box
 //     the prompt, and Add replaces it.
 //   - The tool's menu picks the model ([data-click-model]; one not downloaded downloads, another
@@ -22,10 +23,13 @@
 // a newer one overtook (204).
 import { toast } from "./toast.js";
 
+const UNNAMED = "object"; // the class of an object kept with no class chosen or typed
 const HOVER_PAUSE = 30; // ms the pointer rests before the object under it is asked for
 
-export function clickTool(editor, canvas, currentClass) {
+// `classes`: the editor's {current() (the class new objects get, or null), add(name) (a new one, chosen)}.
+export function clickTool(editor, canvas, classes) {
   const actions = document.querySelector("#candidate-actions");
+  const nameField = actions.querySelector("[data-candidate-name]");
   const pointsLayer = document.querySelector("#candidate-points");
   const refineAction = document.querySelector("#refine-action");
   const button = document.querySelector("#click-tool");
@@ -86,20 +90,14 @@ export function clickTool(editor, canvas, currentClass) {
 
   // The object at these points, or null if nothing's there; undefined if this answer doesn't count
   // (overtaken by a newer request, or failed: said once in a toast).
-  let warned = false; // said once that a class is needed first
   async function ask(points, labels, box = null) {
-    if (!classOf()) {
-      if (!warned) toast("Type a class first", "In the class menu: the objects you add get it.");
-      warned = true;
-      return undefined;
-    }
     inFlight?.abort();
     const controller = (inFlight = new AbortController());
     try {
       const response = await fetch(canvas.dataset.segment, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ points, labels, box, class: classOf() }),
+        body: JSON.stringify({ points, labels, box, class: classOf() ?? UNNAMED }),
         signal: controller.signal,
       });
       if (response.status === 204) return undefined; // overtaken by a newer call
@@ -116,8 +114,8 @@ export function clickTool(editor, canvas, currentClass) {
     }
   }
 
-  const classOf = () => candidate?.refining?.class_id ?? currentClass();
-  const preview = (shape) => editor.setPreview(shape && { ...shape, class_id: classOf() });
+  const classOf = () => candidate?.refining?.class_id ?? classes.current();
+  const preview = (shape) => editor.setPreview(shape && { ...shape, class_id: classOf() ?? "" });
 
   // --- Before a click: the object under the pointer ---
 
@@ -199,7 +197,9 @@ export function clickTool(editor, canvas, currentClass) {
     if (!candidate?.shape) return;
     const { score, ...shape } = candidate.shape; // a person kept it: not a model's guess anymore
     const { refining } = candidate;
+    if (!classOf()) classes.add(nameField.value.trim() || UNNAMED);
     const classId = classOf();
+    nameField.value = "";
     finish();
     if (!refining) editor.createAnnotation({ ...shape, class_id: classId });
     // A detection project's answer is a box: an outline the object had stays.
@@ -245,6 +245,12 @@ export function clickTool(editor, canvas, currentClass) {
   });
   actions.querySelector("[data-accept]").addEventListener("click", accept);
   actions.querySelector("[data-reject]").addEventListener("click", finish);
+  nameField.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") accept();
+    else if (event.key === "Escape") finish();
+    else return;
+    event.preventDefault();
+  });
 
   // --- A drag: the object in a box (MarkinJS reports a drag on empty canvas; not a click) ---
 
@@ -267,7 +273,7 @@ export function clickTool(editor, canvas, currentClass) {
   // The candidate in the class picked meanwhile.
   document.querySelector("#class-menu").addEventListener("click", (event) => {
     if (!candidate || !event.target.closest("[data-class-id]")) return;
-    if (candidate.refining) candidate.refining = { ...candidate.refining, class_id: currentClass() };
+    if (candidate.refining) candidate.refining = { ...candidate.refining, class_id: classes.current() };
     preview(candidate.shape);
   });
 
@@ -284,6 +290,7 @@ export function clickTool(editor, canvas, currentClass) {
         return dot;
       }),
     );
+    nameField.hidden = Boolean(classOf());
     placeBeside(actions, candidate?.shape?.bbox);
   }
 

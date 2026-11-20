@@ -5,7 +5,7 @@
    Edit project, as on the project page. Typing a name in the class menu that the project hasn't had
    makes a new class. #}
 {% extends "base.html" %}
-{% from "projects/macros.html" import downloads, no_classes %}
+{% from "projects/macros.html" import downloads %}
 {% set project, params = image.project, {"where": image.filter} %}
 {% set main_bleed = true %}
 {% set crumbs = [(project.name, "/projects/" ~ project.id ~ query(params)), (image.filename, None)] %}
@@ -25,8 +25,6 @@
     <button class="icon-button" type="button" disabled aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</button>
   {% endif %}
 {% endmacro %}
-
-{% block notice %}{{ no_classes(project) }}{% endblock %}
 
 {# The main bar: the project's own actions, as on the project page. #}
 {% block actions %}
@@ -50,13 +48,13 @@
     <span>{{ image.position }} of {{ image.match_count }}</span>
     {{ step(image.next_id, "Next image", "chevron-right", "arrowright") }}
   </div>
-  {% set first = project.classes[0] if project.classes else none %}
+  {% set first = project.classes | rejectattr("hidden") | first %}
     <div class="topbar__center">
       <button class="topbar__button" type="button" popovertarget="class-menu" title="Class">
-        <span class="badge{% if not first %} plain{% endif %}" id="class-shown"{% if first %} style="--badge-color: {{ first.color }}"{% endif %}>{{ first.name if first else "Type a class" }}</span>{{ icon("chevron-up-down") }}</button>
+        <span class="badge{% if not first %} plain{% endif %}" id="class-shown"{% if first %} style="--badge-color: {{ first.color }}"{% endif %}>{{ first.name if first else "No class" }}</span>{{ icon("chevron-up-down") }}</button>
       <div id="class-menu" class="menu" popover>
         <input class="menu__search" type="search" placeholder="Class…" aria-label="Class" autocomplete="off" autofocus>
-        {% for class in project.classes %}{{ class_item(class) }}{% endfor %}
+        {% for class in project.classes if not class.hidden %}{{ class_item(class) }}{% endfor %}
         <button class="menu__item" type="button" data-new-class data-search-typed hidden>
           {{ icon("plus") }}<span>New class “<span data-search-echo></span>”</span></button>
       </div>
@@ -94,8 +92,9 @@
     <div data-markin-stage>
       <img src="{{ image.url }}" alt="{{ image.filename }}">
       <svg viewBox="0 0 {{ image.width }} {{ image.height }}"
-           data-annotations='{{ image.annotations | tojson }}' data-classes='{{ project.classes | tojson }}'
-           data-source="/api/images/{{ image.media_id }}" data-project-id="{{ project.id }}"
+           data-annotations='{{ image.annotations | tojson }}' data-hidden='{{ image.hidden | tojson }}'
+           data-classes='{{ project.classes | rejectattr("hidden") | list | tojson }}'
+           data-source="/api/images/{{ image.media_id }}" data-project-id="{{ project.id }}" data-unnamed="{{ palette[0] }}"
            data-save="/api/images/{{ image.media_id }}/annotations"
              data-segment="/api/images/{{ image.media_id }}/segment"
              data-prepare="/api/images/{{ image.media_id }}/prepare"
@@ -109,6 +108,7 @@
               title="Refine: shape it again with clicks">{{ icon("cursor-arrow-rays") }}</button>
     </div>
     <div id="candidate-actions" class="floating" hidden>
+      <input data-candidate-name placeholder="object" aria-label="Class" maxlength="100" hidden>
       <button class="icon-button" type="button" data-accept aria-label="Add" title="Add (Enter)">{{ icon("check") }}</button>
       <button class="icon-button" type="button" data-reject aria-label="Discard" title="Discard (Esc)">{{ icon("x-mark") }}</button>
     </div>

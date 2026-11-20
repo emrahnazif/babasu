@@ -15,7 +15,6 @@
   --color-muted-bg: light-dark(#fafafa, #171717);  /* a quiet box inside a card (an item, a footer): accent-bg things show on it */
   --color-destructive: light-dark(#dc2626, #b91c1c);
   --color-destructive-text: #ffffff;
-  --color-warning: light-dark(#b45309, #fbbf24);  /* amber: something is missing before things work */
   --color-highlight: light-dark(#0ea5e9, #38bdf8);  /* sky: something you can grab or that's active */
 
   /* Typography */

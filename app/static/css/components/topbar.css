@@ -65,10 +65,6 @@
 /* A toggle that's on (aria-pressed="true"), e.g. a tool: its first icon lit. */
 .topbar__button[aria-pressed="true"] svg:first-child { color: var(--color-highlight); }
 
-/* A button that says something is missing (e.g. "Add classes"), its text and icon in amber. */
-.topbar__button--warning,
-.topbar__button--warning svg { color: var(--color-warning); }
-
 /* A thin line between groups in a slot, e.g. a page's actions and the app-wide ones. */
 .topbar__divider {
   width: 1px;

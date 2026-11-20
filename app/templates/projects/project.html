@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components.html" as ui %}
-{% from "projects/macros.html" import downloads, image_tiles, no_classes %}
+{% from "projects/macros.html" import downloads, image_tiles %}
 {% from "partials/select.html" import select %}
 {% set crumbs = [(project.name, None)] %}
 {% block about %}Project {{ project.name }} (id {{ project.id }}{{ ", " ~ project.task if project.task }}): {{ project.image_count | plural("image") }}, {{ project.labelled_count | number }} labelled.
@@ -93,12 +93,10 @@
 {% set parts = [("class", "Class", "tag"), ("size", "Object size", "arrows-pointing-out"), ("aspect", "Aspect", "arrows-right-left"),
                 ("edge", "Touching the edge", "viewfinder-circle"), ("count", "Number of objects", "hashtag")] %}
 
-{% block notice %}{{ no_classes(project) }}{% endblock %}
-
 {# The main bar: the project's own actions. #}
 {% block actions %}
   <button class="icon-button" type="button" popovertarget="add-images" aria-label="Add images" title="Add images">{{ icon("plus") }}</button>
-  {% if project.classes and project.image_count %}
+  {% if project.image_count %}
     <button class="icon-button" type="button" popovertarget="auto-annotate" aria-label="Auto-annotate" title="Auto-annotate">{{ icon("sparkles") }}</button>
   {% endif %}
   <a class="icon-button" href="/projects/{{ project.id }}/edit" aria-label="Edit project" title="Edit project">{{ icon("pencil-square") }}</a>
@@ -191,7 +189,7 @@
   {# Auto-annotate the images the page shows (its filter): each class found from its prompt by the
      project's annotator, objects added next to the ones there. Refreshed when a job ends, for the
      counts of images still to do. #}
-  {% if project.classes and project.image_count %}
+  {% if project.image_count %}
   <div id="auto-annotate" class="dialog" popover aria-labelledby="auto-annotate-title">
     <form id="auto-annotate-form" method="post" action="/projects/{{ project.id }}/annotate" data-background-form="keep"
           data-project-id="{{ project.id }}">
@@ -199,13 +197,14 @@
       <input type="hidden" name="where" value="{{ where }}">
       {% if auto.annotator %}
         <p class="muted">
-          {{ annotators[auto.annotator] }} finds each ticked class from its prompt in the
+          {{ annotators[auto.annotator] }} finds each ticked class (and what you type) from its prompt in the
           {{ auto.images | plural("image") }} {% if filter.text() %}matching the filter{% else %}of the project{% endif %}.
           New objects go next to the ones there; an image is done once per class.
         </p>
       {% else %}
         <p class="muted">No model knows these keypoints: choose an auto-annotator in the project's settings.</p>
       {% endif %}
+      {% if project.classes %}
       <table>
         <thead><tr><th>Class</th><th>Prompt</th><th>Images to do</th></tr></thead>
         <tbody>
@@ -220,7 +219,12 @@
           {% endfor %}
         </tbody>
       </table>
+      {% endif %}
       <div class="fields">
+        <label class="field">
+          {{ "Also find" if project.classes else "What to find" }} <span class="muted">new classes, comma-separated, e.g. horse, car</span>
+          <input name="find" maxlength="1000" autocomplete="off"{% if not project.classes %} required{% endif %}>
+        </label>
         <label class="field">
           Minimum score <span class="muted">0 keeps everything the auto-annotator finds</span>
           <input type="number" name="min_score" min="0" max="1" step="0.05" value="0">

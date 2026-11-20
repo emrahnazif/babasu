@@ -3,14 +3,6 @@
 {# The models something downloads before it runs (runs.to_download): "sam3 sam3 (3.45 GB), …". #}
 {% macro downloads(models) %}{% for m in models %}{{ m.model }} ({{ m.size | filesize }}){% if not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
 
-{# For a project's main bar: without classes nothing can be annotated, so the way to add them. #}
-{% macro no_classes(project) %}
-  {% if not project.classes %}
-    <a class="topbar__button topbar__button--warning" href="/projects/{{ project.id }}/edit#classes-section">
-      {{ icon("exclamation-triangle") }}Add classes</a>
-  {% endif %}
-{% endmacro %}
-
 {# Images as tiles (ui.tiles), each with its objects drawn and a link to its page.
    `query`: added to each link (the filter it was found with, stepping through it on the image's
    page); `badges`: a mark on the labelled ones. The project page shows them, and so does the chat
