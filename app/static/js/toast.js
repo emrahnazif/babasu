@@ -4,6 +4,8 @@
 //   const note = toast("Started: Download", "", null);  // null: a bar with no known total yet
 //   note.set("Started: Download", "52 MB / 694 MB", 0.08);  // 0 to 1
 //   note.set("Finished: Download", "Done");  // no progress: the bar goes, it leaves on its own
+// With an action, a button does something about it (and dismisses it):
+//   toast("Undone", "32 images added", undefined, { label: "Redo", run: redo });
 // The markup is the #toast-template in base.html; the stack (#toasts) is a manual popover.
 // The look and motion are in components/toast.css; here a toast only gets added, marked
 // leaving (toast--leaving) and removed once its fade-out has ended.
@@ -11,9 +13,10 @@ const stack = document.querySelector("#toasts");
 const template = document.querySelector("#toast-template");
 const TOAST_TIME = 6000;
 
-export function toast(title, text = "", progress = undefined) {
+export function toast(title, text = "", progress = undefined, action = null) {
   const item = template.content.firstElementChild.cloneNode(true);
   const bar = item.querySelector(".toast__progress");
+  const button = item.querySelector(".toast__action");
   let timer;
 
   const leave = () => {
@@ -28,6 +31,11 @@ export function toast(title, text = "", progress = undefined) {
     setTimeout(remove, 1000);
   };
   item.addEventListener("click", leave);
+  if (action) {
+    button.textContent = action.label;
+    button.hidden = false;
+    button.addEventListener("click", action.run); // the click goes on to the toast, which leaves
+  }
 
   function set(title, text = "", progress = undefined) {
     item.querySelector(".toast__title").textContent = title;

@@ -96,7 +96,7 @@
   {% if video %}<div class="player">{% endif %}
   {# MarkinJS's structure, rendered here so the layout is right before any JS runs. #}
   <figure class="stage">
-    <div data-markin-stage>
+    <div data-markin-stage data-own-undo>
       <img src="{{ '/api/images/%d/frames/%d' | format(image.media_id, frame) if video else image.url }}" alt="{{ image.filename }}">
       {# On a video, the editor saves, and the click tool works, on the frame shown (data-frame). #}
       <svg viewBox="0 0 {{ image.width }} {{ image.height }}"

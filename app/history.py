@@ -67,6 +67,10 @@ _DONE = {"insert": "added", "update": "changed", "delete": "deleted", "trash": "
 # The undo that undid action `a`, unless that undo was undone in turn.
 _UNDONE_BY = """(SELECT u.id FROM action u WHERE u.undoes = a.id
                  AND NOT EXISTS (SELECT 1 FROM action r WHERE r.undoes = u.id))"""
+# Every action with how many undos deep it is: 0 done, odd an undo, even a redo (an undo undone).
+_CHAIN = """WITH RECURSIVE chain(id, depth) AS (
+              SELECT id, 0 FROM action WHERE undoes IS NULL
+              UNION ALL SELECT a.id, depth + 1 FROM action a JOIN chain ON a.undoes = chain.id)"""
 # An action's entries (mine) joined to the later entries of other actions on the same rows and files (h).
 _LATER = """history mine JOIN history h ON h.tbl = mine.tbl AND h.key = mine.key AND h.id > mine.id
             AND h.action_id != mine.action_id"""
@@ -78,9 +82,7 @@ def actions(conn: sqlite3.Connection, limit: int = 100, action_id: str | None = 
     action it undid, if any, and whether a later action changed the same things (`changed_since`:
     it can't be undone before that one is)."""
     rows = conn.execute(
-        f"""WITH RECURSIVE chain(id, depth) AS (  -- how many undos deep: 0 done, odd an undo, even a redo
-              SELECT id, 0 FROM action WHERE undoes IS NULL
-              UNION ALL SELECT a.id, depth + 1 FROM action a JOIN chain ON a.undoes = chain.id)
+        f"""{_CHAIN}
             SELECT a.id, source, label, at, undoes, depth, {_UNDONE_BY} AS undone_by,
                    EXISTS (SELECT 1 FROM {_LATER} WHERE mine.action_id = a.id) AS changed_since
             FROM action a JOIN chain USING (id) WHERE ? IS NULL OR a.id = ?
@@ -125,6 +127,21 @@ def _name(conn: sqlite3.Connection, table: str, key: dict, before: dict) -> str 
 
 
 # --- Undoing ---
+
+
+def latest(conn: sqlite3.Connection, redo: bool = False) -> str | None:
+    """The action to undo next, as an editor's Undo picks it: the newest done (or redone) and not
+    undone, so undoing again goes further back. With `redo`, the one Redo undoes: the newest undo
+    not undone, unless something new was done since. None if there's none."""
+    rows = conn.execute(f"""{_CHAIN} SELECT a.id, depth, {_UNDONE_BY} AS undone_by
+                            FROM action a JOIN chain USING (id) ORDER BY a.rowid DESC""")
+    for r in rows:
+        undoing = r["depth"] % 2 == 1
+        if redo and r["depth"] == 0:
+            return None  # something new was done: nothing to redo
+        if not r["undone_by"] and undoing == redo:
+            return r["id"]
+    return None
 
 
 def undo(conn: sqlite3.Connection, action_id: str) -> dict:

@@ -69,8 +69,30 @@ def api_undo(action_id: str, conn: DB) -> dict:
     (undo that first) or something can't go back."""
     try:
         undo = history.undo(conn, action_id)
-        return undo | {"did": f"Undid {undo['label']}: {undo['changed'] or 'nothing to put back'}"}
     except LookupError as e:
         raise HTTPException(404, str(e)) from None
     except history.Refused as e:
         raise HTTPException(409, str(e)) from None
+    did = "Redid" if undo["kind"] == "redo" else "Undid"
+    return undo | {"did": f"{did} {undo['label']}: {undo['changed'] or 'nothing to put back'}"}
+
+
+def _step(conn: sqlite3.Connection, redo: bool) -> dict:
+    action_id = history.latest(conn, redo)
+    if action_id is None:
+        raise HTTPException(404, f"Nothing to {'redo' if redo else 'undo'}")
+    return api_undo(action_id, conn)
+
+
+@router.post("/api/history/undo", response_model=Undone)
+def api_undo_latest(conn: DB) -> dict:
+    """Undoes the latest action, as an editor's Undo (⌘Z): the newest done or redone and not undone,
+    so undoing again goes further back. As POST /api/history/{id}/undo; 404 if there's nothing to undo."""
+    return _step(conn, redo=False)
+
+
+@router.post("/api/history/redo", response_model=Undone)
+def api_redo(conn: DB) -> dict:
+    """Does again what the latest undo undid, as an editor's Redo (⇧⌘Z): the newest undo not undone,
+    unless something new was done since. As POST /api/history/{id}/undo; 404 if there's nothing to redo."""
+    return _step(conn, redo=True)

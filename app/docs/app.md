@@ -11,7 +11,7 @@ babasu is a local computer vision app: everything runs on the person's computer,
 - Workflows: mozo graphs of models and steps, built in the builder, run over a project's images (see workflows).
 - Vision models: downloaded, loaded and unloaded on the Models page (see models).
 - Background jobs for everything long (see jobs).
-- History: everything done in the last 30 days (by the person, you and jobs), each request, job or agent turn undoable as one, deleted files included.
+- History: everything done in the last 30 days (by the person, you and jobs), each request, job or agent turn undoable as one, deleted files included. ⌘Z (Ctrl+Z) undoes the latest, again for the one before, ⇧⌘Z redoes (POST /api/history/undo, /api/history/redo); not while typing, and on an image ⌘Z is the editor's own.
 
 ## Finding what's in images nobody annotated
 The annotations say only what someone (or auto-annotate) marked. To find things in images that aren't marked ("our images with a person"), look with a model: run a workflow that finds them over the images (the find tool: images, e.g. a project's, and classes, e.g. ["person"]). What it finds is kept as the images' annotations, each with its score; it answers how many of each class, and the projects to see them in (/projects/ID?where=person). Auto-annotate does the same for a project's own classes.

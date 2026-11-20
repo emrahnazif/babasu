@@ -16,6 +16,10 @@
 .toasts:popover-open { display: flex; }
 
 .toast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;  /* the text, then its action's button */
+  column-gap: var(--space-3);
+  align-items: center;
   width: 20rem;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border);
@@ -52,3 +56,12 @@
 .toast__progress {
   margin-top: var(--space-2);
 }
+
+.toast > * { grid-column: 1; }  /* one under another, also when there's no action */
+
+.toast__action {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.toast__action[hidden] { display: none; }

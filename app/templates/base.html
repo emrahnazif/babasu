@@ -33,6 +33,7 @@
   <script type="module" src="{{ url_for('static', path='js/menu.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/select.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/go.js') }}"></script>
+  <script type="module" src="{{ url_for('static', path='js/undo.js') }}"></script>
   {% block scripts %}{% endblock %}
 </head>
 <body>
@@ -149,6 +150,7 @@
       <p class="toast__title"></p>
       <p class="toast__text"></p>
       <div class="progress toast__progress" hidden></div>
+      <button class="button secondary toast__action" type="button" hidden></button>
     </div>
   </template>
 </body>

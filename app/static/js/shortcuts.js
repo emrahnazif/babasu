@@ -9,19 +9,19 @@
 //   - a disabled element doesn't respond; one that isn't on this page simply isn't there
 //   - don't declare the system's own (⌘C/V/X/Z, ⌘W, ⌘Q…)
 // The shortcut is also added to the element's tooltip and aria-keyshortcuts.
-const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+export const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 const SYMBOLS = mac ? { mod: "⌘", shift: "⇧", alt: "⌥" } : { mod: "Ctrl+", shift: "Shift+", alt: "Alt+" };
 const ARIA = { mod: mac ? "Meta" : "Control", shift: "Shift", alt: "Alt" };
 // Keys whose name isn't what a person reads (event.key, lower case -> shown, ARIA name).
 const KEYS = { arrowleft: ["←", "ArrowLeft"], arrowright: ["→", "ArrowRight"], arrowup: ["↑", "ArrowUp"], arrowdown: ["↓", "ArrowDown"] };
 
-function parse(shortcut) {
+export function parse(shortcut) {
   const parts = shortcut.toLowerCase().split("+");
   const key = parts.pop();
   return { key, mod: parts.includes("mod"), shift: parts.includes("shift"), alt: parts.includes("alt") };
 }
 
-function matches({ key, mod, shift, alt }, event) {
+export function matches({ key, mod, shift, alt }, event) {
   return (
     event.key.toLowerCase() === key &&
     (mac ? event.metaKey : event.ctrlKey) === mod &&
@@ -31,7 +31,7 @@ function matches({ key, mod, shift, alt }, event) {
   );
 }
 
-const typing = (target) => target.closest?.("input, textarea, select, [contenteditable]") != null;
+export const typing = (target) => target.closest?.("input, textarea, select, [contenteditable]") != null;
 
 const elements = [...document.querySelectorAll("[data-shortcut]")].map((element) => {
   const shortcut = parse(element.dataset.shortcut);
