@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "components.html" as ui %}
 {% from "projects/macros.html" import downloads, image_tiles %}
-{% from "partials/select.html" import select %}
+{% import "partials/filter-bar.html" as fb %}
 {% set crumbs = [(project.name, None)] %}
 {% block about %}Project {{ project.name }} (id {{ project.id }}{{ ", " ~ project.task if project.task }}): {{ project.image_count | plural("image") }}, {{ project.labelled_count | number }} labelled.
   Classes: {% for c in project.classes %}{{ c.name }} {{ c.annotation_count | plural("object") }}{{ ", " if not loop.last }}{% else %}none{% endfor %}.
@@ -20,79 +20,6 @@
   ]) }}
 {% endmacro %}
 
-{# Number fields for a range: "from" and "to", either may be empty. #}
-{% macro range_fields(label, name, r, unit) %}
-  <fieldset class="field">
-    <legend>{{ label }}{% if unit %} <span class="muted">({{ unit }})</span>{% endif %}</legend>
-    <div class="range">
-      <input type="number" name="{{ name }}_min" step="any" min="0" placeholder="from" value="{{ '{:g}'.format(r.min) if r and r.min is not none else '' }}" aria-label="{{ label }} from">
-      <span class="muted">–</span>
-      <input type="number" name="{{ name }}_max" step="any" min="0" placeholder="to" value="{{ '{:g}'.format(r.max) if r and r.max is not none else '' }}" aria-label="{{ label }} to">
-    </div>
-  </fieldset>
-{% endmacro %}
-
-{# A choice of one class for a panel's objects; empty means any class. #}
-{% macro of_class(id, c) %}
-  <label class="field">
-    Objects of
-    {{ select(id, "of_class", [("", "any class")] + project.classes | options("name", "name"), c.classes[0] if c and c.classes | length == 1 else "") }}
-  </label>
-{% endmacro %}
-
-{# One filter, in a small panel under the Filter button: a new condition (index none), or the
-   condition at `index` (its chip opens it), whose other parts the panel leaves as they are. #}
-{% macro panel(part, title, index=none, c=none) %}
-  {% set id = "panel-" ~ part ~ ("-" ~ index if index is not none else "") %}
-  <div id="{{ id }}" class="menu menu--panel" popover style="position-anchor: --filter" aria-label="{{ title }}">
-    <div class="menu__head">
-      <button class="menu__item" type="button" popovertarget="filter-list" aria-label="Back to filters" title="Back">{{ icon("chevron-left") }}</button>
-      {{ title }}
-    </div>
-    {% if part == "count" %}
-      <form method="post" action="/projects/{{ project.id }}/object-count">
-        <input type="hidden" name="where" value="{{ filter.set(objects=none).text() }}">
-        {{ range_fields("Objects in the image", "objects", filter.objects, "") }}
-    {% else %}
-      <form method="post" action="/projects/{{ project.id }}/conditions">
-        <input type="hidden" name="where" value="{{ filter.text() }}">
-        <input type="hidden" name="part" value="{{ part }}">
-        {% if index is not none %}<input type="hidden" name="index" value="{{ index }}">{% endif %}
-        {% if part == "class" %}
-          <div class="segmented" role="radiogroup" aria-label="Has or doesn't have">
-            <label class="segmented__item"><input type="radio" name="negate" value="false" {% if not (c and c.negate) %}checked{% endif %}>Has</label>
-            <label class="segmented__item"><input type="radio" name="negate" value="true" {% if c and c.negate %}checked{% endif %}>Doesn't have</label>
-          </div>
-          <div>
-            {% for class in project.classes %}
-              <label class="menu__item"><input type="checkbox" name="classes" value="{{ class.name }}" {% if c and class.name in c.classes %}checked{% endif %}>
-                <span class="menu__swatch" style="--swatch-color: {{ class.color }}"></span>{{ class.name }}
-                <span class="menu__note">{{ class.annotation_count }}</span></label>
-            {% endfor %}
-          </div>
-        {% else %}
-          {{ of_class(id ~ "-class", c) }}
-          {% if part == "size" %}
-            {{ range_fields("Width", "w", c.w if c else none, "px") }}
-            {{ range_fields("Height", "h", c.h if c else none, "px") }}
-          {% elif part == "aspect" %}
-            {{ range_fields("Width ÷ height", "aspect", c.aspect if c else none, "") }}
-          {% else %}
-            <div class="segmented" role="radiogroup" aria-label="Touching the edge">
-              <label class="segmented__item"><input type="radio" name="edge" value="true" {% if not c or c.edge != false %}checked{% endif %}>Touching the edge</label>
-              <label class="segmented__item"><input type="radio" name="edge" value="false" {% if c and c.edge == false %}checked{% endif %}>Not touching</label>
-            </div>
-          {% endif %}
-        {% endif %}
-    {% endif %}
-        <div class="actions"><button class="button" type="submit">Apply</button></div>
-      </form>
-  </div>
-{% endmacro %}
-
-{% set parts = [("class", "Class", "tag"), ("size", "Object size", "arrows-pointing-out"), ("aspect", "Aspect", "arrows-right-left"),
-                ("edge", "Touching the edge", "viewfinder-circle"), ("count", "Number of objects", "hashtag")] %}
-
 {# The main bar: the project's own actions. #}
 {% block actions %}
   <button class="icon-button" type="button" popovertarget="add-images" aria-label="Add images" title="Add images">{{ icon("plus") }}</button>
@@ -102,54 +29,12 @@
   <a class="icon-button" href="/projects/{{ project.id }}/edit" aria-label="Edit project" title="Edit project">{{ icon("pencil-square") }}</a>
 {% endblock %}
 
-{# The filter bar, always there: which images (all, labelled, unlabelled), the Filter button and
-   its list, and one chip per condition (click to change it, × to remove it); on the right, how
-   many images match. The counts refresh when an import into the project ends. #}
+{# The filter bar (partials/filter-bar.html); the counts refresh when an import into the project ends. #}
 {% block toolbar %}
-  {% set shows = [("all", "All images", project.image_count), ("labelled", "Labelled", project.labelled_count),
-                  ("unlabelled", "Unlabelled", project.image_count - project.labelled_count)] %}
-  {% set chips = filter.chips(project.classes) %}
   <div class="topbar__left topbar__left--wrap">
-    <span id="project-show" data-refresh-on="job-ended" data-refresh-if="projectId={{ project.id }}">
-      {% for value, label, count in shows if value == filter.show %}
-        <button class="topbar__button" type="button" popovertarget="show-menu">{{ label }} <span class="muted">{{ count }}</span>{{ icon("chevron-up-down") }}</button>
-      {% endfor %}
-      <div id="show-menu" class="menu" popover>
-        {% for value, label, count in shows %}
-          <a class="menu__item" href="{{ query({'where': filter.set(show=value).text()}) }}" {% if filter.show == value %}aria-current="page"{% endif %}>
-            <span class="menu__check">{{ icon("check") }}</span>{{ label }}<span class="menu__note">{{ count }}</span></a>
-        {% endfor %}
-      </div>
-    </span>
-
-    <button class="topbar__button" type="button" popovertarget="filter-list" style="anchor-name: --filter" data-shortcut="f" title="Filter">{{ icon("funnel") }}Filter</button>
-    {# The list of filters; typing narrows it, and Enter looks for file names containing the text.
-       It and its panels are anchored to the Filter button by name, so they open in the same place
-       whichever button opened them (a panel's ‹ is gone by the time the list opens). #}
-    <form id="filter-list" class="menu" popover role="search" style="position-anchor: --filter">
-      {% if filter.set(name="").text() %}<input type="hidden" name="where" value="{{ filter.set(name='').text() }}">{% endif %}
-      <input class="menu__search" type="search" name="name" placeholder="Filter by…" aria-label="Filter by" autocomplete="off" autofocus>
-      <button class="menu__item" type="submit" data-search-typed hidden>{{ icon("document-text") }}<span>File name contains “<span data-search-echo></span>”</span></button>
-      {% for part, title, icon_name in parts %}
-        <button class="menu__item" type="button" popovertarget="panel-{{ part }}">{{ icon(icon_name) }}{{ title }}</button>
-      {% endfor %}
-    </form>
-
-    {% if error %}<span class="error">{{ error }}</span>{% endif %}
-    {% for chip in chips %}
-      {% set c = filter.conditions[chip.index] if chip.kind == "condition" else none %}
-      {% set opens = "panel-count" if chip.kind == "objects" else ("panel-" ~ c.part() ~ "-" ~ chip.index if c else none) %}
-      <span class="badge{% if not chip.color %} plain{% endif %}" {% if chip.color %}style="--badge-color: {{ chip.color }}"{% endif %}>
-        {% if opens %}<button type="button" popovertarget="{{ opens }}" title="Change">{{ chip.label }}</button>{% else %}{{ chip.label }}{% endif %}
-        <a href="{{ query({'where': chip.without}) }}" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
-    {% endfor %}
+    {{ fb.controls(filter, project.classes, project, error, refresh="projectId=" ~ project.id) }}
   </div>
-  {% if chips or error %}
-    <div class="topbar__right">
-      {% if not error %}<span class="muted">{{ project.match_count }} of {{ project.image_count | plural("image") }}</span>{% endif %}
-      <a href="{{ query({'where': filter.cleared().text()}) }}">Clear</a>
-    </div>
-  {% endif %}
+  {{ fb.summary(filter, project, error) }}
 {% endblock %}
 
 {% block content %}
@@ -183,8 +68,7 @@
     </form>
   </div>
 
-  {% for part, title, _ in parts %}{{ panel(part, title) }}{% endfor %}
-  {% for c in filter.conditions %}{{ panel(c.part(), (parts | selectattr(0, "equalto", c.part()) | first)[1], loop.index0, c) }}{% endfor %}
+  {{ fb.panels("/projects/" ~ project.id, filter, project.classes) }}
 
   {# Auto-annotate the images the page shows (its filter): each class found from its prompt by the
      project's annotator, objects added next to the ones there. Refreshed when a job ends, for the

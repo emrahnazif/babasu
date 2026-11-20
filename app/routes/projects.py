@@ -32,7 +32,7 @@ def _range(low: float | None, high: float | None) -> Range | None:
 
 
 class ConditionForm(BaseModel):
-    """A filter panel's form (project page): the current filter, which object condition to
+    """A filter panel's form (partials/filter-bar.html): the current filter, which object condition to
     change (none: add one), and the `part` the panel shows; the condition's other parts stay.
       class   Has / Doesn't have, and the classes (several: any of them)
       size    width and height, for objects of one class (empty: any class)
@@ -71,18 +71,21 @@ class ConditionForm(BaseModel):
 
 
 class ObjectCountForm(BaseModel):
-    """The project page's form for how many objects an image has; both empty: any number."""
+    """The filter bar's form for how many objects an image has; both empty: any number."""
 
     where: str = ""
     objects_min: Number = None
     objects_max: Number = None
+
+    def apply(self, filter: Filter) -> Filter:
+        return filter.set(objects=_range(self.objects_min, self.objects_max))
 
 
 def _filter_page(project_id: int, filter: Filter) -> RedirectResponse:
     return RedirectResponse(f"/projects/{project_id}{query({'where': filter.text()})}", status_code=303)
 
 
-def _parse(where: str, name: str | None) -> Filter:
+def parse_filter(where: str, name: str | None) -> Filter:
     """The filter from ?where=, with ?name= (a search field's file name) put in it. Raises FilterError."""
     filter = Filter.parse(where)
     return filter if name is None else filter.set(name=name.strip())
@@ -454,7 +457,7 @@ def create_project(request: Request, form: Annotated[ProjectForm, Form()], conn:
 def project_page(request: Request, project_id: int, conn: DB, where: Where = "", name: str | None = None, page: Page = 1):
     """A filter that can't be used shows why, over all of the project's images."""
     try:
-        filter, error = _parse(where, name), None
+        filter, error = parse_filter(where, name), None
         project = _detail(conn, project_id, page, filter)
     except FilterError as e:
         filter, error = Filter(), str(e)
@@ -474,7 +477,7 @@ def set_condition(project_id: int, form: Annotated[ConditionForm, Form()]):
 @router.post("/projects/{project_id}/object-count")
 def set_object_count(project_id: int, form: Annotated[ObjectCountForm, Form()]):
     """Set (or clear) how many objects the page's filter asks an image to have."""
-    return _filter_page(project_id, Filter.parse(form.where).set(objects=_range(form.objects_min, form.objects_max)))
+    return _filter_page(project_id, form.apply(Filter.parse(form.where)))
 
 
 @router.get("/images/{media_id}", response_class=HTMLResponse)
@@ -747,7 +750,7 @@ def api_project(project_id: int, conn: DB, where: Where = "",
     image and labelled counts) with one page of the images matching ?where=, each with how many
     objects of each class it has (?annotations=1: the objects themselves). ?images=0 for the project
     alone. 422 if the filter names a class it doesn't have."""
-    project = _detail(conn, project_id, page, _parse(where, name), images)
+    project = _detail(conn, project_id, page, parse_filter(where, name), images)
     kept = LISTED + WITH_SHAPES if annotations else LISTED
     project["images"] = [{k: image[k] for k in kept if k in image} for image in project["images"]]
     return project
