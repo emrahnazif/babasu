@@ -265,8 +265,8 @@
   {{ ui.divider() }}
 
   {% call ui.section("Drop zones: normal, and large when dropping is the page's main action") %}
-    {{ ui.stack([ui.dropzone("demo-drop", "paths", drop, accept=image_suffixes, preview="/files/preview"),
-                 ui.dropzone("demo-drop-large", "paths", drop, accept=image_suffixes, large=true, preview="/files/preview")]) }}
+    {{ ui.stack([ui.dropzone("demo-drop", "paths", drop, accept=media_suffixes, preview="/files/preview"),
+                 ui.dropzone("demo-drop-large", "paths", drop, accept=media_suffixes, large=true, preview="/files/preview")]) }}
   {% endcall %}
 
   {{ ui.divider() }}
@@ -327,9 +327,9 @@
                "the image files no other project or run uses, from the workspace"]),
       ui.text("History can undo it for 30 days.", muted=true),
     ]) }}
-    {{ ui.dialog("demo-add", "Add images", description=image_formats ~ " images. A folder brings its subfolders too. Images already in the project are skipped.",
+    {{ ui.dialog("demo-add", "Add images", description=media_formats ~ " images. A folder brings its subfolders too. Images already in the project are skipped.",
                  actions=ui.button("Import", close="demo-add"), children=ui.fields([
-      ui.dropzone("demo-add-drop", "paths", drop, accept=image_suffixes, preview="/files/preview"),
+      ui.dropzone("demo-add-drop", "paths", drop, accept=media_suffixes, preview="/files/preview"),
       ui.input("paths", "Or enter a path", placeholder="/Volumes/NAS/datasets/coco/val2017"),
     ])) }}
   {% endcall %}

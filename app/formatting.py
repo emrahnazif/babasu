@@ -87,5 +87,13 @@ def period(timestamp: str) -> str:
 
 # What templates use them by: filters ({{ n | number }}, {{ count | plural("image") }}) and globals
 # ({{ icon("check") }}). components.html needs them.
-FILTERS = {"number": number, "plural": plural, "filesize": filesize, "counted": counted, "ago": ago, "period": period}
+def clock(seconds: float) -> str:
+    """A length or a moment of a video, as a player shows it: "0:42", "12:05", "1:02:09"."""
+    whole = int(seconds)
+    hours, minutes, rest = whole // 3600, whole % 3600 // 60, whole % 60
+    return f"{hours}:{minutes:02}:{rest:02}" if hours else f"{minutes}:{rest:02}"
+
+
+FILTERS = {"number": number, "plural": plural, "filesize": filesize, "counted": counted, "ago": ago, "period": period,
+           "clock": clock}
 GLOBALS = {"icon": icon}

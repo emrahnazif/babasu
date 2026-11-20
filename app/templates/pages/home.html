@@ -10,7 +10,7 @@
   {% call ui.center() %}
     {{ ui.heading("What's in your images?", "Drop them here and ask: find, count or describe what's in them. "
                   ~ "Everything runs on this computer, and your images never leave it.") }}
-    {{ ui.dropzone("attach", "paths", "Drop images here, or click to choose them", accept=image_suffixes, large=true,
+    {{ ui.dropzone("attach", "paths", "Drop images or videos here, or click to choose them", accept=media_suffixes, large=true,
                    form="chat-form", preview="/files/preview", action=("Continue", "/projects/from-files")) }}
     {{ ui.actions([ui.button("Find all…", variant="secondary", fill=("chat-input", "Find all ")),
                    ui.button("Count…", variant="secondary", fill=("chat-input", "Count the ")),
