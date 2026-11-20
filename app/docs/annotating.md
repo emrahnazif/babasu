@@ -7,7 +7,7 @@ The image page (/images/MEDIA_ID) shows the image with its objects in their clas
 ## Videos
 A video opens on the same page, one frame at a time: each frame is a picture the editor and the click tool work on like an image, and what's drawn is on that frame. Under it, the timeline: a row per class showing where its objects are, the playhead, and a click goes to that moment. ← and → step through the frames, Play (P) plays them, and Shift + ← → go to the previous and next image or video.
 
-The frames worked on are a few a second (2 to start with), chosen in the menu at the timeline's right, up to every frame; a frame with objects always stays.
+The frames worked on are a few a second (2 to start with), chosen in the menu at the timeline's right, up to every frame; a frame with objects always stays. Auto-annotate and workflows run on the same frames (see auto-annotate).
 
 For agents: `GET /api/images/MEDIA_ID/frames` lists the frames worked on (number, time); `GET /api/images/MEDIA_ID/frames/FRAME` is a frame's picture; an annotation's `frame` says which frame it's on (`PUT /api/images/MEDIA_ID/annotations?frame=FRAME` replaces one frame's); `GET /api/images/MEDIA_ID/timeline` says where each class is over the video; `PATCH /api/images/MEDIA_ID` with `sample_fps` changes how many frames a second; `prepare` and `segment` take `?frame=`.
 

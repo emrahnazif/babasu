@@ -15,6 +15,7 @@ import secrets
 import shutil
 import sqlite3
 import threading
+from contextlib import nullcontext
 from functools import lru_cache
 from pathlib import Path
 
@@ -127,20 +128,22 @@ def store_file(conn: sqlite3.Connection, project_id: int, file: Path, name: str)
     return store(conn, project_id, file.read_bytes(), name)
 
 
-def store_video(conn: sqlite3.Connection, project_id: int, file: Path, name: str) -> tuple[int, bool]:
+def store_video(conn: sqlite3.Connection, project_id: int, file: Path, name: str, move: bool = False) -> tuple[int, bool]:
     """Store a video in a project under the file name it came with: its media id, and whether it's
     new there (as store()). The original file is copied as it is, hashed as it's copied, a block at
-    a time (a video can be gigabytes, on a NAS), never re-encoded; its frames' times are kept beside
-    it (frames()) and its thumbnail is its first frame. A new row works at SAMPLE_FPS, or the
-    video's own rate if slower. Caller commits. Raises NotMedia for a file OpenCV can't read as a video."""
+    a time (a video can be gigabytes, on a NAS), never re-encoded; `move`: a file the app wrote in
+    MEDIA_DIR, hashed and moved into place instead. Its frames' times are kept beside it (frames())
+    and its thumbnail is its first frame. A new row works at SAMPLE_FPS, or the video's own rate if
+    slower. Caller commits. Raises NotMedia for a file OpenCV can't read as a video."""
     ext = file.suffix.lower().lstrip(".")
     config.MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = config.MEDIA_DIR / f".{secrets.token_hex(8)}.tmp"
+    tmp = file if move else config.MEDIA_DIR / f".{secrets.token_hex(8)}.tmp"
     digest = hashlib.sha256()
-    with file.open("rb") as source, tmp.open("wb") as copy:
+    with file.open("rb") as source, (nullcontext() if move else tmp.open("wb")) as copy:
         while block := source.read(1 << 20):
             digest.update(block)
-            copy.write(block)
+            if copy:
+                copy.write(block)
     sha256 = digest.hexdigest()
     stored = path(sha256, ext)
     if stored.exists():  # another project has it already

@@ -16,7 +16,7 @@ from app.filters import Filter
 from app.projects import Task
 
 # The built-in workflows that find objects from class prompts: id -> name.
-Finder = Literal["sam3", "grounding-dino", "grounding-dino-edgetam"]
+Finder = Literal["sam3", "sam3-track", "grounding-dino", "grounding-dino-edgetam"]
 FINDERS: dict[Finder, str] = {id: runs.load(id).name for id in get_args(Finder)}
 
 # The annotator suggested for each type of project. None: no model knows the user's own keypoints,

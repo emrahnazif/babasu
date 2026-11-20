@@ -4,6 +4,7 @@ How auto-annotators find objects from the class prompts and add them to a projec
 ## Auto-annotators
 An auto-annotator (the project's `annotator` setting) is a workflow: an image and the project's class prompts go in, objects come out. The built-in ones:
 - **SAM 3**: boxes and outlines; the SAM License. Suggested for detection and segmentation.
+- **SAM 3, tracked**: as SAM 3, and on a video it follows each object from frame to frame (its `track`), so an object is counted once however many frames it's in.
 - **Grounding DINO**: boxes; Apache-2.0.
 - **Grounding DINO → EdgeTAM**: boxes, then outlines; Apache-2.0 (the permissive choice).
 
@@ -17,6 +18,7 @@ For one object at a time, as a person works, there's the click tool in the image
 - Otherwise objects are **added** next to the ones there.
 - Objects scoring below the **minimum score** are left out, beyond the auto-annotator's own threshold.
 - Each object keeps its **score**; it's removed when someone edits the object.
+- **On a video**, it runs on the frames the video is worked at (its rate, see annotating) and keeps each object on its frame. A video is looked at again whole: what a model found on it before for those classes is replaced. It's done for a class once every frame is; changing its rate makes it to do again.
 - It's a background job in the gpu lane: one at a time with other runs and model loading. Its result says what it found per class.
 
 ## Try
