@@ -24,7 +24,7 @@ from mozo import weights
 from mozo.image import load_image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app import annotators, config, projects, settings, vision
+from app import config, projects, runs, settings, vision
 
 # The click models, in the menu's order: "family/variant" -> name. One SAM 2, the large one: every
 # model takes about the same time a click (40-50 ms), so a bigger one costs only its prepare,
@@ -171,7 +171,7 @@ def segment(conn, path: Path, prompt: Prompt, task: projects.Task | None) -> pro
         return None
     best = pf.detections.Detections()
     best.add_detection(found[0])  # ranked by the model's own score, best first
-    annotation = next(iter(annotators.to_annotations(best, [prompt.class_])), None)
+    annotation = next(iter(runs.annotations(best, [prompt.class_])), None)
     if annotation and task == "detection":
         return annotation.model_copy(update={"segments": None})
     return annotation

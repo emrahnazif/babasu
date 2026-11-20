@@ -123,14 +123,14 @@ def _classes(stored: list[dict]) -> list[dict]:
     return [{"name": c["name"], "prompt": c.get("prompt") or c["name"], "color": c["color"]} for c in stored]
 
 
-def _stored(conn: sqlite3.Connection, project_id: int) -> list[dict]:
+def stored_classes(conn: sqlite3.Connection, project_id: int) -> list[dict]:
     row = conn.execute("SELECT classes FROM project WHERE id = ?", (project_id,)).fetchone()
     return json.loads(row["classes"]) if row else []
 
 
 def classes(conn: sqlite3.Connection, project_id: int) -> list[dict]:
     """The project's classes (name, prompt, colour), in order."""
-    return _classes(_stored(conn, project_id))
+    return _classes(stored_classes(conn, project_id))
 
 
 def _project(row: sqlite3.Row) -> dict:
@@ -346,8 +346,8 @@ def _known(conn: sqlite3.Connection, filter: Filter, project_id: int | None) -> 
         have = [r[0] for r in conn.execute("SELECT DISTINCT class FROM annotation")]
     known = {n.casefold() for n in have}
     if missing := sorted(n for n in names if n.casefold() not in known):
-        where = "This project has" if project_id is not None else "No image has"
-        raise FilterError(f"{where} no class “{missing[0]}”; the classes: {', '.join(have) or 'none'}")
+        where = "This project has no" if project_id is not None else "No project has a"
+        raise FilterError(f"{where} class “{missing[0]}”; the classes: {', '.join(have) or 'none'}")
 
 
 def _object_sql(c: ObjectCondition) -> tuple[str, list]:
@@ -454,19 +454,18 @@ def _active_jobs(conn: sqlite3.Connection, project_id: int) -> int:
 
 
 def deletion(conn: sqlite3.Connection, project_id: int) -> dict:
-    """What deleting the project would remove: its `images`, their `annotations` and its `runs`.
+    """What deleting the project would remove: its `images` and their `annotations`.
     `jobs`: how many of its jobs are queued or running; while there are, it can't be deleted."""
     count = lambda sql: conn.execute(sql, (project_id,)).fetchone()[0]
     return {
         "images": image_count(conn, project_id),
         "annotations": count("SELECT count(*) FROM annotation a JOIN media m ON m.id = a.media_id WHERE m.project_id = ?"),
-        "runs": count("SELECT count(*) FROM run WHERE project_id = ?"),
         "jobs": _active_jobs(conn, project_id),
     }
 
 
 def remove(conn: sqlite3.Connection, project_id: int) -> None:
-    """Delete a project with its images and its runs, and commit. The files stay while History can
+    """Delete a project with its images, and commit. The files stay while History can
     bring the images back (history.purge). Raises ValueError while one of its jobs is queued or running."""
     if _active_jobs(conn, project_id):
         raise ValueError("The project has jobs queued or running; cancel them first")
@@ -490,7 +489,7 @@ def add_images(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) 
 def _arrived(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> None:
     """Images that came into the project (copied, moved) with their annotations: the classes it
     hasn't had are added, and those it has are spelt its way, on the images where that changes."""
-    stored = _stored(conn, project_id)
+    stored = stored_classes(conn, project_id)
     count = len(stored)
     for row in conn.execute("SELECT id, annotations FROM media WHERE id IN (SELECT value FROM json_each(?))",
                             (json.dumps(media_ids),)).fetchall():
@@ -513,7 +512,7 @@ def set_annotations(conn: sqlite3.Connection, media_id: int, annotations: list[A
     row = _media_row(conn, media_id)
     if row is None:
         return None
-    _save(conn, media_id, row["project_id"], [a.stored() for a in annotations])
+    save(conn, media_id, row["project_id"], [a.stored() for a in annotations])
     return row["name"]
 
 
@@ -563,14 +562,14 @@ def _rewrite(conn: sqlite3.Connection, project_id: int, filter: Filter, media_id
     matches = _matches(conn, filter, media_ids)
     if matches is None:
         raise ValueError("Say which objects, in brackets: e.g. (car w:<10)")
-    changed, objects, known = [], 0, _stored(conn, project_id)
+    changed, objects, known = [], 0, stored_classes(conn, project_id)
     for media_id, found in matches.items():
         stored = json.loads(_media_row(conn, media_id)["annotations"])
         if class_name is not None:  # already that class: as it is
             found = {i for i in found if stored[i]["class"].casefold() != class_name.casefold()}
         if not found:
             continue
-        _save(conn, media_id, project_id, [o for i, o in enumerate(stored) if i not in found] if class_name is None
+        save(conn, media_id, project_id, [o for i, o in enumerate(stored) if i not in found] if class_name is None
               else [o | {"class": class_name} if i in found else o for i, o in enumerate(stored)], known)
         changed.append(media_id)
         objects += len(found)
@@ -589,21 +588,18 @@ def _spelt(stored: list[dict], objects: list[dict]) -> list[dict]:
     return objects
 
 
-def _save(conn: sqlite3.Connection, media_id: int, project_id: int, objects: list[dict],
+def save(conn: sqlite3.Connection, media_id: int, project_id: int, objects: list[dict],
           stored: list[dict] | None = None) -> None:
     """Write an image's annotations (all of them, as stored), spelt the project's way (_spelt;
     `stored`: its classes, read once for many images), keeping a class it hasn't had, and mark the
     image and its project changed."""
-    stored = _stored(conn, project_id) if stored is None else stored
+    stored = stored_classes(conn, project_id) if stored is None else stored
     count = len(stored)
     _spelt(stored, objects)
     if len(stored) > count:
         conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(stored), project_id))
     conn.execute(f"UPDATE media SET annotations = ?, updated_at = {db.NOW} WHERE id = ?", (json.dumps(objects), media_id))
     _touch(conn, project_id)
-
-
-DUPLICATE_IOU = 0.9  # an added object whose box overlaps one of its class this much is already there
 
 
 def corners(a: dict) -> tuple[float, float, float, float] | None:
@@ -615,38 +611,6 @@ def corners(a: dict) -> tuple[float, float, float, float] | None:
         xs, ys = [p[0] for p in a["segments"]], [p[1] for p in a["segments"]]
         return min(xs), min(ys), max(xs), max(ys)
     return None
-
-
-def _iou(a, b) -> float:
-    w = min(a[2], b[2]) - max(a[0], b[0])
-    h = min(a[3], b[3]) - max(a[1], b[1])
-    if w <= 0 or h <= 0:
-        return 0.0
-    inter = w * h
-    return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter)
-
-
-def add_annotations(conn: sqlite3.Connection, media_id: int, annotations: list[Annotation]) -> int | None:
-    """Add objects to an image, next to the ones it has, leaving out each one already there: its
-    box overlaps an object of its class by DUPLICATE_IOU or more. Returns how many were added;
-    None if there's no such image. Caller commits."""
-    row = _media_row(conn, media_id)
-    if row is None:
-        return None
-    objects = json.loads(row["annotations"])
-    boxes = [(a["class"].casefold(), corners(a)) for a in objects]
-    added = 0
-    for a in annotations:
-        new = a.stored()
-        name, box = a.class_.casefold(), corners(new)
-        if box and any(c == name and b and _iou(box, b) >= DUPLICATE_IOU for c, b in boxes):
-            continue
-        objects.append(new)
-        boxes.append((name, box))
-        added += 1
-    if added:
-        _save(conn, media_id, row["project_id"], objects)
-    return added
 
 
 def with_prompts(listed: list[dict], prompts: dict[str, str]) -> list[dict]:
@@ -726,11 +690,11 @@ def _rename(conn: sqlite3.Connection, project_id: int, renamed: dict[str, str], 
     rows = conn.execute("""SELECT DISTINCT m.id, m.annotations FROM media m JOIN annotation a ON a.media_id = m.id
                            WHERE m.project_id = ? AND a.class IN (SELECT value FROM json_each(?))""",
                         (project_id, json.dumps(sorted(touched)))).fetchall()
-    stored = _stored(conn, project_id)
+    stored = stored_classes(conn, project_id)
     for row in rows:
         objects = [o | {"class": renamed.get(o["class"].casefold(), o["class"])}
                    for o in json.loads(row["annotations"]) if o["class"].casefold() not in removed]
-        _save(conn, row["id"], project_id, objects, stored)
+        save(conn, row["id"], project_id, objects, stored)
 
 
 def edit_classes(conn: sqlite3.Connection, project_id: int, add: list[NewClass] = (),
