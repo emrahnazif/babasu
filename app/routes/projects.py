@@ -536,7 +536,11 @@ def _rates(video: dict) -> list[tuple[float, str]]:
     """The rates a video can be worked at, as its page offers them: a few, the one it has, every frame."""
     fps = video["fps"]
     rates = sorted({*(r for r in (1, 2, 5, 10) if r < fps), video["sample_fps"], fps})
-    return [(r, f"Every frame ({r:g} a second)" if r == fps else f"{r:g} frames a second") for r in rates]
+    return [(r, f"Every frame ({r:g} a second)" if r == fps else _per_second(r)) for r in rates]
+
+
+def _per_second(rate: float) -> str:
+    return f"{plural(rate, 'frame')} a second"
 
 
 @router.post("/images/{media_id}/sample-fps")
@@ -874,7 +878,7 @@ def api_image(media_id: int, conn: DB, where: Where = "") -> dict:
 def api_change_image(media_id: int, change: VideoChange, conn: DB) -> dict:
     """Changes a video: the rate it's worked at (sample_fps). 404 if it's no video."""
     changed = _set_sample_fps(conn, media_id, change.sample_fps)
-    return {"did": f"{changed['filename']} is worked at {changed['sample_fps']:g} frames a second"}
+    return {"did": f"{changed['filename']} is worked at {_per_second(changed['sample_fps'])}"}
 
 
 @router.get("/api/images/{media_id}/frames", response_model=list[FrameOut])
