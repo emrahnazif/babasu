@@ -487,6 +487,94 @@ td:has(> .icon) { width: 1px; }  /* the cell as wide as the icon, not a share of
   height: 100%;
 }
 
+/* A video on its page: the frame's stage, with its timeline under it. */
+.player {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.player > .stage {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+/* A video's timeline: its controls (an .actions row; the play button shows play or pause by its
+   aria-pressed), then .tracks: a label column and a lane per row, the first row a ruler with a
+   tick every --tick, the others a class's stretches (<i>, left/width in %) in its --row-color,
+   and the playhead at --at (0..1) of the lanes. */
+.timeline {
+  --label-width: 8rem;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.timeline .actions { justify-content: flex-start; margin-top: 0; }
+.timeline .actions form { margin-left: auto; }
+.timeline [aria-pressed="false"] > svg:last-child,
+.timeline [aria-pressed="true"] > svg:first-child { display: none; }
+
+.tracks {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--label-width) 1fr;
+  row-gap: 2px;
+  max-height: 9rem;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+  cursor: pointer;
+}
+
+.tracks > div { display: contents; }
+
+.tracks > div > span:first-child {
+  overflow: hidden;
+  padding-right: var(--space-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tracks > div[style] > span:first-child::before {
+  content: "";
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  background: var(--row-color);
+}
+
+.tracks > div > span:last-child {
+  position: relative;
+  border-radius: var(--radius-md);
+  background: var(--color-muted-bg);
+}
+
+.tracks i {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 2px;
+  background: var(--row-color);
+}
+
+.tracks .ruler > span:last-child {
+  height: 0.5rem;
+  background: repeating-linear-gradient(to right, var(--color-border) 0 1px, transparent 1px var(--tick));
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--label-width) + (100% - var(--label-width)) * var(--at));
+  width: 2px;
+  background: var(--color-text);
+  pointer-events: none;
+}
+
 /* Something under way that the person should know about, in a few words with a turning circle,
    over the top left corner of what it's in (a positioned container): e.g. a model loading. It
    doesn't block what's under it. */

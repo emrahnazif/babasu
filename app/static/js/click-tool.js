@@ -15,7 +15,8 @@
 // Space + drag does).
 //
 // Getting ready, said over the image (#click-busy): the image is encoded ahead (prepare), then
-// the next one, so → opens a ready image. A model not in memory is loaded by its load job, never
+// the next one, so → opens a ready image. On a video (the canvas's data-frame and data-next-frame)
+// it works on the frame shown, and gets the next frame ready. A model not in memory is loaded by its load job, never
 // by the call: prepare answers 409 with the job, the pill says the model is loading (or waiting
 // for the job ahead of it), and prepare is asked again when a job ends.
 //
@@ -25,6 +26,7 @@ import { toast } from "./toast.js";
 
 const UNNAMED = "object"; // the class of an object kept with no class chosen or typed
 const HOVER_PAUSE = 30; // ms the pointer rests before the object under it is asked for
+const FRAME_PAUSE = 300; // ms a video's frame stays shown before it's got ready
 
 // `classes`: the editor's {current() (the class new objects get, or null), add(name) (a new one, chosen)}.
 export function clickTool(editor, canvas, classes) {
@@ -61,7 +63,7 @@ export function clickTool(editor, canvas, classes) {
     const controller = (preparing = new AbortController());
     say(button.dataset.loaded === "true" ? "Getting the image ready…" : `Loading ${modelName()}…`);
     try {
-      const response = await post(canvas.dataset.prepare, controller.signal);
+      const response = await post(atFrame(canvas.dataset.prepare, canvas.dataset.frame), controller.signal);
       const answer = response.status === 409 ? await response.json() : null;
       if (answer?.loading) {
         const { model, ahead, started } = answer.loading;
@@ -74,7 +76,9 @@ export function clickTool(editor, canvas, classes) {
       say(null);
       if (!response.ok) throw new Error(answer?.detail ?? response.statusText);
       button.dataset.loaded = "true";
-      if (canvas.dataset.prepareNext) post(canvas.dataset.prepareNext).catch(() => {});
+      const next = canvas.dataset.frame === undefined ? canvas.dataset.prepareNext
+        : canvas.dataset.nextFrame && atFrame(canvas.dataset.prepare, canvas.dataset.nextFrame);
+      if (next) post(next).catch(() => {});
     } catch (error) {
       if (error.name === "AbortError") return; // a newer prepare took over
       say(null);
@@ -94,7 +98,7 @@ export function clickTool(editor, canvas, classes) {
     inFlight?.abort();
     const controller = (inFlight = new AbortController());
     try {
-      const response = await fetch(canvas.dataset.segment, {
+      const response = await fetch(atFrame(canvas.dataset.segment, canvas.dataset.frame), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ points, labels, box, class: classOf() ?? UNNAMED }),
@@ -348,6 +352,16 @@ export function clickTool(editor, canvas, classes) {
     else if (event.target.closest("[data-click-toggle]")) change({ on: !pressed() });
   });
 
+  // Another frame of a video is shown (js/annotation-editor.js): what was being shaped was on the
+  // one before. The frame is got ready once it's stayed a moment, and not while the video plays.
+  let frameTimer = null;
+  document.addEventListener("frame-shown", (event) => {
+    clearHover();
+    if (candidate) finish();
+    clearTimeout(frameTimer);
+    if (!event.detail.playing) frameTimer = setTimeout(() => on() && prepare(), FRAME_PAUSE);
+  });
+
   // A job that ends may bring the chosen model in (a download), load it, or free the gpu lane for
   // its load: show the tool again, which prepares again while it's loading.
   document.addEventListener("job-ended", async () => {
@@ -358,6 +372,9 @@ export function clickTool(editor, canvas, classes) {
     }
   });
 }
+
+// A URL on a video's frame (the canvas's data-frame), or as it is on an image (no frame).
+const atFrame = (url, frame) => (frame === undefined ? url : `${url}?frame=${frame}`);
 
 const inBox = ([x1, y1, x2, y2], [x, y]) => x >= x1 && x <= x2 && y >= y1 && y <= y2;
 

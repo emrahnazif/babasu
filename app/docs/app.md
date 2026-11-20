@@ -17,7 +17,7 @@ babasu is a local computer vision app: everything runs on the person's computer,
 The annotations say only what someone (or auto-annotate) marked. To find things in images that aren't marked ("our images with a person"), look with a model: run a workflow that finds them over the images (the find tool: images, e.g. a project's, and classes, e.g. ["person"]). What it finds is kept as the images' annotations, each with its score; it answers how many of each class, and the projects to see them in (/projects/ID?where=person). Auto-annotate does the same for a project's own classes.
 
 ## What comes later (not there yet)
-Training models (mayaku), evaluation, exporting models, COCO import and export of annotations, classification projects, a review queue for model-made objects, video, and searching images by what's in them. Asked for one of these, say it isn't in the app yet.
+Training models (mayaku), evaluation, exporting models, COCO import and export of annotations, classification projects, a review queue for model-made objects, auto-annotating and running workflows on videos (videos are annotated by hand for now), and searching images by what's in them. Asked for one of these, say it isn't in the app yet.
 
 ## The pages
 - /: Home, where the app opens: drop images, then Continue (a project made from them, opened) or ask about them (find, count, describe), which makes the project too.

@@ -1,8 +1,15 @@
 # Annotating
-Working on one image in the editor: changing objects by hand, and the click tool that outlines an object from a click or a box, and its models (EdgeTAM, SAM 2, SAM 3).
+Working on one image (or a video, a frame at a time) in the editor: changing objects by hand, and the click tool that outlines an object from a click or a box, and its models (EdgeTAM, SAM 2, SAM 3).
 
 ## The editor
 The image page (/images/MEDIA_ID) shows the image with its objects in their classes' colours. Selecting an object lets it be moved, resized, reshaped or deleted; the class menu in the toolbar changes the selected object's class, or, with nothing selected, the class new objects get; typing a name the project hasn't had there makes a new class. Every change is saved at once. ← and → go to the previous and next image of the project's filter.
+
+## Videos
+A video opens on the same page, one frame at a time: each frame is a picture the editor and the click tool work on like an image, and what's drawn is on that frame. Under it, the timeline: a row per class showing where its objects are, the playhead, and a click goes to that moment. ← and → step through the frames, Play (P) plays them, and Shift + ← → go to the previous and next image or video.
+
+The frames worked on are a few a second (2 to start with), chosen in the menu at the timeline's right, up to every frame; a frame with objects always stays.
+
+For agents: `GET /api/images/MEDIA_ID/frames` lists the frames worked on (number, time); `GET /api/images/MEDIA_ID/frames/FRAME` is a frame's picture; an annotation's `frame` says which frame it's on (`PUT /api/images/MEDIA_ID/annotations?frame=FRAME` replaces one frame's); `GET /api/images/MEDIA_ID/timeline` says where each class is over the video; `PATCH /api/images/MEDIA_ID` with `sample_fps` changes how many frames a second; `prepare` and `segment` take `?frame=`.
 
 ## The click tool
 The icon next to the class menu opens its menu: the model, and Turn off / Turn on (S). The choice stays as left, for every project. It's a different job from the auto-annotator, which finds every object of the classes from their prompts, in bulk, as a job. The click tool finds the one object the person points at, as they work.

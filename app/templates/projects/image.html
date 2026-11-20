@@ -3,13 +3,18 @@
    middle, the class (the selected object's, or new objects'). In the main bar, Auto-annotate (the
    project's auto-annotator on this image; the editor shows what it added when the job ends) and
    Edit project, as on the project page. Typing a name in the class menu that the project hasn't had
-   makes a new class. #}
+   makes a new class.
+   A video is shown a worked frame at a time (`frame`, of `frames`), each a picture of its own the
+   editor works on as on an image, with the timeline under it (js/video.js): ← → step through its
+   frames, and Shift + ← → go to the previous and next image. #}
 {% extends "base.html" %}
 {% from "projects/macros.html" import downloads %}
 {% set project, params = image.project, {"where": image.filter} %}
 {% set main_bleed = true %}
 {% set crumbs = [(project.name, "/projects/" ~ project.id ~ query(params)), (image.filename, None)] %}
-{% block about %}Image {{ image.filename }} (media_id {{ image.media_id }}) of project {{ project.name }} (id {{ project.id }}); its objects, by place: {% set listed = image.annotations[:40] %}{% for a in listed %}#{{ loop.index0 }} {{ a["class"] }}{{ ", " if not loop.last }}{% else %}none{% endfor %}{% if image.annotations | length > listed | length %} and {{ image.annotations | length - listed | length }} more{% endif %}.{% endblock %}
+{% from "partials/select.html" import select %}
+{% set video = image.video %}
+{% block about %}{{ "Video" if video else "Image" }} {{ image.filename }}{% if video %} at frame {{ frame }} ({{ time | clock(true) }} of {{ video.duration | clock(true) }}){% endif %} (media_id {{ image.media_id }}) of project {{ project.name }} (id {{ project.id }}); its objects, by place: {% set listed = image.annotations[:40] %}{% for a in listed %}#{{ loop.index0 }} {{ a["class"] }}{{ ", " if not loop.last }}{% else %}none{% endfor %}{% if image.annotations | length > listed | length %} and {{ image.annotations | length - listed | length }} more{% endif %}.{% endblock %}
 
 {# A class in the class menu; js/annotation-editor.js clones the template of one for a new class. #}
 {% macro class_item(class) %}
@@ -20,7 +25,7 @@
 {% macro step(media_id, label, icon_name, key) %}
   {% if media_id %}
     <a class="icon-button" href="/images/{{ media_id }}{{ query(params) }}"
-       data-shortcut="{{ key }}" aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</a>
+       data-shortcut="{{ 'shift+' if video }}{{ key }}" aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</a>
   {% else %}
     <button class="icon-button" type="button" disabled aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</button>
   {% endif %}
@@ -40,6 +45,7 @@
 {% block scripts %}
   <script defer src="{{ url_for('static', path='vendor/markin-0.5.0.min.js') }}"></script>
   <script type="module" src="{{ url_for('static', path='js/annotation-editor.js') }}"></script>
+  {% if video %}<script type="module" src="{{ url_for('static', path='js/video.js') }}"></script>{% endif %}
 {% endblock %}
 
 {% block toolbar %}
@@ -82,23 +88,27 @@
     </div>
   <div class="topbar__right">
     <span id="image-count" class="muted" data-refresh-on="job-ended annotations-saved" data-refresh-if="projectId={{ project.id }}">
-      {{ image.width }} × {{ image.height }} · {{ image.annotations | length | plural("annotation") }}</span>
+      {{ image.width }} × {{ image.height }} · {% if video %}{{ video.duration | clock }} · {% endif %}{{ count | plural("annotation") }}</span>
   </div>
 {% endblock %}
 
 {% block content %}
+  {% if video %}<div class="player">{% endif %}
   {# MarkinJS's structure, rendered here so the layout is right before any JS runs. #}
   <figure class="stage">
     <div data-markin-stage>
-      <img src="{{ image.url }}" alt="{{ image.filename }}">
+      <img src="{{ '/api/images/%d/frames/%d' | format(image.media_id, frame) if video else image.url }}" alt="{{ image.filename }}">
+      {# On a video, the editor saves, and the click tool works, on the frame shown (data-frame). #}
       <svg viewBox="0 0 {{ image.width }} {{ image.height }}"
            data-annotations='{{ image.annotations | tojson }}' data-hidden='{{ image.hidden | tojson }}'
+           data-hides='{{ project.classes | selectattr("hidden") | map(attribute="name") | list | tojson }}'
            data-classes='{{ project.classes | rejectattr("hidden") | list | tojson }}'
            data-source="/api/images/{{ image.media_id }}" data-project-id="{{ project.id }}" data-unnamed="{{ palette[0] }}"
            data-save="/api/images/{{ image.media_id }}/annotations"
-             data-segment="/api/images/{{ image.media_id }}/segment"
-             data-prepare="/api/images/{{ image.media_id }}/prepare"
-             {% if image.next_id %}data-prepare-next="/api/images/{{ image.next_id }}/prepare"{% endif %}></svg>
+           data-segment="/api/images/{{ image.media_id }}/segment"
+           data-prepare="/api/images/{{ image.media_id }}/prepare"
+           {% if video %}data-frame="{{ frame }}"{% if next_frame is not none %} data-next-frame="{{ next_frame }}"{% endif %}
+           {% elif image.next_id %}data-prepare-next="/api/images/{{ image.next_id }}/prepare"{% endif %}></svg>
     </div>
     {# The click tool's object being shaped: its points, and Add and Discard next to it; Refine
        next to a selected object, to shape it again. #}
@@ -116,4 +126,36 @@
        being encoded); the image can be looked at and edited meanwhile. #}
     <div id="click-busy" class="busy" role="status" hidden></div>
   </figure>
+  {% if video %}{{ timeline_of(image, frame, time, frames, timeline, rates) }}</div>{% endif %}
 {% endblock %}
+
+{# A video's timeline (js/video.js): its controls, then a row per class with the stretches of
+   frames its objects are on, over the frames' ticks (sample_fps a second), and the playhead. The
+   rows are read again when annotations are saved or a job ends. #}
+{% macro timeline_of(image, frame, now, frames, rows, rates) %}
+  {% set v = image.video %}
+  <div class="timeline" data-video data-frames='{{ frames | tojson }}'
+       data-frame="{{ frame }}" data-duration="{{ v.duration }}" data-picture="/api/images/{{ image.media_id }}/frames/">
+    <div class="actions">
+      <button class="icon-button" type="button" data-step="-1" data-shortcut="arrowleft" aria-label="Previous frame" title="Previous frame">{{ icon("chevron-left") }}</button>
+      <button class="icon-button" type="button" data-play data-shortcut="p" aria-pressed="false" aria-label="Play" title="Play">{{ icon("play") }}{{ icon("pause") }}</button>
+      <button class="icon-button" type="button" data-step="1" data-shortcut="arrowright" aria-label="Next frame" title="Next frame">{{ icon("chevron-right") }}</button>
+      <span><span data-clock>{{ now | clock(true) }}</span> <span class="muted">/ {{ v.duration | clock(true) }}</span></span>
+      <form method="post" action="/images/{{ image.media_id }}/sample-fps">
+        <input type="hidden" name="where" value="{{ image.filter }}"><input type="hidden" name="frame" value="{{ frame }}">
+        {{ select("sample-fps", "sample_fps", rates, v.sample_fps, label="Frames worked on", compact=true) }}
+      </form>
+    </div>
+    <div class="tracks" id="timeline-tracks" data-tracks data-refresh-on="annotations-saved job-ended" data-refresh-if="projectId={{ image.project.id }}"
+         style="--tick: {{ 100 / (v.duration * v.sample_fps) }}%">
+      <div class="ruler"><span></span><span data-lane></span></div>
+      {% for row in rows %}
+        <div style="--row-color: {{ row.color }}"><span>{{ row.name }}</span>
+          <span>{% for start, end in row.bars %}<i style="left: {{ 100 * start / v.duration }}%; width: {{ 100 * (end - start) / v.duration }}%"></i>{% endfor %}</span></div>
+      {% else %}
+        <div><span class="muted">No objects yet</span><span></span></div>
+      {% endfor %}
+      <div class="playhead" data-playhead style="--at: {{ now / v.duration }}"></div>
+    </div>
+  </div>
+{% endmacro %}
