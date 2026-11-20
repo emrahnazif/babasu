@@ -22,6 +22,7 @@ Training models (mayaku), evaluation, exporting models, COCO import and export o
 ## The pages
 - /: Home, where the app opens: drop images, then Continue (a project made from them, opened) or ask about them (find, count, describe), which makes the project too.
 - /projects: every project. /projects/new: create one.
+- /data-lake: everything the person has, found by name (?q=), a kind at a time (?kind=images, projects, workflows, models); Images is every project's images (?project=ID for one's) with the filter (?where=), and Copy to project.
 - /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, auto-annotator, classes) and Delete.
 - /images/MEDIA_ID: one image in the editor, with its objects and the click tool; stepping to the previous and next image.
 - /workflows: every workflow. /workflows/ID/edit: the builder. /studio: the workflows to use (a workflow's own Studio page isn't built yet).
