@@ -317,18 +317,36 @@ def _image(row: sqlite3.Row, matched: set[int] | None = None) -> dict:
     return image
 
 
-def drawn(image: dict, project: dict) -> dict:
+def drawn(image: dict, project: dict, frame: int | None = None) -> dict:
     """An image as the project's pages draw it: without the annotations of the project's hidden
-    classes (the positions the filter matched follow), those kept aside in `hidden` (for the editor
-    to save back as they are). The API answers every annotation."""
+    classes, and of a video the annotations on `frame` only (the positions the filter matched
+    follow); the others kept aside in `hidden` (for the editor to save back as they are). The API
+    answers every annotation."""
     hides = {c["name"].casefold() for c in project["classes"] if c["hidden"]}
-    kept = [(i, a) for i, a in enumerate(image["annotations"]) if a["class"].casefold() not in hides]
-    shown = image | {"annotations": [a for _, a in kept],
-                     "hidden": [a for a in image["annotations"] if a["class"].casefold() in hides]}
+
+    def shown(a: dict) -> bool:
+        return a["class"].casefold() not in hides and (frame is None or a.get("frame", 0) == frame)
+
+    kept = [(i, a) for i, a in enumerate(image["annotations"]) if shown(a)]
+    drawn = image | {"annotations": [a for _, a in kept], "hidden": [a for a in image["annotations"] if not shown(a)]}
     if image.get("matches") is not None:
         place = {i: n for n, (i, _) in enumerate(kept)}
-        shown["matches"] = [place[i] for i in image["matches"] if i in place]
-    return shown
+        drawn["matches"] = [place[i] for i in image["matches"] if i in place]
+    return drawn
+
+
+def frames(conn: sqlite3.Connection, media_id: int) -> list[dict] | None:
+    """A video's frames that are worked on, in order: those at its sample_fps (media.worked), and
+    any other an annotation is on; each with its number and time (seconds). None if it's no video."""
+    row = conn.execute("SELECT sha256, ext, sample_fps FROM media WHERE id = ? AND type LIKE 'video/%'",
+                       (media_id,)).fetchone()
+    if row is None:
+        return None
+    times = media.frames(row["sha256"], row["ext"])
+    annotated = {r[0] for r in conn.execute("SELECT DISTINCT frame FROM annotation WHERE media_id = ? AND frame < ?",
+                                            (media_id, len(times)))}
+    return [{"frame": n, "time": (times[n] - times[0]) / 1000}
+            for n in sorted(annotated.union(media.worked(times, row["sample_fps"])))]
 
 
 def images(conn: sqlite3.Connection, media_ids: list[int]) -> dict:
@@ -345,12 +363,24 @@ def images(conn: sqlite3.Connection, media_ids: list[int]) -> dict:
     return {"classes": list(drawn.values()), "images": found}
 
 
-def image_file(conn: sqlite3.Connection, media_id: int) -> dict | None:
+def image_file(conn: sqlite3.Connection, media_id: int, frame: int | None = None) -> dict | None:
     """One image as a model works on it, read cheaply (on every mouse move of the click tool): its
-    file (path) and its project's task. None if there's none."""
-    row = conn.execute("""SELECT media.sha256, media.ext, project.task FROM media JOIN project ON project.id = media.project_id
-                          WHERE media.id = ?""", (media_id,)).fetchone()
-    return row and {"path": media.path(row["sha256"], row["ext"]), "task": row["task"]}
+    file (path; of a video, frame `frame`'s, the first if not given: media.frame_file) and its
+    project's task. None if there's none. ValueError: a frame for an image, or one the video hasn't."""
+    row = conn.execute("""SELECT media.sha256, media.ext, media.type, project.task FROM media
+                          JOIN project ON project.id = media.project_id WHERE media.id = ?""", (media_id,)).fetchone()
+    if row is None:
+        return None
+    if row["type"].startswith("video/"):
+        try:
+            file = media.frame_file(row["sha256"], row["ext"], frame or 0)
+        except IndexError as e:
+            raise ValueError(str(e)) from None
+    elif frame is not None:
+        raise ValueError("An image has no frames: leave out frame")
+    else:
+        file = media.path(row["sha256"], row["ext"])
+    return {"path": file, "task": row["task"]}
 
 
 # An annotation `a` of the media row being filtered.
@@ -547,16 +577,58 @@ def _arrived(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) ->
 
 
 def _media_row(conn: sqlite3.Connection, media_id: int) -> sqlite3.Row | None:
-    return conn.execute("SELECT project_id, name, annotations FROM media WHERE id = ?", (media_id,)).fetchone()
+    return conn.execute("SELECT project_id, name, type, annotations FROM media WHERE id = ?", (media_id,)).fetchone()
 
 
-def set_annotations(conn: sqlite3.Connection, media_id: int, annotations: list[Annotation]) -> str | None:
-    """Replace an image's annotations with these. Returns the image's file name; None if there's no
-    such image. Caller commits."""
+def set_sample_fps(conn: sqlite3.Connection, media_id: int, sample_fps: float) -> dict | None:
+    """Set the rate a video is worked at, frames a second (its own at most): its file name and the
+    rate set. None if it's no video. Caller commits."""
+    row = conn.execute(f"""UPDATE media SET sample_fps = min(?, fps), updated_at = {db.NOW}
+                           WHERE id = ? AND type LIKE 'video/%' RETURNING name, sample_fps""", (sample_fps, media_id)).fetchone()
+    return row and {"filename": row["name"], "sample_fps": row["sample_fps"]}
+
+
+def timeline(image: dict, frames: list[dict], project: dict, hide: bool = False) -> list[dict]:
+    """A video's classes over its length: per class it has (the project's order and colours; `hide`:
+    those the project hides left out, as its page draws them), the stretches of its worked
+    `frames` (frames()) an object of it is on, each [start, end] in seconds."""
+    on: dict[str, set[int]] = {}
+    for a in image["annotations"]:
+        on.setdefault(a["class"].casefold(), set()).add(a.get("frame", 0))
+    ends = [f["time"] for f in frames[1:]] + [image["video"]["duration"]]
+    rows = []
+    for c in project["classes"]:
+        there = on.get(c["name"].casefold())
+        if not there or (hide and c["hidden"]):
+            continue
+        bars: list[list[float]] = []
+        before = False  # the frame before had one: the stretch goes on
+        for f, end in zip(frames, ends):
+            here = f["frame"] in there
+            if here and before:
+                bars[-1][1] = end
+            elif here:
+                bars.append([f["time"], end])
+            before = here
+        rows.append({"name": c["name"], "color": c["color"], "bars": bars})
+    return rows
+
+
+def set_annotations(conn: sqlite3.Connection, media_id: int, annotations: list[Annotation],
+                    frame: int | None = None) -> str | None:
+    """Replace an image's annotations with these; of a video, with `frame`, those on that frame only
+    (these are put on it). Returns the image's file name; None if there's no such image. Caller
+    commits. ValueError: a frame for an image."""
     row = _media_row(conn, media_id)
     if row is None:
         return None
-    save(conn, media_id, row["project_id"], [a.stored() for a in annotations])
+    objects = [a.stored() for a in annotations]
+    if frame is not None:
+        if not row["type"].startswith("video/"):
+            raise ValueError("An image has no frames: leave out frame")
+        kept = [a for a in json.loads(row["annotations"]) if a.get("frame", 0) != frame]
+        objects = kept + [o | {"frame": frame} for o in objects]
+    save(conn, media_id, row["project_id"], objects)
     return row["name"]
 
 

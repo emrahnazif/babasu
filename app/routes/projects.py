@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 from app import annotators, db, imports, jobs, media, projects, runs, segment
@@ -249,7 +249,21 @@ class VideoOut(Answer):
     duration: float = Field(description="Seconds.")
     frame_count: int = Field(description="Frames in the file; an annotation's frame is one of them, from 0.")
     fps: float = Field(description="The file's frame rate.")
-    sample_fps: float = Field(description="The rate it's worked at: every fps / sample_fps-th frame is annotated and analysed.")
+    sample_fps: float = Field(description="The rate it's worked at, frames a second: those frames are shown, annotated and "
+                              "analysed (GET /api/images/{id}/frames lists them); PATCH /api/images/{id} changes it.")
+
+
+class FrameOut(Answer):
+    frame: int = Field(description="Its number in the file, from 0: what an annotation's frame says. "
+                       "GET /api/images/{id}/frames/{frame} is its picture (JPEG).")
+    time: float = Field(description="Seconds from the start.")
+
+
+class VideoChange(BaseModel):
+    """A change to a video."""
+
+    model_config = ConfigDict(extra="forbid")
+    sample_fps: float = Field(gt=0, description="The rate it's worked at, frames a second (its own rate at most).")
 
 
 class ImageOut(ImageListed):
@@ -423,10 +437,15 @@ def _form_page(request: Request, conn: sqlite3.Connection, project_id: int | Non
     )
 
 
-def _set_annotations(conn: sqlite3.Connection, media_id: int, annotations: list[projects.Annotation]) -> str:
-    """Set an image's annotations; its file name. 404 if there's no such image."""
-    with conn:
-        filename = projects.set_annotations(conn, media_id, annotations)
+def _set_annotations(conn: sqlite3.Connection, media_id: int, annotations: list[projects.Annotation],
+                     frame: int | None = None) -> str:
+    """Set an image's annotations (a video's on `frame`); its file name. 404 if there's no such
+    image, 422 for a frame of an image."""
+    try:
+        with conn:
+            filename = projects.set_annotations(conn, media_id, annotations, frame)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
     if filename is None:
         raise HTTPException(404, "Image not found")
     return filename
@@ -490,17 +509,50 @@ def set_object_count(project_id: int, form: Annotated[ObjectCountForm, Form()]):
 
 
 @router.get("/images/{media_id}", response_class=HTMLResponse)
-def image_page(request: Request, media_id: int, conn: DB, where: Where = ""):
+def image_page(request: Request, media_id: int, conn: DB, where: Where = "", frame: int | None = None):
+    """An image in the editor; a video one worked frame at a time (`frame`, else its first), with
+    its timeline."""
     try:
         image = _image(conn, media_id, Filter.parse(where))
     except FilterError:  # the project page says why; here, step through all images instead
         image = _image(conn, media_id, Filter())
-    image = projects.drawn(image, image["project"])
-    annotator = annotators.annotator_of(image["project"])
-    context = {"image": image, "annotator": annotator, "palette": projects.PALETTE,
-               "to_download": runs.to_download(annotator) if annotator else [],
-               "click_tool": segment.tool(conn)}
+    project, video = image["project"], {}
+    count = len(projects.drawn(image, project)["annotations"])  # those the page shows, on every frame
+    if image["video"]:
+        frames = projects.frames(conn, media_id)
+        # The worked frame at or before the one asked for, and the one after it.
+        at = max((i for i, f in enumerate(frames) if f["frame"] <= (frame or 0)), default=0)
+        frame = frames[at]["frame"]
+        video = {"frames": frames, "time": frames[at]["time"], "next_frame": frames[at + 1]["frame"] if at + 1 < len(frames) else None,
+                 "timeline": projects.timeline(image, frames, project, hide=True), "rates": _rates(image["video"])}
+    image = projects.drawn(image, project, frame)
+    annotator = annotators.annotator_of(project)
+    context = {"image": image, "frame": frame, "count": count, "annotator": annotator, "palette": projects.PALETTE,
+               "to_download": runs.to_download(annotator) if annotator else [], "click_tool": segment.tool(conn)} | video
     return templates.TemplateResponse(request, "projects/image.html", context)
+
+
+def _rates(video: dict) -> list[tuple[float, str]]:
+    """The rates a video can be worked at, as its page offers them: a few, the one it has, every frame."""
+    fps = video["fps"]
+    rates = sorted({*(r for r in (1, 2, 5, 10) if r < fps), video["sample_fps"], fps})
+    return [(r, f"Every frame ({r:g} a second)" if r == fps else f"{r:g} frames a second") for r in rates]
+
+
+@router.post("/images/{media_id}/sample-fps")
+def set_sample_fps(media_id: int, conn: DB, sample_fps: Annotated[float, Form(gt=0)],
+                   where: Annotated[str, Form()] = "", frame: Annotated[int | None, Form()] = None):
+    """Set the rate the video is worked at, and show it again at the same frame."""
+    _set_sample_fps(conn, media_id, sample_fps)
+    return RedirectResponse(f"/images/{media_id}" + query({"where": where, "frame": frame}), status_code=303)
+
+
+def _set_sample_fps(conn: sqlite3.Connection, media_id: int, sample_fps: float) -> dict:
+    with conn:
+        changed = projects.set_sample_fps(conn, media_id, sample_fps)
+    if changed is None:
+        raise HTTPException(404, "Video not found")
+    return changed
 
 
 @router.post("/images/{media_id}/annotate")
@@ -818,6 +870,55 @@ def api_image(media_id: int, conn: DB, where: Where = "") -> dict:
     return _image(conn, media_id, Filter.parse(where))
 
 
+@router.patch("/api/images/{media_id}", response_model=Done)
+def api_change_image(media_id: int, change: VideoChange, conn: DB) -> dict:
+    """Changes a video: the rate it's worked at (sample_fps). 404 if it's no video."""
+    changed = _set_sample_fps(conn, media_id, change.sample_fps)
+    return {"did": f"{changed['filename']} is worked at {changed['sample_fps']:g} frames a second"}
+
+
+@router.get("/api/images/{media_id}/frames", response_model=list[FrameOut])
+def api_frames(media_id: int, conn: DB) -> list[dict]:
+    """A video's frames that are worked on, in order: those at its sample_fps, and any other an
+    annotation is on. 404 if it's no video."""
+    frames = projects.frames(conn, media_id)
+    if frames is None:
+        raise HTTPException(404, "Video not found")
+    return frames
+
+
+@router.get("/api/images/{media_id}/frames/{frame}", response_class=FileResponse,
+            responses={200: {"content": {"image/jpeg": {}}}})
+def api_frame(media_id: int, frame: int, conn: DB):
+    """A video's frame as a JPEG picture (any frame of the file, by its number from 0). 404 if
+    it's no video or has no such frame."""
+    try:
+        picture = projects.image_file(conn, media_id, frame)
+    except ValueError as e:  # an image, or no such frame
+        raise HTTPException(404, str(e)) from None
+    if picture is None:
+        raise HTTPException(404, "Video not found")
+    # A video's frame never changes: the browser keeps it.
+    return FileResponse(picture["path"], media_type="image/jpeg", headers={"Cache-Control": "max-age=31536000, immutable"})
+
+
+class TimelineRow(Answer):
+    name: str = Field(description="The class.")
+    color: str
+    bars: list[tuple[float, float]] = Field(description="The stretches its objects are on: [start, end] seconds.")
+
+
+@router.get("/api/images/{media_id}/timeline", response_model=list[TimelineRow])
+def api_timeline(media_id: int, conn: DB) -> list[dict]:
+    """A video's classes over its length, as its page's timeline shows them: per class, where
+    (from when to when) an object of it is on the frames worked on. 404 if it's no video."""
+    frames = projects.frames(conn, media_id)
+    if frames is None:
+        raise HTTPException(404, "Video not found")
+    image = _image(conn, media_id, Filter())
+    return projects.timeline(image, frames, image["project"])
+
+
 class ImagesAdd(BaseModel):
     """Images to copy into this project (another project's), with their annotations."""
 
@@ -847,19 +948,24 @@ def api_add_images(project_id: int, body: ImagesAdd, conn: DB) -> dict:
 
 
 @router.put("/api/images/{media_id}/annotations", response_model=Done)
-def api_set_annotations(media_id: int, annotations: list[projects.Annotation], conn: DB) -> dict:
+def api_set_annotations(media_id: int, annotations: list[projects.Annotation], conn: DB,
+                        frame: Annotated[int | None, Query(ge=0, description="Of a video: replace only the annotations on this frame (those sent are put on it).")] = None) -> dict:
     """Replaces the image's annotations with this list (read them with GET /api/images/{media_id},
-    change the list, send it back: to remove one, leave it out). A class name the project hasn't
-    yet becomes a class."""
-    filename = _set_annotations(conn, media_id, annotations)
-    return {"did": f"{filename} has {plural(len(annotations), 'object')} now"}
+    change the list, send it back: to remove one, leave it out); of a video, with ?frame=, those
+    on one frame. A class name the project hasn't yet becomes a class."""
+    filename = _set_annotations(conn, media_id, annotations, frame)
+    return {"did": f"{filename} has {plural(len(annotations), 'object')}{f' on frame {frame}' if frame is not None else ''} now"}
 
 
 @contextmanager
-def _clicking(conn: sqlite3.Connection, media_id: int):
-    """The image click to segment works on (projects.image_file); 404 if there's none, 409 if no
-    click model is downloaded, or while it loads (segment.Loading: click_loading answers it)."""
-    image = projects.image_file(conn, media_id)
+def _clicking(conn: sqlite3.Connection, media_id: int, frame: int | None):
+    """The image click to segment works on (projects.image_file; a video's frame `frame`); 404 if
+    there's none, 422 for a frame it hasn't, 409 if no click model is downloaded, or while it loads (segment.Loading:
+    click_loading answers it)."""
+    try:
+        image = projects.image_file(conn, media_id, frame)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
     if image is None:
         raise HTTPException(404, "Image not found")
     try:
@@ -908,25 +1014,25 @@ def api_change_click_tool(change: segment.Change, conn: DB) -> dict:
 
 
 @router.post("/api/images/{media_id}/prepare", response_model=Done)
-def api_prepare_image(media_id: int, conn: DB) -> dict:
+def api_prepare_image(media_id: int, conn: DB, frame: Annotated[int | None, Query(ge=0, description="Of a video: the frame (its number in the file); the first if not given.")] = None) -> dict:
     """Gets the image ready for click to segment: encodes it now (the slow half, a fraction of a
     second), so each segment call on it afterwards takes milliseconds. Optional: the first segment
     call prepares it too. 409 while the click model loads, with its job (`loading`: id, status, and
     `ahead`, the job it waits behind): it's loaded by that job, never by this call."""
-    with _clicking(conn, media_id) as image:
+    with _clicking(conn, media_id, frame) as image:
         segment.prepare(conn, image["path"])
     return {"did": "Ready for click to segment"}
 
 
 @router.post("/api/images/{media_id}/segment", response_model=projects.Annotation | None, tags=[READS])
-def api_segment(media_id: int, prompt: segment.Prompt, conn: DB):
+def api_segment(media_id: int, prompt: segment.Prompt, conn: DB, frame: Annotated[int | None, Query(ge=0, description="Of a video: the frame (its number in the file); the first if not given.")] = None):
     """The object at some points and/or in a box, found by the click model in use, as an
     annotation of the class given, ready to add to the image's annotations: its box, and unless
     it's a detection project its polygon too. Points are in the image's pixels; label 1 includes a point,
     0 leaves it out (e.g. one click on a car, then 0 on its wheel to leave the wheel out). null if
     nothing was found. Nothing is saved. Only the latest call runs, for a pointer that keeps moving:
     a call a newer one overtook while it waited is skipped and answers 204, with no content."""
-    with _clicking(conn, media_id) as image:
+    with _clicking(conn, media_id, frame) as image:
         try:
             return segment.segment(conn, image["path"], prompt, image["task"])
         except segment.Superseded:

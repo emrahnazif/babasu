@@ -214,8 +214,7 @@ def purge() -> None:
         kept = {r[0] for r in conn.execute("SELECT id FROM action")}
     for sha256, ext in images:
         if sha256 not in named:
-            for kind in (ext, "thumb.webp", "frames.json"):  # the file, its thumbnail, a video's frame times
-                media.path(sha256, kind).unlink(missing_ok=True)
+            media.forget(sha256, ext)
     if config.TRASH_DIR.is_dir():
         for folder in config.TRASH_DIR.iterdir():
             if folder.name not in kept:

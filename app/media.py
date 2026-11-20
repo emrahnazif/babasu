@@ -4,15 +4,17 @@ original, as it came: never re-encoded.
 
 Each file also gets a small WebP thumbnail next to it (<sha256>.thumb.webp; a video's is a frame),
 and a video its frames' times (<sha256>.frames.json: what reading a frame exactly needs,
-pf.VideoReader.read_frame). A file goes when no row and no history entry names it any more
-(history.purge).
+pf.VideoReader.read_frame) and the frames shown so far, as JPEGs (<sha256>.frames/<n>.jpg). A file
+goes when no row and no history entry names it any more (history.purge, forget).
 """
 
 import hashlib
 import io
 import json
 import secrets
+import shutil
 import sqlite3
+from functools import lru_cache
 from pathlib import Path
 
 import pixelflow as pf
@@ -170,9 +172,11 @@ def _first_frame(file: Path) -> tuple:
     return first, video.fps
 
 
+@lru_cache(maxsize=16)
 def frames(sha256: str, ext: str) -> list[float]:
     """A stored video's frames' times, in milliseconds: kept beside the file, worked out once (a
-    pass over it) the first time."""
+    pass over it) the first time; kept in memory for the videos being worked on (a file never
+    changes)."""
     kept = path(sha256, "frames.json")
     if kept.exists():
         return json.loads(kept.read_text())
@@ -180,6 +184,40 @@ def frames(sha256: str, ext: str) -> list[float]:
         times = video.timestamps()
     _write(kept, json.dumps(times).encode())
     return times
+
+
+def worked(times: list[float], sample_fps: float) -> list[int]:
+    """The frames a video is worked at, `sample_fps` a second: the first frame of each 1/sample_fps
+    of a second (by the frames' own times, so a variable-rate file too)."""
+    step, last, chosen = 1000 / sample_fps, None, []
+    for number, time in enumerate(times):
+        if (slot := int((time - times[0]) / step + 1e-6)) != last:
+            chosen.append(number)
+            last = slot
+    return chosen
+
+
+FRAME_QUALITY = 92  # JPEG quality of a video's frame as it's shown and worked on: no visible loss
+
+
+def frame_file(sha256: str, ext: str, number: int) -> Path:
+    """Frame `number` of a stored video as a JPEG file: made the first time it's asked for, kept
+    after. IndexError if the video has no such frame."""
+    kept = path(sha256, "frames") / f"{number}.jpg"
+    if not kept.exists():
+        with pf.VideoReader(str(path(sha256, ext))) as video:
+            pixels = video.read_frame(number, frames(sha256, ext))
+        buffer = io.BytesIO()
+        pf.to_pil(pixels).save(buffer, format="JPEG", quality=FRAME_QUALITY)
+        _write(kept, buffer.getvalue())
+    return kept
+
+
+def forget(sha256: str, ext: str) -> None:
+    """Remove a stored file and everything made from it: its thumbnail, a video's frame times and frames."""
+    for kind in (ext, "thumb.webp", "frames.json"):
+        path(sha256, kind).unlink(missing_ok=True)
+    shutil.rmtree(path(sha256, "frames"), ignore_errors=True)
 
 
 def listed(conn: sqlite3.Connection, media_ids: list[int]) -> list[dict]:
@@ -236,6 +274,6 @@ def picture(image: Image.Image, box: tuple[float, float, float, float] | None = 
 def _write(path: Path, data: bytes) -> None:
     """Write via a temporary file, so a crash never leaves a half-written file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")  # its own: two requests may write one file
     tmp.write_bytes(data)
     tmp.replace(path)
