@@ -183,7 +183,7 @@
 
 .chat__tool-icon > * { grid-area: 1 / 1; display: none; }
 .chat__tool-icon svg { width: 1rem; height: 1rem; }
-.chat__tool[data-status="running"] .chat__spinner,
+.chat__tool[data-status="running"] .spinner,
 .chat__tool[data-status="done"] .chat__tool-icon svg:first-of-type,
 .chat__tool[data-status="error"] .chat__tool-icon svg:last-of-type { display: block; }
 .chat__tool[data-status="error"] { color: var(--color-destructive); }
@@ -200,17 +200,9 @@
 
 .chat__progress { margin-block: var(--space-1); }
 
-.chat__spinner {
+.chat__tool-icon .spinner {
   width: 0.75rem;
   height: 0.75rem;
-  border: 1.5px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: chat-spin 0.8s linear infinite;
-}
-
-@keyframes chat-spin {
-  to { rotate: 1turn; }
 }
 
 /* Notes under a turn: "Thinking…" while waiting (a light sweeps across it), an error, or stopped. */

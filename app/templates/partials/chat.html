@@ -19,7 +19,7 @@
    looked at. Running (spinner), done (check) or error (cross): the icon follows data-status. #}
 {% macro tool_part(label, note, status, shown=none, picture=none) -%}
   <div class="chat__tool" data-status="{{ status }}">
-    <span class="chat__tool-icon" aria-hidden="true"><span class="chat__spinner"></span>{{ icon("check") }}{{ icon("x-mark") }}</span>
+    <span class="chat__tool-icon" aria-hidden="true"><span class="spinner"></span>{{ icon("check") }}{{ icon("x-mark") }}</span>
     <span class="chat__tool-label">{{ label }}</span>
     <span class="chat__tool-note{% if status == 'error' %} selectable{% endif %}">{{ note }}</span>
     {%- if shown %}{% include "partials/chat-images.html" %}{% endif %}

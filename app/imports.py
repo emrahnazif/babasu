@@ -11,7 +11,7 @@ from pathlib import Path
 
 from app import db, jobs, media, projects
 
-KIND = "import_images"
+KIND = projects.IMPORT_KIND
 
 
 def find_media(paths: list[str]) -> tuple[list[tuple[Path, str]], list[tuple[Path, str]], list[str]]:

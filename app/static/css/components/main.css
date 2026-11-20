@@ -597,10 +597,9 @@ td:has(> .icon) { width: 1px; }  /* the cell as wide as the icon, not a share of
   pointer-events: none;
 }
 
-.busy::before {
-  content: "";
-  width: 0.75rem;
-  height: 0.75rem;
+/* A turning circle: something under way (in .busy, and on its own, e.g. in an empty state). */
+.busy::before,
+.spinner {
   border: 1.5px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
@@ -608,6 +607,20 @@ td:has(> .icon) { width: 1px; }  /* the cell as wide as the icon, not a share of
 }
 
 .busy[hidden] { display: none; }
+
+.busy::before {
+  content: "";
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.spinner {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.empty > .spinner { color: var(--color-text-muted); }
 
 @keyframes busy-turn {
   to { rotate: 1turn; }

@@ -48,6 +48,9 @@
     {% endif %}
   {% elif project.image_count %}
     {{ ui.text(["No images match.", ui.link("Show all images", query({}))], muted=true) }}
+  {% elif project.importing %}
+    {# Made from files dropped on Home, or images being added: they show when the import ends. #}
+    {{ ui.empty("Importing images…", "They show here when the import is done. Jobs has its progress.", busy=true) }}
   {% else %}
     {# An empty project's first step is adding images, so the page itself is the way in. #}
     {% call ui.form("/projects/" ~ project.id ~ "/import", background=true) %}

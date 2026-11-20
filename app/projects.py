@@ -178,12 +178,17 @@ def image_count(conn: sqlite3.Connection, project_id: int) -> int:
     return conn.execute("SELECT count(*) FROM media WHERE project_id = ?", (project_id,)).fetchone()[0]
 
 
+# The import job's kind (imports.KIND; imports uses this module, so it's named here).
+IMPORT_KIND = "import_images"
+
+
 def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Filter = Filter(),
            page_size: int = PAGE_SIZE) -> dict | None:
     """A project with one page of the images matching `filter` (by file name, `page_size` a page;
     0: none) and their annotations (marking the objects the filter asks for), how many images it
-    has and how many are labelled, and how many annotations each class has. Raises FilterError for
-    a filter that names a class the project doesn't have."""
+    has and how many are labelled, how many annotations each class has, and whether images are
+    being imported into it (`importing`). Raises FilterError for a filter that names a class the
+    project doesn't have."""
     row = _row(conn, project_id)
     if row is None:
         return None
@@ -191,6 +196,7 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     use = class_use(conn, project_id)
     project["classes"] = [c | {"annotation_count": use.get(c["name"].casefold(), {}).get("annotations", 0)}
                           for c in project["classes"]]
+    project["importing"] = bool(_active_jobs(conn, project_id, IMPORT_KIND))
     return project | _page(conn, filter, project_id, page, page_size)
 
 
@@ -523,8 +529,10 @@ def update(conn: sqlite3.Connection, project_id: int, name: str, description: st
     _touch(conn, project_id)
 
 
-def _active_jobs(conn: sqlite3.Connection, project_id: int) -> int:
-    return conn.execute(f"SELECT count(*) FROM job WHERE project_id = ? AND status IN {jobs.ACTIVE}", (project_id,)).fetchone()[0]
+def _active_jobs(conn: sqlite3.Connection, project_id: int, kind: str | None = None) -> int:
+    """How many of the project's jobs (of one kind, given one) are queued or running."""
+    return conn.execute(f"SELECT count(*) FROM job WHERE project_id = ?1 AND (?2 IS NULL OR kind = ?2) AND status IN {jobs.ACTIVE}",
+                        (project_id, kind)).fetchone()[0]
 
 
 def deletion(conn: sqlite3.Connection, project_id: int) -> dict:

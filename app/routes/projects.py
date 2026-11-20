@@ -285,6 +285,7 @@ class ProjectDetail(Counted):
     page: int = Field(description="This page's number, from 1.")
     pages: int = Field(description="How many pages the matching images make.")
     images: list[ImageListed] = Field(description="This page of the matching images, by file name.")
+    importing: bool = Field(description="Images are being imported into it (a job queued or running): more are on their way.")
 
 
 class ImageDetail(ImageOut):
@@ -636,7 +637,7 @@ def delete_project(project_id: int, conn: DB):
 @router.post("/projects/from-files")
 def project_from_files(paths: Annotated[list[str], Form()], conn: DB):
     """A project made from files and folders dropped on Home (Continue): named after them, filled by
-    an import job, and opened (the page shows the images as they come)."""
+    an import job, and opened (the page says they're being imported, then shows them)."""
     paths = [p for p in paths if p.strip()]
     if not paths:
         return RedirectResponse("/", status_code=303)

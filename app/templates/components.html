@@ -374,10 +374,13 @@
 {# A coordinate in a chart's path, to a tenth. #}
 {% macro _n(value) %}{{ "%g" | format(value | round(1)) }}{% endmacro %}
 
-{# Nothing here yet: an icon, a title, a sentence, and the one way forward (`action`: a button). #}
-{% macro empty(title, description=none, icon=none, action=none) -%}
+{# Nothing here yet: an icon, a title, a sentence, and the one way forward (`action`: a button).
+   `busy`: it's on its way (e.g. being imported), a turning circle in place of the icon. #}
+{% macro empty(title, description=none, icon=none, action=none, busy=false) -%}
   <div class="empty">
-    {%- if icon %}
+    {%- if busy %}
+    <span class="spinner" role="status" aria-label="Under way"></span>
+    {%- elif icon %}
     <span class="icon">{{ _icon(icon) }}</span>
     {%- endif %}
     <h2>{{ title }}</h2>

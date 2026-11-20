@@ -27,11 +27,15 @@ def under(path: str, href: str) -> bool:
     return path == href or path.startswith(href + "/")
 
 
-def section_of(path: str) -> dict | None:
-    """The navigation item (of config.NAV) a path is in, if any: the one whose link is the
-    longest match."""
-    found = [item for group in config.NAV for item in group if under(path, item["href"])]
-    return max(found, key=lambda item: len(item["href"]), default=None)
+def section_of(path: str, crumbs: list[tuple[str, str | None]] = ()) -> dict | None:
+    """The navigation item (of config.NAV) a page is in, if any: the one whose link is the longest
+    match of its path, or else of where its breadcrumb starts (an image, /images/7, is in its
+    project's: Projects)."""
+    for place in [path] + [href for _, href in crumbs if href][:1]:
+        found = [item for group in config.NAV for item in group if under(place, item["href"])]
+        if found:
+            return max(found, key=lambda item: len(item["href"]))
+    return None
 
 
 def page_name(title: str) -> str:

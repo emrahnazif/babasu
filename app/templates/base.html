@@ -4,9 +4,9 @@
 {% set collapsed = collapsible and s.sidebar_collapsed %}
 {# A page that fills the main area edge to edge (e.g. one image) sets main_bleed = true: no padding. #}
 {% set bleed = main_bleed | default(false) %}
-{# The navigation item this page is in (config.NAV), and the page's breadcrumb below it. #}
-{% set here = section_of(request.url.path) %}
+{# The page's breadcrumb, and the navigation item it's in (config.NAV). #}
 {% set trail = crumbs | default([]) %}
+{% set here = section_of(request.url.path, trail) %}
 <!doctype html>
 <html lang="en" data-theme="{{ s.theme }}">
 <head>
