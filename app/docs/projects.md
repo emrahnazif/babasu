@@ -12,9 +12,9 @@ A project is what someone is working on: its images, their annotations and its c
 - An image is **labelled** when it has at least one object.
 
 ## Classes
-- A class is a name on objects: annotating an object of a class the project hasn't had makes it one. Names are matched ignoring case, and kept as the project first spelt them.
+- A class is a name on objects: annotating an object of a class the project hasn't had makes it one, and a class can be added before any image has it. Names are matched ignoring case, and kept as the project first spelt them.
 - Each class has a **colour** and a **prompt**: the text auto-annotators look for. The prompt is the name unless changed, and a good prompt can find more ("hole in the road surface" for pothole).
-- **Renaming a class** renames its objects; renaming it to another class's name merges them. **Removing a class** deletes its objects (History can undo it).
+- The images are what's true: changing the class list never changes them. **Hiding** a class (the eye) only stops the project's pages drawing it; the API still has its annotations. A class images have can't be removed: **clear** its annotations first (POST /api/projects/ID/classes/clear), then remove it. **Renaming** (POST …/classes/rename) renames it on the images too; into another class's name, they merge. Clear and rename preview unless dry_run is false, and History can undo them.
 
 ## Copying and moving images
 POST /api/projects/ID/changes copies or moves the images matching a filter to another project, with their objects (the files aren't copied). POST /api/projects/ID/images copies a set of images in (see workflows: image sets). An image whose file the project has already is left as it is.

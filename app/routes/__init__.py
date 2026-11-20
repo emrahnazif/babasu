@@ -204,6 +204,7 @@ class ClassOut(Answer):
     name: str = Field(description="Its name, e.g. car (what annotations' class says).")
     color: str = Field(description="The colour it's drawn in, #rrggbb.")
     prompt: str = Field(description=PROMPT)
+    hidden: bool = Field(description="Hidden on the project's pages (they don't draw it); its annotations are still here.")
 
 
 def safe_next(next: str | None) -> str:

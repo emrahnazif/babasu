@@ -1,9 +1,9 @@
 // The class rows of the project form (projects/form.html):
-//   <tbody id="classes" data-palette='["#e11d48", …]'> rows </tbody>
+//   <tbody id="classes" data-palette='["#c82e2d", …]'> rows </tbody>
 //   <template id="class-row"> a new row </template>  <button data-add-class>  <button data-remove-class>
 // Add class appends a new row with the first palette colour no row uses (a removed row's too).
-// Remove takes a new row away; a saved class's row (data-saved) stays, its fields disabled so it
-// isn't sent, with a note saying its annotations go with it, and Remove becomes Undo.
+// Remove takes a new row away; a saved class's row (data-saved, only one no image has) stays, its
+// fields disabled so it isn't sent, with a note saying so, and Remove becomes Undo.
 const rows = document.getElementById("classes");
 const template = document.getElementById("class-row");
 

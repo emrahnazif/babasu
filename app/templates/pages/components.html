@@ -44,7 +44,7 @@
   {% for t in tiles[:4] %}{% set ns.found = ns.found + [{"src": t.src, "width": t.width, "height": t.height, "annotations": t.annotations or [], "caption": (t.annotations or []) | length | plural("object") ~ " · " ~ t.caption}] %}{% endfor %}
   {% set found = ns.found %}
   {# A project's classes, for drawing its annotations. #}
-  {% set classes = [{"name": "person", "color": "#e11d48"}, {"name": "animal", "color": "#2563eb"}, {"name": "car", "color": "#16a34a"}, {"name": "van", "color": "#d97706"}, {"name": "zebra", "color": "#9333ea"}, {"name": "cat", "color": "#0891b2"}] %}
+  {% set classes = [{"name": "person", "color": "#c82e2d"}, {"name": "animal", "color": "#2563eb"}, {"name": "car", "color": "#16a34a"}, {"name": "van", "color": "#d97706"}, {"name": "zebra", "color": "#9333ea"}, {"name": "cat", "color": "#0891b2"}] %}
 
   {{ ui.heading("Components", "A title, a description under it, an image gallery with as many columns as it's given, a table, parts side by side, a card holding any of them (its title, description and footer each optional), and a divider between parts. Then blocks after shadcn/ui, made of the same parts plus stats, items, progress bars and charts. Then the parts of the app's own pages: cards with a cover, image tiles, a filter bar, thumbnails, drop zones, a form, dialogs, badges, empty states, History as a table and a link list.") }}
 
@@ -237,7 +237,7 @@
           <label class="segmented__item"><input type="radio" name="demo-negate" value="true">Doesn't have</label>
         </div>
         <div>
-          <label class="menu__item"><input type="checkbox" checked><span class="menu__swatch" style="--swatch-color: #e11d48"></span>person<span class="menu__note">258</span></label>
+          <label class="menu__item"><input type="checkbox" checked><span class="menu__swatch" style="--swatch-color: #c82e2d"></span>person<span class="menu__note">258</span></label>
           <label class="menu__item"><input type="checkbox"><span class="menu__swatch" style="--swatch-color: #2563eb"></span>animal<span class="menu__note">13</span></label>
           <label class="menu__item"><input type="checkbox"><span class="menu__swatch" style="--swatch-color: #16a34a"></span>car<span class="menu__note">13</span></label>
           <label class="menu__item"><input type="checkbox"><span class="menu__swatch" style="--swatch-color: #d97706"></span>van<span class="menu__note">1</span></label>
@@ -248,7 +248,7 @@
         </form>
       </div>
 
-      <span class="badge" style="--badge-color: #e11d48"><button type="button" popovertarget="demo-panel-class" title="Change">person</button><a href="#" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
+      <span class="badge" style="--badge-color: #c82e2d"><button type="button" popovertarget="demo-panel-class" title="Change">person</button><a href="#" aria-label="Remove" title="Remove">{{ icon("x-mark") }}</a></span>
       {{ ui.badge("1–3 objects", remove="#") }}
       <p><span class="muted">47 of 5,084 images</span> · <a href="#">Clear</a></p>
     {% endcall %}
@@ -286,15 +286,15 @@
       {% call ui.section("Classes", 'The prompt is what the auto-annotator looks for, e.g. "hole in the road surface" for a class named pothole.') %}
         <table>
           <thead><tr><th>Colour</th><th>Name</th><th>Prompt</th><th></th></tr></thead>
-          <tbody id="classes" data-palette='["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]'>
+          <tbody id="classes" data-palette='["#c82e2d", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]'>
             <tr>
-              <td><input type="hidden" name="class_was" value=""><input type="color" name="class_color" value="#e11d48" aria-label="Colour"></td>
+              <td><input type="color" name="class_color" value="#c82e2d" aria-label="Colour"></td>
               <td><input name="class_name" value="stop sign" required maxlength="100" aria-label="Name"></td>
               <td><input name="class_prompt" value="red octagonal stop sign" maxlength="500" placeholder="Same as the name" aria-label="Prompt"></td>
               <td><button class="button secondary" type="button" data-remove-class>Remove</button></td>
             </tr>
             <tr>
-              <td><input type="hidden" name="class_was" value=""><input type="color" name="class_color" value="#2563eb" aria-label="Colour"></td>
+              <td><input type="color" name="class_color" value="#2563eb" aria-label="Colour"></td>
               <td><input name="class_name" value="speed limit" required maxlength="100" aria-label="Name"></td>
               <td><input name="class_prompt" value="" maxlength="500" placeholder="Same as the name" aria-label="Prompt"></td>
               <td><button class="button secondary" type="button" data-remove-class>Remove</button></td>
@@ -303,7 +303,7 @@
         </table>
         <template id="class-row">
           <tr>
-            <td><input type="hidden" name="class_was" value=""><input type="color" name="class_color" value="#e11d48" aria-label="Colour"></td>
+            <td><input type="color" name="class_color" value="#c82e2d" aria-label="Colour"></td>
             <td><input name="class_name" value="" required maxlength="100" aria-label="Name"></td>
             <td><input name="class_prompt" value="" maxlength="500" placeholder="Same as the name" aria-label="Prompt"></td>
             <td><button class="button secondary" type="button" data-remove-class>Remove</button></td>
@@ -337,7 +337,7 @@
   {{ ui.divider() }}
 
   {% call ui.section("Badges: with a colour, plain, removable, with an icon") %}
-    {{ ui.text([ui.badge("person", color="#e11d48"), ui.badge("animal", color="#2563eb"), ui.badge("car", color="#16a34a"),
+    {{ ui.text([ui.badge("person", color="#c82e2d"), ui.badge("animal", color="#2563eb"), ui.badge("car", color="#16a34a"),
                 ui.badge("Built in"), ui.badge("Apache-2.0"), ui.badge("zebra", color="#9333ea", remove="#"),
                 ui.badge("Labelled", icon="check-circle")]) }}
   {% endcall %}

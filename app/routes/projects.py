@@ -145,16 +145,17 @@ class ProjectPatch(BaseModel):
 
 class ProjectForm(ProjectChanges):
     """The project form (projects/form.html; the new project page has no annotator): the class
-    rows, one value of each per row; an empty class_was is a new class."""
+    rows, one value of each per row (an existing class's name can't be edited there: Rename), and
+    the names of the hidden ones."""
 
-    class_was: list[Annotated[str | None, BeforeValidator(lambda v: v or None)]] = []
     class_name: list[str] = []
     class_color: list[str] = []
     class_prompt: list[str] = []
+    class_hidden: list[str] = []
 
     def rows(self) -> list[dict]:
-        return [{"was": w, "name": n, "color": c, "prompt": p}
-                for w, n, c, p in zip(self.class_was, self.class_name, self.class_color, self.class_prompt, strict=True)]
+        return [{"name": n, "color": c, "prompt": p, "hidden": n in self.class_hidden}
+                for n, c, p in zip(self.class_name, self.class_color, self.class_prompt, strict=True)]
 
     def classes(self) -> list[projects.ClassChange]:
         return [projects.ClassChange(**row) for row in self.rows()]
@@ -162,15 +163,20 @@ class ProjectForm(ProjectChanges):
 
 class AutoAnnotateForm(BaseModel):
     """The auto-annotate dialog: each class's prompt (class_name and prompt in the same order), the
-    classes to run (`use`), and whether to save the prompts, run (saving them too), or try them."""
+    classes to run (`use`), other things to find typed (`find`, comma-separated: new classes, each
+    found by its name), and whether to save the prompts, run (saving them too), or try them."""
 
     where: str = Field("", max_length=2000)
     class_name: list[str] = []
     prompt: list[Prompt] = []
     use: list[str] = []
+    find: str = Field("", max_length=1000)
     min_score: float = Field(0.0, ge=0, le=1)
     again: bool = False
     step: Literal["run", "save", "try"] = "run"  # not "action": a field by that name hides the form's action
+
+    def classes(self) -> list[str]:
+        return self.use + [name.strip() for name in self.find.split(",") if name.strip()]
 
 
 class ImageImport(BaseModel):
@@ -392,15 +398,15 @@ def _form_page(request: Request, conn: sqlite3.Connection, project_id: int | Non
         project = values = projects.get(conn, project_id)
         if project is None:
             raise HTTPException(404, "Project not found")
-        counts, deletion = projects.annotation_counts(conn, project_id), projects.deletion(conn, project_id)
-    if project is not None:
-        values = values | {"classes": [c | {"was": c["name"]} for c in project["classes"]]}
+        use = projects.class_use(conn, project_id)
+        counts = {c["name"]: use[c["name"].casefold()] for c in project["classes"] if c["name"].casefold() in use}
+        deletion = projects.deletion(conn, project_id)
     if form is not None:
         values = values | form.model_dump() | {"classes": form.rows()}
     return templates.TemplateResponse(
         request, "projects/form.html",
         {"project": project, "values": values, "counts": counts, "deletion": deletion, "palette": projects.PALETTE,
-         "error": error},
+         "saved_names": {c["name"] for c in project["classes"]} if project else set(), "error": error},
         status_code=422 if error else 200,
     )
 
@@ -453,6 +459,7 @@ def project_page(request: Request, project_id: int, conn: DB, where: Where = "",
     except FilterError as e:
         filter, error = Filter(), str(e)
         project = _detail(conn, project_id, 1, filter)
+    project["images"] = [projects.drawn(i, project) for i in project["images"]]
     context = {"project": project, "filter": filter, "error": error, "where": where,
                "auto": annotators.overview(conn, project_id, filter), "tried": annotators.latest_try(conn, project_id)}
     return templates.TemplateResponse(request, "projects/project.html", context)
@@ -476,8 +483,10 @@ def image_page(request: Request, media_id: int, conn: DB, where: Where = ""):
         image = _image(conn, media_id, Filter.parse(where))
     except FilterError:  # the project page says why; here, step through all images instead
         image = _image(conn, media_id, Filter())
+    image = projects.drawn(image, image["project"])
     annotator = annotators.annotator_of(image["project"])
-    context = {"image": image, "annotator": annotator, "to_download": runs.to_download(annotator) if annotator else [],
+    context = {"image": image, "annotator": annotator, "palette": projects.PALETTE,
+               "to_download": runs.to_download(annotator) if annotator else [],
                "click_tool": segment.tool(conn)}
     return templates.TemplateResponse(request, "projects/image.html", context)
 
@@ -489,6 +498,31 @@ def auto_annotate_image(media_id: int, conn: DB):
     image = _image(conn, media_id, Filter())
     _started(lambda: annotators.start(conn, image["project_id"], again=True, media_ids=[media_id]))
     return RedirectResponse(f"/images/{media_id}", status_code=303)
+
+
+def _relabelled(conn: sqlite3.Connection, project_id: int, relabel: Callable[[], dict], dry_run: bool = False) -> dict:
+    """A rename or clear of a class (projects.rename_class, clear_class), committed unless
+    `dry_run`: how many annotations on how many images. 404 without the project, 422 with why."""
+    try:
+        with _writing(conn, project_id, dry_run=dry_run):
+            return relabel()
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@router.post("/projects/{project_id}/classes/rename")
+def rename_class(project_id: int, name: Annotated[projects.ClassName, Form()], new_name: Annotated[projects.ClassName, Form()],
+                 conn: DB):
+    """The edit page's Rename (confirmed in its dialog)."""
+    _relabelled(conn, project_id, lambda: projects.rename_class(conn, project_id, name, new_name))
+    return RedirectResponse(f"/projects/{project_id}/edit#classes-section", status_code=303)
+
+
+@router.post("/projects/{project_id}/classes/clear")
+def clear_class(project_id: int, name: Annotated[projects.ClassName, Form()], conn: DB):
+    """The edit page's Clear annotations (confirmed in its dialog)."""
+    _relabelled(conn, project_id, lambda: projects.clear_class(conn, project_id, name))
+    return RedirectResponse(f"/projects/{project_id}/edit#classes-section", status_code=303)
 
 
 @router.get("/projects/{project_id}/edit", response_class=HTMLResponse)
@@ -513,14 +547,14 @@ def auto_annotate(project_id: int, form: Annotated[AutoAnnotateForm, Form()], co
     try:
         prompts = dict(zip(form.class_name, form.prompt, strict=True))
         if form.step == "try":
-            _started(lambda: annotators.try_(conn, project_id, filter, classes=form.use, prompts=prompts))
+            _started(lambda: annotators.try_(conn, project_id, filter, classes=form.classes(), prompts=prompts))
         else:
             with _writing(conn, project_id):
                 projects.set_prompts(conn, project_id, prompts)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
     if form.step == "run":
-        _started(lambda: annotators.start(conn, project_id, filter, classes=form.use, min_score=form.min_score,
+        _started(lambda: annotators.start(conn, project_id, filter, classes=form.classes(), min_score=form.min_score,
                                           again=form.again))
     return RedirectResponse(f"/projects/{project_id}{query({'where': form.where})}", status_code=303)
 
@@ -912,10 +946,9 @@ def api_classes(project_id: int, conn: DB) -> list[dict]:
 
 @router.put("/api/projects/{project_id}/classes", response_model=ClassesOut)
 def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: DB) -> dict:
-    """Sets the project's whole class list, in order: classes with `was` (the name they had) are
-    kept (renamed with their annotations, recoloured), without one added, those left out removed
-    with their annotations (History can undo it); returns the classes. To change a few, PATCH
-    …/classes instead."""
+    """Sets the project's whole class list, in order: classes it has are kept (by name, recoloured,
+    hidden or shown), others added, those left out removed (only those no image has: 422 otherwise).
+    Images never change. Returns the classes. To change a few, PATCH …/classes instead."""
     try:
         with _writing(conn, project_id):
             now = projects.set_classes(conn, project_id, classes)
@@ -925,29 +958,79 @@ def api_set_classes(project_id: int, classes: list[projects.ClassChange], conn: 
 
 
 class ClassEdits(BaseModel):
-    """Classes to add, change and remove; the others stay (projects.edit_classes)."""
+    """Classes to add, change and remove; the others stay (projects.edit_classes). Images never change."""
 
     model_config = ConfigDict(extra="forbid")
     add: list[projects.NewClass] = Field([], description="New classes, added after the others.")
-    change: list[projects.ClassEdit] = Field([], description="Classes to rename, or to give another prompt or colour, "
-                                             "e.g. [{\"name\": \"car\", \"new_name\": \"vehicle\"}].")
-    remove: list[projects.ClassName] = Field([], description="Classes to remove, by name, with their annotations "
-                                             "(History can undo it).")
+    change: list[projects.ClassEdit] = Field([], description="Classes to give another prompt or colour, or to hide or "
+                                             "show, e.g. [{\"name\": \"car\", \"hidden\": true}].")
+    remove: list[projects.ClassName] = Field([], description="Classes to remove, by name: only those no image has "
+                                             "(POST …/classes/clear deletes a class's annotations).")
 
 
 @router.patch("/api/projects/{project_id}/classes", response_model=ClassesOut)
 def api_edit_classes(project_id: int, edits: ClassEdits, conn: DB) -> dict:
-    """Adds, changes and removes some of the project's classes; the others stay. Returns the
-    classes; 422 with why (an unknown class, a name given twice)."""
+    """Adds, changes (colour, prompt, hidden) and removes some of the project's classes; the others
+    stay, and images never change. Returns the classes; 422 with why (an unknown class, a name given
+    twice, a class images have can't be removed)."""
     try:
         with _writing(conn, project_id):
             now = projects.edit_classes(conn, project_id, edits.add, edits.change, edits.remove)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
     words = [f"added {c.name}" for c in edits.add]
-    words += [f"renamed {e.name} to {e.new_name}" if e.new_name else f"changed {e.name}" for e in edits.change]
+    words += [f"changed {e.name}" for e in edits.change]
     words += [f"removed {name}" for name in edits.remove]
     return {"classes": now, "did": ("Classes: " + "; ".join(words)) if words else "The classes were already so"}
+
+
+class ClassRename(BaseModel):
+    """A class's new name, on the images too."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: projects.ClassName = Field(description="The class.")
+    new_name: projects.ClassName = Field(description="Its new name; another class's name merges them.")
+    dry_run: bool = Field(True, description="Only say what would change; false to change it.")
+
+
+class ClassClear(BaseModel):
+    """A class whose annotations go."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: projects.ClassName = Field(description="The class.")
+    dry_run: bool = Field(True, description="Only say what would change; false to change it.")
+
+
+class Relabelled(Done):
+    images: int = Field(description="How many images it changes.")
+    annotations: int = Field(description="How many annotations it renames or deletes.")
+    dry_run: bool = Field(description="Nothing was changed: this is what would be.")
+
+
+def _said(done: dict, dry_run: bool, would: str, did: str) -> dict:
+    """A rename or clear's answer: what it changed, or (a preview) would."""
+    return done | {"dry_run": dry_run, "did": f"Would {would} (a preview: dry_run false changes it)" if dry_run else did}
+
+
+@router.post("/api/projects/{project_id}/classes/rename", response_model=Relabelled)
+def api_rename_class(project_id: int, rename: ClassRename, conn: DB) -> dict:
+    """Renames a class, its annotations on the project's images too (into another class's name:
+    merged into it). Unless dry_run is false, nothing changes: the answer says what would.
+    History undoes it."""
+    done = _relabelled(conn, project_id, lambda: projects.rename_class(conn, project_id, rename.name, rename.new_name),
+                       rename.dry_run)
+    what = f"{rename.name} to {rename.new_name} on {plural(done['images'], 'image')} ({plural(done['annotations'], 'annotation')})"
+    return _said(done, rename.dry_run, f"rename {what}", f"Renamed {what}")
+
+
+@router.post("/api/projects/{project_id}/classes/clear", response_model=Relabelled)
+def api_clear_class(project_id: int, clear: ClassClear, conn: DB) -> dict:
+    """Deletes a class's annotations from the project's images; the class stays, on none, and can
+    then be removed. Unless dry_run is false, nothing changes: the answer says what would. History
+    undoes it."""
+    done = _relabelled(conn, project_id, lambda: projects.clear_class(conn, project_id, clear.name), clear.dry_run)
+    what = f"the {plural(done['annotations'], clear.name + ' annotation')} on {plural(done['images'], 'image')}"
+    return _said(done, clear.dry_run, f"delete {what}", f"Deleted {what}")
 
 
 @router.get("/api/projects/{project_id}/annotate", response_model=AnnotateOverview)

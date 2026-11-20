@@ -87,26 +87,29 @@ class NewClass(BaseModel):
     prompt: Prompt = Field("", description=PROMPT)
 
 
-class ClassChange(NewClass):
-    """One class of a project's class list, as it's set (set_classes): an existing one by the name
-    it had (`was`; renamed if `name` differs), or a new one (no `was`)."""
+HIDDEN = "Hidden on the project's pages (its images and editor don't draw it); the API still has its annotations."
 
-    was: ClassName | None = Field(None, description="An existing class's name; empty for a new class.")
+
+class ClassChange(NewClass):
+    """One class of a project's class list, as it's set (set_classes): an existing one (by its
+    name) or a new one."""
+
+    hidden: bool = Field(False, description=HIDDEN)
 
 
 class ClassEdit(BaseModel):
-    """A change to one class (edit_classes): which one, by its name, and what changes."""
+    """A change to one class (edit_classes): which one, by its name, and what changes. None of it
+    touches images (renaming does: POST …/classes/rename)."""
 
     model_config = ConfigDict(extra="forbid")
     name: ClassName = Field(description="The class's name.")
-    new_name: ClassName | None = Field(None, description="Its new name: its annotations are renamed (into another "
-                                       "class's name: merged into it).")
     prompt: Prompt | None = Field(None, description=PROMPT)
     color: Color | None = Field(None, description="A colour name or #rrggbb.")
+    hidden: bool | None = Field(None, description=HIDDEN)
 
 
-# Class colours, in the order classes get them.
-PALETTE = ["#e11d48", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]
+# Class colours, in the order classes get them; the first is also an object's with no class yet.
+PALETTE = ["#c82e2d", "#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#db2777", "#65a30d"]
 
 PAGE_SIZE = 100  # images per page
 COVER_SIZE = 4  # images shown on a project's card
@@ -119,8 +122,10 @@ def _free_color(listed: list[dict]) -> str:
 
 
 def _classes(stored: list[dict]) -> list[dict]:
-    """A project's classes as kept (project.classes), each with its prompt (its name unless set)."""
-    return [{"name": c["name"], "prompt": c.get("prompt") or c["name"], "color": c["color"]} for c in stored]
+    """A project's classes as kept (project.classes), each with its prompt (its name unless set) and
+    whether it's hidden on the project's pages."""
+    return [{"name": c["name"], "prompt": c.get("prompt") or c["name"], "color": c["color"],
+             "hidden": c.get("hidden", False)} for c in stored]
 
 
 def stored_classes(conn: sqlite3.Connection, project_id: int) -> list[dict]:
@@ -175,13 +180,6 @@ def _labelled_count(conn: sqlite3.Connection, project_id: int) -> int:
     return conn.execute("SELECT count(*) FROM media WHERE project_id = ? AND annotations != '[]'", (project_id,)).fetchone()[0]
 
 
-def annotation_counts(conn: sqlite3.Connection, project_id: int) -> dict[str, int]:
-    """Number of annotations per class (by name, ignoring case), over all of the project's images."""
-    rows = conn.execute("""SELECT a.class, count(*) FROM annotation a JOIN media m ON m.id = a.media_id
-                           WHERE m.project_id = ? GROUP BY a.class""", (project_id,))
-    return {name.casefold(): n for name, n in rows}
-
-
 def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Filter = Filter(),
            page_size: int = PAGE_SIZE) -> dict | None:
     """A project with one page of the images matching `filter` (by file name, `page_size` a page;
@@ -192,8 +190,9 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     if row is None:
         return None
     project = _project(row)
-    counts = annotation_counts(conn, project_id)
-    project["classes"] = [c | {"annotation_count": counts.get(c["name"].casefold(), 0)} for c in project["classes"]]
+    use = class_use(conn, project_id)
+    project["classes"] = [c | {"annotation_count": use.get(c["name"].casefold(), {}).get("annotations", 0)}
+                          for c in project["classes"]]
     total = image_count(conn, project_id)
     where, params = _where(conn, filter, project_id)
     match_count = total if filter == Filter() else _count(conn, where, params)
@@ -285,6 +284,20 @@ def _image(row: sqlite3.Row, matched: set[int] | None = None) -> dict:
     if matched is not None:
         image["matches"] = sorted(matched)
     return image
+
+
+def drawn(image: dict, project: dict) -> dict:
+    """An image as the project's pages draw it: without the annotations of the project's hidden
+    classes (the positions the filter matched follow), those kept aside in `hidden` (for the editor
+    to save back as they are). The API answers every annotation."""
+    hides = {c["name"].casefold() for c in project["classes"] if c["hidden"]}
+    kept = [(i, a) for i, a in enumerate(image["annotations"]) if a["class"].casefold() not in hides]
+    shown = image | {"annotations": [a for _, a in kept],
+                     "hidden": [a for a in image["annotations"] if a["class"].casefold() in hides]}
+    if image.get("matches") is not None:
+        place = {i: n for n, (i, _) in enumerate(kept)}
+        shown["matches"] = [place[i] for i in image["matches"] if i in place]
+    return shown
 
 
 def images(conn: sqlite3.Connection, media_ids: list[int]) -> dict:
@@ -638,88 +651,109 @@ def set_prompts(conn: sqlite3.Connection, project_id: int, prompts: dict[str, st
 
 def _keep(conn: sqlite3.Connection, project_id: int, listed: list[dict]) -> list[dict]:
     """Keep these as the project's classes, in order, each with its colour (a free one if it has
-    none) and its prompt when it isn't the name; returns them as classes() does."""
+    none), its prompt when it isn't the name, and hidden when it is; returns them as classes() does."""
     kept = []
     for c in listed:
         kept.append({"name": c["name"], "color": (c.get("color") or _free_color(kept)).lower()}
-                    | ({"prompt": c["prompt"]} if c.get("prompt") and c["prompt"] != c["name"] else {}))
+                    | ({"prompt": c["prompt"]} if c.get("prompt") and c["prompt"] != c["name"] else {})
+                    | ({"hidden": True} if c.get("hidden") else {}))
     conn.execute("UPDATE project SET classes = ? WHERE id = ?", (json.dumps(kept), project_id))
     _touch(conn, project_id)
     return _classes(kept)
 
 
-def _no_class(name: str, listed) -> ValueError:
-    return ValueError(f"There is no class {name!r}; the classes: {', '.join(c['name'] for c in listed) or 'none'}")
+def _class(listed: list[dict], name: str) -> dict:
+    """The class of these by its name, ignoring case; ValueError naming those there are."""
+    found = next((c for c in listed if c["name"].casefold() == name.casefold()), None)
+    if found is None:
+        raise ValueError(f"There is no class {name!r}; the classes: {', '.join(c['name'] for c in listed) or 'none'}")
+    return found
+
+
+def class_use(conn: sqlite3.Connection, project_id: int) -> dict[str, dict]:
+    """Per class (its name, case-folded): how many annotations of it the project's images have, and
+    on how many images."""
+    rows = conn.execute("""SELECT a.class, count(*), count(DISTINCT a.media_id) FROM annotation a
+                           JOIN media m ON m.id = a.media_id WHERE m.project_id = ? GROUP BY a.class""", (project_id,))
+    return {name.casefold(): {"annotations": n, "images": k} for name, n, k in rows}
 
 
 def set_classes(conn: sqlite3.Connection, project_id: int, listed: list[ClassChange]) -> list[dict]:
-    """Set the project's class list to these, in this order: a class given by the name it had
-    (`was`) is kept, renamed when `name` differs (its annotations too; into another class's name,
-    they merge); one left out is removed with its annotations; a new one is added. A class
-    without a colour keeps its own, or gets a free one. Returns the classes as set. Caller commits.
+    """Set the project's class list to these, in this order: classes it has (by name, ignoring case)
+    keep their colour unless given another; new ones are added; one left out is removed. Images are
+    never changed: a class images have can't be removed (clear its annotations first, or hide it).
+    Returns the classes as set. Caller commits.
 
-    Raises ValueError for a name given twice, or a `was` the project doesn't have."""
+    Raises ValueError for a name given twice, or a class left out that images have."""
     current = {c["name"].casefold(): c for c in classes(conn, project_id)}
-    kept: dict[str, ClassChange] = {}  # by name: the class given for it
-    renamed, keep = {}, []
+    keep, seen = [], set()
     for c in listed:
-        name = c.name.casefold()
-        old = current.get(c.was.casefold()) if c.was else None
-        if c.was and old is None:
-            raise _no_class(c.was, current.values())
-        if old and old["name"] != c.name:
-            renamed[old["name"].casefold()] = c.name
-        if first := kept.get(name):  # a class renamed into another's name merges into it; two new ones can't
-            if not any(k.was and k.was.casefold() != name for k in (first, c)):
-                raise ValueError(f"Two classes are named {c.name}")
-            continue
-        kept[name] = c
-        keep.append({"name": c.name, "prompt": c.prompt or c.name, "color": c.color or (old["color"] if old else None)})
-    given = {c.was.casefold() for c in listed if c.was}
-    now = _keep(conn, project_id, keep)
-    _rename(conn, project_id, renamed, {n for n in current if n not in given})
-    return now
-
-
-def _rename(conn: sqlite3.Connection, project_id: int, renamed: dict[str, str], removed: set[str]) -> None:
-    """Rewrite the project's annotations: classes renamed (case-folded old name -> new name), and
-    those of removed classes deleted."""
-    touched = set(renamed) | removed
-    if not touched:
-        return
-    rows = conn.execute("""SELECT DISTINCT m.id, m.annotations FROM media m JOIN annotation a ON a.media_id = m.id
-                           WHERE m.project_id = ? AND a.class IN (SELECT value FROM json_each(?))""",
-                        (project_id, json.dumps(sorted(touched)))).fetchall()
-    stored = stored_classes(conn, project_id)
-    for row in rows:
-        objects = [o | {"class": renamed.get(o["class"].casefold(), o["class"])}
-                   for o in json.loads(row["annotations"]) if o["class"].casefold() not in removed]
-        save(conn, row["id"], project_id, objects, stored)
+        if c.name.casefold() in seen:
+            raise ValueError(f"Two classes are named {c.name}")
+        seen.add(c.name.casefold())
+        old = current.get(c.name.casefold())
+        keep.append({"name": old["name"] if old else c.name, "prompt": c.prompt or c.name, "hidden": c.hidden,
+                     "color": c.color or (old["color"] if old else None)})
+    use = class_use(conn, project_id)
+    if used := [current[n]["name"] for n in current if n not in seen and n in use]:
+        raise ValueError(f"Images have {used[0]} ({use[used[0].casefold()]['annotations']} annotations): clear them "
+                         "first to remove it, or hide it")
+    return _keep(conn, project_id, keep)
 
 
 def edit_classes(conn: sqlite3.Connection, project_id: int, add: list[NewClass] = (),
                  change: list[ClassEdit] = (), remove: list[ClassName] = ()) -> list[dict]:
-    """Add, change and remove some of the project's classes; the others stay as they are. Added ones
-    go last; a renamed one's annotations follow it, a removed one's are deleted (set_classes). A
-    prompt that is the class's name stays "the name", so it follows a rename. Returns the classes as
-    set_classes does. Caller commits. Raises ValueError for a class it doesn't have (saying which it has)."""
+    """Add, change (colour, prompt, hidden) and remove some of the project's classes; the others stay
+    as they are. Added ones go last. Images are never changed (set_classes). Returns the classes as
+    set_classes does. Caller commits. Raises ValueError for a class it doesn't have (saying which it
+    has) or as set_classes."""
     current = classes(conn, project_id)
-    rows = {c["name"].casefold(): {"was": c["name"], "name": c["name"], "color": c["color"],
+    rows = {c["name"].casefold(): {"name": c["name"], "color": c["color"], "hidden": c["hidden"],
                                    "prompt": "" if c["prompt"] == c["name"] else c["prompt"]} for c in current}
-
-    def find(name: str) -> dict:
-        if name.casefold() not in rows:
-            raise _no_class(name, current)
-        return rows[name.casefold()]
-
     for e in change:
-        row = find(e.name)
-        row |= e.model_dump(include={"prompt", "color"}, exclude_none=True)
-        row["name"] = e.new_name or row["name"]
+        rows[_class(current, e.name)["name"].casefold()].update(e.model_dump(include={"prompt", "color", "hidden"}, exclude_none=True))
     for name in remove:
-        del rows[find(name)["was"].casefold()]
+        del rows[_class(current, name)["name"].casefold()]
     return set_classes(conn, project_id, [ClassChange(**r) for r in rows.values()]
                        + [ClassChange(**c.model_dump()) for c in add])
+
+
+def _relabel(conn: sqlite3.Connection, project_id: int, name: str, to: str | None) -> dict:
+    """Give a class's annotations on the project's images another class (`to`), or delete them
+    (None): how many annotations on how many images."""
+    rows = conn.execute("""SELECT DISTINCT m.id, m.annotations FROM media m JOIN annotation a ON a.media_id = m.id
+                           WHERE m.project_id = ? AND a.class = ?""", (project_id, name)).fetchall()
+    stored, objects = stored_classes(conn, project_id), 0
+    for row in rows:
+        after = []
+        for o in json.loads(row["annotations"]):
+            if o["class"].casefold() != name.casefold():
+                after.append(o)
+            else:
+                objects += 1
+                if to is not None:
+                    after.append(o | {"class": to})
+        save(conn, row["id"], project_id, after, stored)
+    return {"images": len(rows), "annotations": objects}
+
+
+def rename_class(conn: sqlite3.Connection, project_id: int, name: str, new_name: str) -> dict:
+    """Rename a class, on the project's images too (into another class's name: merged into it, which
+    keeps its own colour and prompt): how many annotations on how many images. Caller commits.
+    Raises ValueError for a class it doesn't have."""
+    current = classes(conn, project_id)
+    old = _class(current, name)
+    into = next((c for c in current if c["name"].casefold() == new_name.casefold() and c is not old), None)
+    listed = [c for c in current if c is not old] if into else [c | {"name": new_name} if c is old else c for c in current]
+    _keep(conn, project_id, listed)
+    return _relabel(conn, project_id, old["name"], into["name"] if into else new_name)
+
+
+def clear_class(conn: sqlite3.Connection, project_id: int, name: str) -> dict:
+    """Delete a class's annotations from the project's images; the class stays, now on none (so it
+    can be removed): how many annotations on how many images. Caller commits. Raises ValueError for
+    a class it doesn't have."""
+    return _relabel(conn, project_id, _class(classes(conn, project_id), name)["name"], None)
 
 
 def _touch(conn: sqlite3.Connection, project_id: int) -> None:

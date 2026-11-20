@@ -3,30 +3,44 @@
 {# The new project page (project is none) and a project's edit page: one form. `values` is what
    the fields show: the project's, or what was typed when a save was refused (`error` says why).
    The class rows are this page's own editor, not a shared component: js/class-list.js adds and
-   removes them (marked for it with data-*), picking each new class a colour from the palette. #}
+   removes them (marked for it with data-*), picking each new class a colour from the palette.
+   Saving the classes never changes images: a class images have is hidden (the eye), cleared (its
+   annotations deleted, confirmed in a dialog; then it can be removed) or renamed (on the images
+   too, confirmed). #}
 {% if project %}
   {% set crumbs = [(project.name, "/projects/" ~ project.id), ("Edit", None)] %}
 {% else %}
   {% set crumbs = [("New project", None)] %}
 {% endif %}
 
-{% macro class_row(c, saved) %}
+{% macro class_row(c, saved, i=0) %}
+  {% set used = counts.get(c.name) if saved else none %}
   <tr{% if saved %} data-saved{% endif %}>
-    <td>
-      {{ ui.hidden("class_was", c.was) }}
-      <input type="color" name="class_color" value="{{ c.color }}" aria-label="Colour">
-    </td>
-    <td><input name="class_name" value="{{ c.name }}" required maxlength="100" aria-label="Name"></td>
+    <td><input type="color" name="class_color" value="{{ c.color }}" aria-label="Colour"></td>
+    <td><input name="class_name" value="{{ c.name }}" required maxlength="100" aria-label="Name"{% if saved %} readonly{% endif %}></td>
     <td><input name="class_prompt" value="{{ c.prompt if c.prompt != c.name }}" maxlength="500" placeholder="Same as the name" aria-label="Prompt"></td>
     {% if project %}
       <td class="muted">
         {% if saved %}
-          {% set count = counts.get(c.was | lower, 0) %}
-          <span>{{ count }}</span><span hidden>Removed{% if count %}, with {{ count | plural("annotation") }}{% endif %}</span>
+          <span>{{ used.annotations if used else 0 }}</span><span hidden>Removed</span>
         {% else %}New{% endif %}
       </td>
+      <td>
+        {% if saved %}
+          <label class="eye" title="Show or hide its annotations on this project's pages">
+            <input type="checkbox" name="class_hidden" value="{{ c.name }}"{% if c.hidden %} checked{% endif %} aria-label="Hidden">
+            {{ icon("eye") }}{{ icon("eye-slash") }}</label>
+        {% endif %}
+      </td>
     {% endif %}
-    <td><button class="button secondary" type="button" data-remove-class>Remove</button></td>
+    <td>
+      {% if used %}
+        {{ ui.button("Clear annotations…", variant="secondary", popover="clear-" ~ i) }}
+      {% else %}
+        <button class="button secondary" type="button" data-remove-class>Remove</button>
+      {% endif %}
+      {% if saved %}{{ ui.button("Rename…", variant="secondary", popover="rename-" ~ i) }}{% endif %}
+    </td>
   </tr>
 {% endmacro %}
 
@@ -43,17 +57,18 @@
     ]) }}
 
     {% call ui.section("Classes", ['The prompt is what the auto-annotator looks for, e.g. "hole in the road surface" for a class named pothole.',
-                                   "Renaming a class renames its annotations; removing one deletes them (History can undo it)." if project],
+                                   "Images keep their annotations whatever happens here: the eye hides a class on this project's pages; "
+                                   "a class images have can be renamed or cleared (both change the images, and History can undo them), and removed once it's on none." if project],
                        id="classes-section") %}
       <table>
         <thead>
-          <tr><th>Colour</th><th>Name</th><th>Prompt</th>{% if project %}<th>Annotations</th>{% endif %}<th></th></tr>
+          <tr><th>Colour</th><th>Name</th><th>Prompt</th>{% if project %}<th>Annotations</th><th>Shown</th>{% endif %}<th></th></tr>
         </thead>
         <tbody id="classes" data-palette='{{ palette | tojson }}'>
-          {% for c in values.classes %}{{ class_row(c, c.was is not none) }}{% endfor %}
+          {% for c in values.classes %}{{ class_row(c, project and c.name in saved_names, loop.index) }}{% endfor %}
         </tbody>
       </table>
-      <template id="class-row">{{ class_row({"was": none, "name": "", "color": palette[0], "prompt": ""}, false) }}</template>
+      <template id="class-row">{{ class_row({"name": "", "color": palette[0], "prompt": ""}, false) }}</template>
       <div class="actions start"><button class="button secondary" type="button" data-add-class>Add class</button></div>
     {% endcall %}
 
@@ -61,6 +76,23 @@
   {% endcall %}
 
   {% if project %}
+    {# Each class's Rename and Clear annotations, confirmed: their own forms, outside the page's. #}
+    {% for c in values.classes if c.name in saved_names %}
+      {{ ui.dialog("rename-" ~ loop.index, "Rename " ~ c.name, form=at ~ "/classes/rename",
+                   description="Its annotations on this project's images are renamed too. Another class's name merges them.",
+                   actions=ui.button("Rename", submit=true), children=[
+        ui.hidden("name", c.name), ui.input("new_name", "New name", c.name, required=true, maxlength=100)]) }}
+      {% set used = counts.get(c.name) %}
+      {% if used %}
+        {{ ui.dialog("clear-" ~ loop.index, "Clear " ~ c.name ~ "?", form=at ~ "/classes/clear", alert=true,
+                     actions=ui.button("Delete annotations", variant="destructive", submit=true), children=[
+          ui.hidden("name", c.name),
+          ui.text("This deletes the " ~ used.annotations | plural(c.name ~ " annotation") ~ " on " ~ used.images | plural("image")
+                  ~ ". The class stays, on no image, and can then be removed."),
+          ui.text("History can undo it for 30 days.", muted=true)]) }}
+      {% endif %}
+    {% endfor %}
+
     {% call ui.section("Delete project", "Removes its images and their annotations. History can undo it for 30 days.") %}
       {% if deletion.jobs %}
         {{ ui.text(deletion.jobs | plural("job") ~ " of this project " ~ ("is" if deletion.jobs == 1 else "are") ~ " queued or running: cancel "

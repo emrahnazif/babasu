@@ -107,6 +107,16 @@
 
 .dropzone output + .actions { justify-content: center; }
 
+/* A checkbox shown as an eye: open while it's unchecked (shown), struck through once checked (hidden).
+  <label class="eye"><input type="checkbox" …>{eye icon}{eye-slash icon}</label> */
+.eye { display: inline-flex; cursor: pointer; }
+.eye input { position: absolute; opacity: 0; width: 0; height: 0; }
+.eye svg { width: 1.25rem; height: 1.25rem; }
+.eye svg:last-of-type,
+.eye:has(input:checked) svg:first-of-type { display: none; }
+.eye:has(input:checked) svg:last-of-type { display: inline; color: var(--color-text-muted); }
+.eye:has(input:focus-visible) { outline: 2px solid var(--color-text-muted); border-radius: var(--radius-md); }
+
 /* "dropzone large": a big target, when dropping is the page's main action. */
 .dropzone.large {
   min-height: 16rem;
@@ -545,7 +555,7 @@ td:has(> .icon) { width: 1px; }  /* the cell as wide as the icon, not a share of
 
 .dot.exclude { background: var(--color-destructive); }
 
-/* Small label. A coloured dot comes from style="--badge-color: #e11d48"; "badge plain" has none.
+/* Small label. A coloured dot comes from style="--badge-color: #c82e2d"; "badge plain" has none.
    A link inside it (e.g. an × to remove a filter) sits at its end. */
 .badge {
   display: inline-flex;
