@@ -288,6 +288,7 @@ if (chat) {
   });
 
   form.addEventListener("submit", (event) => {
+    if (event.submitter?.hasAttribute("formaction")) return; // sent elsewhere (a drop zone's action): not a message
     event.preventDefault();
     if (busy()) {
       // The button is "stop" while a reply streams; the reply ends with a "stopped" event.

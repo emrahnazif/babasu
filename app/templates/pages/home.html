@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 {% import "components.html" as ui %}
 
-{# Where the app opens: drop images and ask about them. The drop zone attaches them to the chat's
-   next message (the chat's form, wherever the chat is); the buttons start a question in its field,
-   to finish and send. The first find downloads its models: said here, before anyone asks. #}
+{# Where the app opens: drop images, then Continue (a project made from them, opened) or ask about
+   them (they go with the chat's next message, which makes the project: the chat's form, wherever
+   the chat is); the buttons start a question in its field, to finish and send. The first find
+   downloads its models: said here, before anyone asks. #}
 
 {% block content %}
   {% call ui.center() %}
     {{ ui.heading("What's in your images?", "Drop them here and ask: find, count or describe what's in them. "
                   ~ "Everything runs on this computer, and your images never leave it.") }}
     {{ ui.dropzone("attach", "paths", "Drop images here, or click to choose them", accept=image_suffixes, large=true,
-                   form="chat-form", preview="/files/preview") }}
+                   form="chat-form", preview="/files/preview", action=("Continue", "/projects/from-files")) }}
     {{ ui.actions([ui.button("Find all…", variant="secondary", fill=("chat-input", "Find all ")),
                    ui.button("Count…", variant="secondary", fill=("chat-input", "Count the ")),
                    ui.button("What's in these?", variant="secondary", fill=("chat-input", "What's in these images?"))],
@@ -18,6 +19,5 @@
     {% if to_download %}
       {{ ui.text("Finding things uses " ~ finder ~ ": the first time, it downloads " ~ to_download | sum(attribute="size") | filesize ~ ".", muted=true) }}
     {% endif %}
-    {{ ui.text(["A dataset of your own to annotate?", ui.link("Make a project", "/projects/new")], muted=true) }}
   {% endcall %}
 {% endblock %}

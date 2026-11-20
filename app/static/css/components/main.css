@@ -59,7 +59,8 @@
   <div class="dropzone" id="…" data-drop-paths data-name="paths" data-accept=".jpg,.png" data-preview="/files/preview">
     <button type="button">Drop files here</button>
     <output></output>   (what was dropped: partials/dropped.html)
-    <button class="button secondary" type="button" data-clear>Clear</button>   (once something is)
+    <div class="actions"><button class="button secondary" type="button" data-clear>Clear</button>
+      (and its action, a submit button)</div>   (once something is)
   </div>
   "dropzone over" while something is dragged over it; "dropzone large" for a big target.
 */
@@ -102,9 +103,9 @@
 }
 
 .dropzone output:empty,
-.dropzone output:empty + .button { display: none; }
+.dropzone output:empty + .actions { display: none; }
 
-.dropzone output + .button { justify-self: center; }
+.dropzone output + .actions { justify-content: center; }
 
 /* "dropzone large": a big target, when dropping is the page's main action. */
 .dropzone.large {

@@ -4,7 +4,7 @@ What babasu is, what it does today and what comes later, and its pages.
 babasu is a local computer vision app: everything runs on the person's computer, and their images stay there. A person makes projects (what they're working on), imports images, annotates them (by hand with a click tool, or with vision models from the class names), filters and measures them, and runs workflows over them. You, the agent, work through the same functions as the app's own pages.
 
 ## What it does today
-- Asking about images: dropped on Home (files or whole folders, any number), they go with the next chat message into a project made for them; the message says how many and names that project.
+- Asking about images: dropped on Home (files or whole folders, any number), they go with the next chat message into a project made for them, which the message names.
 - Projects with classes; importing images from files and folders (local disk or a network drive).
 - Annotating one image in the editor: changing objects by hand, and the click tool that outlines an object from a click or a box (see annotating); auto-annotating with an auto-annotator (see auto-annotate).
 - Filtering a project's images by what's in them, and measuring them (see filters).
@@ -20,7 +20,7 @@ The annotations say only what someone (or auto-annotate) marked. To find things 
 Training models (mayaku), evaluation, exporting models, COCO import and export of annotations, classification projects, a review queue for model-made objects, video, and searching images by what's in them. Asked for one of these, say it isn't in the app yet.
 
 ## The pages
-- /: Home, where the app opens: drop images and ask about them (find, count, describe); a way into making a project.
+- /: Home, where the app opens: drop images, then Continue (a project made from them, opened) or ask about them (find, count, describe), which makes the project too.
 - /projects: every project. /projects/new: create one.
 - /projects/ID: a project's images, with the filter as chips (?where=). /projects/ID/edit: its settings (name, description, type, auto-annotator, classes) and Delete.
 - /images/MEDIA_ID: one image in the editor, with its objects and the click tool; stepping to the previous and next image.

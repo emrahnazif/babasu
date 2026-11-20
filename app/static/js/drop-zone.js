@@ -3,9 +3,10 @@
 // receives them like any other field: the form it's in, or the one data-form names (by id) when
 // it's elsewhere on the page. That form's reset empties it, as its Clear button does.
 // With data-preview (a URL answering HTML for the paths posted to it), it shows what they hold.
+// Its actions (Clear, and a submit button sending the form elsewhere) show once it holds something.
 //   <div class="dropzone" id="…" data-drop-paths data-name="paths" data-preview="/files/preview"
 //        data-accept=".jpg,.png"><button type="button">Drop files or folders here</button>
-//     <output></output><button class="button secondary" type="button" data-clear>Clear</button></div>
+//     <output></output><div class="actions"><button class="button secondary" type="button" data-clear>Clear</button></div></div>
 // Real paths only exist in the desktop window: app/desktop.py sends them as a "paths" event.
 // A browser hides them, so there the zone says so and a typed path is the way in.
 const desktop = () => Boolean(window.pywebview?.api);
@@ -61,10 +62,11 @@ function setUp(zone) {
     const accept = zone.dataset.accept ? zone.dataset.accept.split(",") : [];
     add(await window.pywebview.api.choose_files(accept));
   }
-  // A click anywhere chooses files (its text is the button, for the keyboard), but on what it shows.
+  // A click anywhere chooses files (its text is the button, for the keyboard), but on what it shows
+  // and its actions.
   zone.addEventListener("click", (event) => {
     if (event.target.closest("[data-clear]")) clear();
-    else if (!event.target.closest("output")) choose();
+    else if (!event.target.closest("output, .actions")) choose();
   });
   (zone.dataset.form ? document.getElementById(zone.dataset.form) : zone.closest("form"))?.addEventListener("reset", clear);
 }

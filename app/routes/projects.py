@@ -531,6 +531,17 @@ def delete_project(project_id: int, conn: DB):
     return RedirectResponse("/projects", status_code=303)
 
 
+@router.post("/projects/from-files")
+def project_from_files(paths: Annotated[list[str], Form()], conn: DB):
+    """A project made from files and folders dropped on Home (Continue): named after them, filled by
+    an import job, and opened (the page shows the images as they come)."""
+    paths = [p for p in paths if p.strip()]
+    if not paths:
+        return RedirectResponse("/", status_code=303)
+    project_id, _ = imports.into_new_project(conn, paths)
+    return RedirectResponse(f"/projects/{project_id}", status_code=303)
+
+
 @router.post("/projects/{project_id}/import")
 def import_images(project_id: int, request: Annotated[ImageImport, Form()], conn: DB):
     """Starts the job and comes back to the project; progress shows in the jobs drawer.

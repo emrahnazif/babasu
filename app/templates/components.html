@@ -498,12 +498,17 @@
    paths posted to it; images: /files/preview), with a Clear button. `accept`: the file types
    (".jpg,.png"); `large`: a big target, when dropping is the page's main action. `id`: unique on
    the page (the desktop window delivers the paths to it). #}
-{% macro dropzone(id, name, text="Drop files or folders here, or click to choose files", accept=none, large=false, form=none, preview=none) -%}
+{% macro dropzone(id, name, text="Drop files or folders here, or click to choose files", accept=none, large=false, form=none, preview=none, action=none) -%}
   <div class="dropzone{% if large %} large{% endif %}" id="{{ id }}" data-drop-paths data-name="{{ name }}"
     {{- {"data-accept": accept, "data-form": form, "data-preview": preview} | xmlattr }}>
     <button type="button">{{ text }}</button>
     <output></output>
-    <button class="button secondary" type="button" data-clear>Clear</button>
+    <div class="actions">
+      <button class="button secondary" type="button" data-clear>Clear</button>
+      {%- if action %}
+      <button class="button" type="submit" formmethod="post"{{ {"formaction": action[1], "form": form} | xmlattr }}>{{ action[0] }}</button>
+      {%- endif %}
+    </div>
   </div>
 {%- endmacro %}
 

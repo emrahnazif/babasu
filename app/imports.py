@@ -5,10 +5,11 @@ an image the project already has is skipped, so a retry only does what's left.
 """
 
 import os
+import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from app import db, jobs, media
+from app import db, jobs, media, projects
 
 KIND = "import_images"
 
@@ -47,6 +48,14 @@ def name_for(paths: list[str]) -> str:
     or file's name, "street and 2 more" for several."""
     first = Path(paths[0]).expanduser().name or paths[0]
     return first if len(paths) == 1 else f"{first} and {len(paths) - 1} more"
+
+
+def into_new_project(conn: sqlite3.Connection, paths: list[str]) -> tuple[int, int]:
+    """A project made from these files and folders (named after them), and the import job filling
+    it: (project id, job id)."""
+    with conn:
+        project_id = projects.create(conn, name_for(paths))
+    return project_id, jobs.start(conn, KIND, {"paths": paths, "project_id": project_id}, project_id)
 
 
 @jobs.kind(KIND, lane="io", title="Import images")
