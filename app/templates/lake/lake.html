@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% import "components.html" as ui %}
+{% import "partials/filter-bar.html" as fb %}
+{% from "projects/macros.html" import image_tiles %}
+{# The data lake (routes/lake.py): everything the person has, a kind at a time (the pills), found by
+   name (q). All: a section per kind with its first few, each "See all" opening its pill. Images:
+   every project's images (or one project's) with the filter bar, and Copy to project. #}
+{% set kinds = [("all", "All"), ("images", "Images"), ("projects", "Projects"), ("workflows", "Workflows"), ("models", "Models")] %}
+{% set keep = {"kind": "images", "project": project} %}  {# the Images view's links keep its project #}
+{% block about %}Data lake ({{ kind }}{{ ", named like " ~ q if q }}):
+  {%- if found is defined %} {{ found.match_count | plural("image") }}{% if found.filter %} matching {{ found.filter }}{% endif %};{% endif %}
+  {%- if kind != "images" %}{% for listed, one in [(projects, "project"), (workflows, "workflow"), (models, "model")] if listed is defined %} {{ listed | length | plural(one) }};{% endfor %}{% endif %}{% endblock %}
+
+{% block actions %}
+  {% if kind == "images" and found.match_count %}
+    <button class="icon-button" type="button" popovertarget="copy-images" aria-label="Copy to project" title="Copy to project">{{ icon("document-duplicate") }}</button>
+  {% endif %}
+{% endblock %}
+
+{% block toolbar %}
+  <div class="topbar__left topbar__left--wrap">
+    <nav class="segmented" aria-label="What to show">
+      {% for value, label in kinds %}
+        <a class="segmented__item" href="{{ query({'kind': value, 'q': q}) }}"{% if kind == value %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+    {% if kind == "images" %}
+      <button class="topbar__button" type="button" popovertarget="project-menu">
+        {{ (projects | selectattr("id", "equalto", project) | first).name if project else "All projects" }}{{ icon("chevron-up-down") }}</button>
+      <div id="project-menu" class="menu" popover>
+        <a class="menu__item" href="{{ query({'kind': 'images', 'where': filter.text()}) }}"{% if not project %} aria-current="page"{% endif %}>
+          <span class="menu__check">{{ icon("check") }}</span>All projects</a>
+        {% for p in projects %}
+          <a class="menu__item" href="{{ query({'kind': 'images', 'project': p.id, 'where': filter.text()}) }}"{% if project == p.id %} aria-current="page"{% endif %}>
+            <span class="menu__check">{{ icon("check") }}</span>{{ p.name }}<span class="menu__note">{{ p.image_count }}</span></a>
+        {% endfor %}
+      </div>
+      {{ fb.controls(filter, found.classes, found, error, keep) }}
+    {% else %}
+      <form role="search">
+        <input type="hidden" name="kind" value="{{ kind }}">
+        <input type="search" name="q" value="{{ q }}" placeholder="Find by name…" aria-label="Find by name" autocomplete="off">
+      </form>
+    {% endif %}
+  </div>
+  {% if kind == "images" %}{{ fb.summary(filter, found, error, keep) }}{% endif %}
+{% endblock %}
+
+{% macro project_cards(listed) %}
+  {% call ui.grid(wide=true) %}
+    {% for p in listed %}
+      {% call ui.card(p.name, p.description, action=ui.time(p.updated_at), cover=p.covers or "No images yet", href="/projects/" ~ p.id) %}
+        {{ ui.text([p.image_count | plural("image"), p.class_count | plural("class")] | join(" · "), muted=true) }}
+      {% endcall %}
+    {% endfor %}
+  {% endcall %}
+{% endmacro %}
+
+{% macro workflow_list(listed) %}
+  {% call ui.stack() %}
+    {% for w in listed %}{{ ui.item(w.name, w.description, icon="queue-list", href="/workflows/" ~ w.id ~ "/edit") }}{% endfor %}
+  {% endcall %}
+{% endmacro %}
+
+{% macro model_list(listed) %}
+  {% call ui.stack() %}
+    {% for m in listed %}{{ ui.item(m.name, [m.task | replace("_", " "), m.license, m.state] | join(" · "), icon="cube", href="/models") }}{% endfor %}
+  {% endcall %}
+{% endmacro %}
+
+{# A section of the All view: its title with how many, its first few, and See all. #}
+{% macro section(title, count, value) %}
+  {% set body = caller() %}
+  {% call ui.section(title ~ " · " ~ count) %}
+    {{ body }}
+    {% if count %}{{ ui.actions(ui.button("See all", href=query({'kind': value, 'q': q}), variant="secondary"), variant="start") }}{% endif %}
+  {% endcall %}
+{% endmacro %}
+
+{% block content %}
+  {% if kind == "all" %}
+    {% call section("Images", found.match_count, "images") %}
+      {% if error %}{{ ui.text(error, error=true) }}{% endif %}
+      {{ image_tiles(found.images, found.classes) if found.images else ui.text("No images" ~ (" named like that" if q else " yet: drop some on Home") ~ ".", muted=true) }}
+    {% endcall %}
+    {% call section("Projects", projects | length, "projects") %}
+      {{ project_cards(projects[:first_items]) if projects else ui.text("No projects" ~ (" named like that" if q else " yet") ~ ".", muted=true) }}
+    {% endcall %}
+    {% call section("Workflows", workflows | length, "workflows") %}{{ workflow_list(workflows[:first_items]) }}{% endcall %}
+    {% call section("Models", models | length, "models") %}
+      {{ model_list(models[:first_items]) if models else ui.text("No models downloaded yet: the Models page has them all.", muted=true) }}
+    {% endcall %}
+
+  {% elif kind == "images" %}
+    {% if found.images %}
+      {{ image_tiles(found.images, found.classes, badges=true) }}
+      {% if found.pages > 1 %}
+        {{ ui.pagination(found.page, found.pages, note=found.match_count | plural("image"),
+                         previous=query(keep, where=filter.text(), page=found.page - 1) if found.page > 1,
+                         next=query(keep, where=filter.text(), page=found.page + 1) if found.page < found.pages) }}
+      {% endif %}
+    {% elif found.image_count %}
+      {{ ui.text(["No images match.", ui.link("Show all images", query(keep))], muted=true) }}
+    {% else %}
+      {{ ui.empty("No images yet", "Drop images on Home to start a project.", icon="photo", action=ui.button("Home", href="/")) }}
+    {% endif %}
+    {{ fb.panels("/data-lake", filter, found.classes, keep) }}
+
+    {# Copy what's shown (the filter, the project) into a project, with the annotations: one there is, or a new one. #}
+    {{ ui.dialog("copy-images", "Copy " ~ found.match_count | plural("image") ~ " to a project", form="/data-lake/copy",
+                 description="With their annotations; the files aren't copied. Images the project has already stay as they are.",
+                 actions=ui.button("Copy", submit=true), children=[
+      ui.hidden("where", filter.text()), ui.hidden("project", project),
+      ui.select("to_project", "Into", [("", "A new project")] + projects | options("id", "name")),
+      ui.input("new_name", "New project's name", placeholder="Copied images", maxlength=200, note="for a new project"),
+    ]) }}
+
+  {% elif kind == "projects" %}
+    {{ project_cards(projects) if projects else ui.empty("No projects" ~ (" named like that" if q else " yet"), icon="folder") }}
+  {% elif kind == "workflows" %}
+    {{ workflow_list(workflows) if workflows else ui.empty("No workflows named like that", icon="queue-list") }}
+  {% else %}
+    {{ model_list(models) if models else ui.empty("No models downloaded" ~ (" named like that" if q else " yet"), "The Models page has every model there is.", icon="cube", action=ui.button("Models", href="/models")) }}
+  {% endif %}
+{% endblock %}

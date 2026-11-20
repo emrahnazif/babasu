@@ -5,13 +5,14 @@
 
 {# Images as tiles (ui.tiles), each with its objects drawn and a link to its page.
    `query`: added to each link (the filter it was found with, stepping through it on the image's
-   page); `badges`: a mark on the labelled ones. The project page shows them, and so does the chat
-   (the images a step of the agent found). #}
+   page); `badges`: a mark on the labelled ones. An image's `caption` is what's under it, its file
+   name if it has none. The project page shows them, the data lake, and the chat (the images a step
+   of the agent found). #}
 {% macro image_tiles(images, classes, query="", badges=false) -%}
   {%- set tiles = namespace(list=[]) %}
   {%- for image in images %}
     {%- set tiles.list = tiles.list + [{"src": image.thumb_url, "width": image.width, "height": image.height,
-                                        "caption": image.filename, "annotations": image.annotations, "matches": image.matches,
+                                        "caption": image.caption or image.filename, "annotations": image.annotations, "matches": image.matches,
                                         "href": "/images/" ~ image.media_id ~ query,
                                         "badge": {"text": "Labelled", "icon": "check-circle"} if badges and image.annotations}] %}
   {%- endfor %}

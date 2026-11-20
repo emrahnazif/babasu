@@ -17,7 +17,7 @@ from app.routes import agent as agent_routes
 from app.routes import agents as agents_routes
 from app.routes import history as history_routes
 from app.routes import jobs as jobs_routes
-from app.routes import files, pages, projects, settings
+from app.routes import files, lake, pages, projects, settings
 from app.routes import runs as runs_routes
 from app.routes import vision as vision_routes
 
@@ -72,6 +72,7 @@ app.mount("/media", StaticFiles(directory=config.MEDIA_DIR, check_dir=False), na
 app.include_router(pages.router)
 app.include_router(files.router)
 app.include_router(projects.router)
+app.include_router(lake.router)
 app.include_router(settings.router)
 app.include_router(jobs_routes.router)
 app.include_router(agent_routes.router)

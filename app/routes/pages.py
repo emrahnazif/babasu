@@ -27,11 +27,6 @@ def components(request: Request):
     return templates.TemplateResponse(request, "pages/components.html")
 
 
-# Sections that aren't built yet: each shows a short note (its name is the breadcrumb's switcher).
-def _coming(request: Request, title: str):
-    return templates.TemplateResponse(request, "pages/coming.html", {"title": title})
-
-
 @router.get("/workflows", response_class=HTMLResponse)
 def workflows(request: Request):
     """Every workflow: Use opens its Studio page (not built yet); Edit, the builder."""
@@ -71,8 +66,3 @@ def edit_workflow(request: Request, workflow_id: str):
 def studio(request: Request):
     """The workflows to use, each a link to its Studio page (not built yet)."""
     return templates.TemplateResponse(request, "studio/list.html", {"workflows": runs.workflows()})
-
-
-@router.get("/data-lake", response_class=HTMLResponse)
-def data_lake(request: Request):
-    return _coming(request, "Data lake")

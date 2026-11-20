@@ -176,10 +176,6 @@ def image_count(conn: sqlite3.Connection, project_id: int) -> int:
     return conn.execute("SELECT count(*) FROM media WHERE project_id = ?", (project_id,)).fetchone()[0]
 
 
-def _labelled_count(conn: sqlite3.Connection, project_id: int) -> int:
-    return conn.execute("SELECT count(*) FROM media WHERE project_id = ? AND annotations != '[]'", (project_id,)).fetchone()[0]
-
-
 def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Filter = Filter(),
            page_size: int = PAGE_SIZE) -> dict | None:
     """A project with one page of the images matching `filter` (by file name, `page_size` a page;
@@ -193,7 +189,16 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     use = class_use(conn, project_id)
     project["classes"] = [c | {"annotation_count": use.get(c["name"].casefold(), {}).get("annotations", 0)}
                           for c in project["classes"]]
-    total = image_count(conn, project_id)
+    return project | _page(conn, filter, project_id, page, page_size)
+
+
+def _page(conn: sqlite3.Connection, filter: Filter, project_id: int | None, page: int, page_size: int) -> dict:
+    """One page of the images matching `filter`, a project's or every project's (by file name,
+    `page_size` a page; 0: none), marking the objects the filter asks for; how many images there
+    are, how many are labelled, and how many match. FilterError as _where."""
+    scope, scope_params = ("media.project_id = ?", [project_id]) if project_id is not None else ("true", [])
+    total, labelled = conn.execute(f"SELECT count(*), count(CASE WHEN annotations != '[]' THEN 1 END) FROM media WHERE {scope}",
+                                   scope_params).fetchone()
     where, params = _where(conn, filter, project_id)
     match_count = total if filter == Filter() else _count(conn, where, params)
     pages = max(1, math.ceil(match_count / page_size)) if page_size else 1
@@ -201,15 +206,36 @@ def detail(conn: sqlite3.Connection, project_id: int, page: int = 1, filter: Fil
     rows = conn.execute(f"{_IMAGE_SELECT} WHERE {where} ORDER BY media.name, media.id LIMIT ? OFFSET ?",
                         (*params, page_size, (page - 1) * page_size)).fetchall()
     matches = _matches(conn, filter, [r["id"] for r in rows])
-    return project | {
-        "image_count": total,
-        "labelled_count": _labelled_count(conn, project_id),
-        "filter": filter.text(),
-        "match_count": match_count,
-        "page": page,
-        "pages": pages,
-        "images": [_image(r, matches and matches[r["id"]]) for r in rows],
-    }
+    return {"image_count": total, "labelled_count": labelled, "filter": filter.text(), "match_count": match_count,
+            "page": page, "pages": pages, "images": [_image(r, matches and matches[r["id"]]) for r in rows]}
+
+
+def browse(conn: sqlite3.Connection, filter: Filter = Filter(), page: int = 1, project_id: int | None = None,
+           page_size: int = PAGE_SIZE) -> dict:
+    """Every project's images matching `filter` (one project's, given one), a page at a time, as
+    detail() has a project's, each captioned with its project's name; and the classes to filter and
+    draw them with: the project's, or every project's (all_classes). FilterError as detail()."""
+    found = _page(conn, filter, project_id, page, page_size)
+    names = dict(conn.execute("SELECT id, name FROM project"))
+    if project_id is None:
+        listed = all_classes(conn)
+    else:
+        use = class_use(conn, project_id)
+        listed = [c | {"annotation_count": use.get(c["name"].casefold(), {}).get("annotations", 0)}
+                  for c in classes(conn, project_id)]
+    return found | {"classes": listed,
+                    "images": [i | {"caption": f"{i['filename']} · {names[i['project_id']]}"} for i in found["images"]]}
+
+
+def all_classes(conn: sqlite3.Connection) -> list[dict]:
+    """The classes of every project, one per name (ignoring case: the first project's spelling and
+    colour), each with how many annotations of it there are in all."""
+    counts = {name.casefold(): n for name, n in conn.execute("SELECT class, count(*) FROM annotation GROUP BY class")}
+    merged: dict[str, dict] = {}
+    for (stored,) in conn.execute("SELECT classes FROM project ORDER BY id"):
+        for c in _classes(json.loads(stored)):
+            merged.setdefault(c["name"].casefold(), c | {"annotation_count": counts.get(c["name"].casefold(), 0)})
+    return list(merged.values())
 
 
 def _count(conn: sqlite3.Connection, where: str, params: list) -> int:
