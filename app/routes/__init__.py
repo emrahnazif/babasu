@@ -114,6 +114,8 @@ class AnnotationOut(Answer):
     segments: list[tuple[float, float]] | None = Field(None, description=_said("segments"))
     keypoints: list[KeypointOut] | None = Field(None, description=_said("keypoints"))
     score: float | None = Field(None, description=_said("score"))
+    frame: int | None = Field(None, description=_said("frame"))
+    track: int | None = Field(None, description=_said("track"))
 
 
 class Done(Answer):

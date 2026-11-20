@@ -55,6 +55,8 @@ class Annotation(BaseModel):
     keypoints: list[Keypoint] | None = Field(None, description="Its named points.")
     score: Annotated[float, Field(ge=0, le=1), AfterValidator(lambda v: round(v, 3))] | None = Field(
         None, description="A model's confidence (0..1), on an object a model made and nobody has reviewed yet.")
+    frame: int | None = Field(None, ge=0, description="On a video: the frame it's on (its number in the file, from 0).")
+    track: int | None = Field(None, ge=1, description="On a video: the object it is from frame to frame (a tracker's id).")
 
     @model_validator(mode="after")
     def _has_a_shape(self):
@@ -294,15 +296,18 @@ def image(conn: sqlite3.Connection, media_id: int, filter: Filter = Filter()) ->
 
 
 _IMAGE_SELECT = """SELECT media.id, media.project_id, media.name, media.split, media.annotations, media.sha256,
-                          media.ext, media.width, media.height FROM media"""
+                          media.ext, media.type, media.width, media.height, media.duration, media.frame_count,
+                          media.fps, media.sample_fps FROM media"""
 
 
 def _image(row: sqlite3.Row, matched: set[int] | None = None) -> dict:
-    """An image row for templates and the API: its objects per class, its annotations, and, when
-    the filter asks for objects, `matches`: the positions in that list of the objects it found."""
+    """An image (or video) row for templates and the API: its objects per class, its annotations,
+    a video's facts (`video`: duration, frame_count, fps, sample_fps; None for an image), and,
+    when the filter asks for objects, `matches`: the positions in that list of the objects it found."""
     annotations = json.loads(row["annotations"])
+    video = {k: row[k] for k in ("duration", "frame_count", "fps", "sample_fps")} if row["type"].startswith("video/") else None
     image = {"media_id": row["id"], "project_id": row["project_id"], "filename": row["name"], "split": row["split"],
-             "width": row["width"], "height": row["height"],
+             "type": row["type"], "video": video, "width": row["width"], "height": row["height"],
              "objects": dict(Counter(a["class"] for a in annotations)),
              "annotations": annotations,
              "url": media.url(row["sha256"], row["ext"]),

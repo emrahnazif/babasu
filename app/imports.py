@@ -1,4 +1,4 @@
-"""Importing images from files and folders (local disk or NAS) into a project, as a background job.
+"""Importing images and videos from files and folders (local disk or NAS) into a project, as a background job.
 
 Crash-safe and safe to retry (product.md "Jobs"): each image is stored in its own transaction, and
 an image the project already has is skipped, so a retry only does what's left.
@@ -14,12 +14,12 @@ from app import db, jobs, media, projects
 KIND = "import_images"
 
 
-def find_images(paths: list[str]) -> tuple[list[tuple[Path, str]], list[tuple[Path, str]], list[str]]:
-    """The images the paths name, as (file, name in the project); the files given that aren't
-    images by their name (e.g. notes.txt, or a photo saved without a suffix), the same way; and
-    the paths that don't exist.
+def find_media(paths: list[str]) -> tuple[list[tuple[Path, str]], list[tuple[Path, str]], list[str]]:
+    """The images and videos the paths name, as (file, name in the project); the files given that
+    aren't either by their name (e.g. notes.txt, or a photo saved without a suffix), the same way;
+    and the paths that don't exist.
 
-    A folder contributes its image files and those of its subfolders, named relative to it
+    A folder contributes its image and video files and those of its subfolders, named relative to it
     (e.g. "train/0001.jpg"); hidden files and folders are left out (e.g. .DS_Store and the
     "._name.jpg" files macOS leaves on network drives).
     os.walk gets file types from the directory listing itself and prunes hidden folders before
@@ -61,7 +61,7 @@ def into_new_project(conn: sqlite3.Connection, paths: list[str]) -> tuple[int, i
 @jobs.kind(KIND, lane="io", title="Import images")
 def import_images(ctx: jobs.Context, paths: list[str], project_id: int) -> dict:
     ctx.advance(0, "Looking for images…")  # the total isn't known yet: the bar is indeterminate
-    images, others, missing = find_images(paths)
+    images, others, missing = find_media(paths)
     files = images + others  # a file given directly is tried all the same: its content decides
     for path in missing:
         ctx.log(f"Not found: {path}")
@@ -76,10 +76,9 @@ def import_images(ctx: jobs.Context, paths: list[str], project_id: int) -> dict:
             if ctx.cancelled:
                 break
             try:
-                data = file.read_bytes()
-                with conn:  # one image, one transaction
-                    _, is_new = media.store(conn, project_id, data, name)
-            except (media.NotAnImage, OSError) as exc:
+                with conn:  # one file, one transaction
+                    _, is_new = media.store_file(conn, project_id, file, name)
+            except (media.NotMedia, OSError) as exc:
                 skipped += 1
                 ctx.log(f"Skipped {name}: {str(exc) or 'not a readable image'}")
             else:

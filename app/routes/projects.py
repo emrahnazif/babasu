@@ -245,8 +245,17 @@ class ImageListed(Answer):
                                       "brackets): the positions in `annotations` of the objects it found.")
 
 
+class VideoOut(Answer):
+    duration: float = Field(description="Seconds.")
+    frame_count: int = Field(description="Frames in the file; an annotation's frame is one of them, from 0.")
+    fps: float = Field(description="The file's frame rate.")
+    sample_fps: float = Field(description="The rate it's worked at: every fps / sample_fps-th frame is annotated and analysed.")
+
+
 class ImageOut(ImageListed):
     project_id: int = Field(description="The project it's in.")
+    type: str = Field(description="What its file is (MIME type), e.g. image/jpeg or video/mp4.")
+    video: VideoOut | None = Field(description="A video's facts; null for an image.")
     split: str | None = Field(description="train, val or test, if set; null if not.")
     width: int = Field(description="In pixels.")
     height: int = Field(description="In pixels.")
