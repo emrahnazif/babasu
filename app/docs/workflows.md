@@ -17,6 +17,17 @@ Workflows are mozo graphs of models and steps; running one over images keeps wha
 - Before running a model to find something, see whether the images are annotated with it already (GET /api/images?where=person): that may be the answer.
 
 ## Building one
+A workflow is a JSON document: its nodes (each an `id` of yours and a `type` from the nodes list, with `data.parameters`) and edges, each joining a node's output (`sourceHandle`) to another's input (`targetHandle`). This one finds squares and keeps them as annotations:
+```json
+{"name": "Squares",
+ "nodes": [{"id": "image", "type": "read_media"},
+           {"id": "find", "type": "grounding_dino", "data": {"parameters": {"text": ["square"]}}},
+           {"id": "keep", "type": "save_to_babasu"}],
+ "edges": [{"source": "image", "sourceHandle": "image", "target": "find", "targetHandle": "image"},
+           {"source": "find", "sourceHandle": "detections", "target": "keep", "targetHandle": "detections"}]}
+```
+A saved or built-in one reads the same way (GET /api/workflows/ID): start from the closest and change it.
+
 1. The nodes it needs: GET /api/workflows/nodes, then ?names= for those in full.
 2. Write it, then check it without saving: POST /api/workflows/check (what it keeps, its models, what's wrong).
 3. Try it on 2–4 images before saving: POST /api/annotate with `workflow` (the document) and `images` (`{"project_id": 3, "count": 4}`); wait for its job. What it finds is kept, as any run's.

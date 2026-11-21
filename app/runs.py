@@ -134,7 +134,7 @@ def resolve(workflow_id: str | None, document: dict | None = None) -> tuple[str 
 
 def nodes(names: list[str] | None = None) -> list[dict]:
     """What workflows are built from (mozo's catalogue): each node's name, category and what it
-    does; with `names`, those nodes in full: inputs and outputs (name: type) and parameters (name,
+    does; with `names`, those nodes in full: inputs and outputs (name: type; an output giving many says so) and parameters (name,
     kind, default, options; `prompts`: it takes the prompts). ValueError naming unknown ones."""
     found = catalogue()
     if names is None:
@@ -144,7 +144,8 @@ def nodes(names: list[str] | None = None) -> list[dict]:
         raise ValueError(f"No such nodes: {', '.join(sorted(unknown))}; without names, all of them are listed")
     return [{"name": n["name"], "category": n["category"], "description": n["description"],
              "inputs": [f"{p['name']}: {p['type']}" for p in n["inputs"]],
-             "outputs": [f"{p['name']}: {p['type']}" for p in n["outputs"]],
+             "outputs": [f"{p['name']}: {p['type']}" + (" (many: what it's wired to runs once for each)" if p.get("many") else "")
+                         for p in n["outputs"]],
              "parameters": [{k: v for k, v in p.items() if v not in (None, [], "", False) or k == "default"}
                             for p in n["parameters"]]}
             for n in found if n["name"] in names]
@@ -541,9 +542,12 @@ class _Keeper:
                 new += [a.stored() for a in found]
             else:
                 label = step.parameters.get("label") or step.id
-                name = f"{Path(row['name']).stem}-{label}{'' if index is None else f'-{index}'}.png"
+                name = f"{Path(row['name']).stem}-{label}{'' if index is None else f'-{index}'}"
                 target = step.parameters.get("project") or row["project_id"]
-                self.made += media.store(self.conn, target, _png(outputs[step.id]), name)[1]
+                made = outputs[step.id]  # a list when a node before it made many (one crop per object)
+                many = isinstance(made, list)
+                for n, image in enumerate(made if many else [made], 1):
+                    self.made += media.store(self.conn, target, _png(image), f"{name}-{n}.png" if many else f"{name}.png")[1]
         return new
 
     def save(self, row: sqlite3.Row, found: list[dict], replace: bool) -> None:
