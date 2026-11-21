@@ -11,6 +11,7 @@ The images are the same every run (fixed random seed), so media is never stored 
 import io
 import random
 from contextlib import closing
+from functools import cache
 
 from PIL import Image, ImageDraw
 
@@ -49,21 +50,32 @@ def make_image(rng: random.Random) -> tuple[bytes, list[dict]]:
     return buffer.getvalue(), annotations
 
 
+@cache
+def shapes() -> list[tuple[str, bytes, list[dict]]]:
+    """The images, the same every time: file name, JPEG, annotations."""
+    rng = random.Random(0)
+    return [(f"shapes_{i:03}.jpg", *make_image(rng)) for i in range(IMAGE_COUNT)]
+
+
+def make_project(conn, name: str, description: str) -> int:
+    """A project of the images, with their annotations and splits (18 train, 4 val, 2 test)."""
+    project_id = projects.create(conn, name, description, "detection", None,
+                                 [projects.ClassChange(name=n, color=c) for n, c in CLASSES])
+    for i, (filename, data, annotations) in enumerate(shapes()):
+        split = "train" if i < 18 else "val" if i < 22 else "test"
+        media_id, _ = media.store(conn, project_id, data, filename)
+        conn.execute("UPDATE media SET split = ? WHERE id = ?", (split, media_id))
+        projects.set_annotations(conn, media_id, [projects.Annotation(**a) for a in annotations])
+    return project_id
+
+
 def main() -> None:
     db.migrate()
     with closing(db.connect()) as conn, conn:  # `conn` as a context manager commits at the end
         if conn.execute("SELECT 1 FROM project WHERE name = ?", (NAME,)).fetchone():
             print(f"'{NAME}' already exists; nothing to do.")
             return
-        project_id = projects.create(conn, NAME, "Generated squares, circles and triangles.", "detection", None,
-                                     [projects.ClassChange(name=name, color=color) for name, color in CLASSES])
-        rng = random.Random(0)
-        for i in range(IMAGE_COUNT):
-            data, annotations = make_image(rng)
-            split = "train" if i < 18 else "val" if i < 22 else "test"
-            media_id, _ = media.store(conn, project_id, data, f"shapes_{i:03}.jpg")
-            conn.execute("UPDATE media SET split = ? WHERE id = ?", (split, media_id))
-            projects.set_annotations(conn, media_id, [projects.Annotation(**a) for a in annotations])
+        make_project(conn, NAME, "Generated squares, circles and triangles.")
     print(f"Created '{NAME}' with {IMAGE_COUNT} images.")
 
 

@@ -17,3 +17,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Agent eval results (scripts/agent_evals.py)
+reports/
