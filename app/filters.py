@@ -116,7 +116,7 @@ class ObjectCondition(BaseModel):
 
     def text(self) -> str:
         sign = "-" if self.negate else ""
-        names = "|".join(_quote(c) for c in self.classes)
+        names = "|".join(quote(c) for c in self.classes)
         parts = [names] if names else []
         if self.w and self.w == self.h:
             parts.append(f"size:{self.w.text()}")
@@ -186,8 +186,15 @@ class Filter(BaseModel):
                 f.name = value
             elif key == "objects" and value:
                 f.objects = Range.parse(value)
+            elif ":" in token and key in (*_RANGE_KEYS, "edge"):
+                raise FilterError(f"“{key}:” is about objects, so it goes in brackets with their class: "
+                                  f"(car {token}), or ({token}) for any object's")
+            elif token.strip("|") == "":
+                raise FilterError("Terms are all required, so “|” can't join them: it joins classes inside one, "
+                                  "e.g. (car|truck w:<80) or car|truck")
             elif ":" in token:
-                raise FilterError(f"“{key}:” isn't something to filter by here; object sizes go in brackets: (w:8..16)")
+                raise FilterError(f"“{key}:” isn't a filter term. Terms: labelled or unlabelled, name:TEXT, objects:N, "
+                                  "a class by its name (car, -car: without one), and objects in brackets: (car w:<80)")
             else:  # a class name, as short for (name) or -(name)
                 negate = token.startswith("-")
                 f.conditions.append(_object_condition([token.removeprefix("-")], negate=negate))
@@ -197,7 +204,7 @@ class Filter(BaseModel):
     def text(self) -> str:
         parts = [] if self.show == "all" else [self.show]
         if self.name:
-            parts.append(f"name:{_quote(self.name)}")
+            parts.append(f"name:{quote(self.name)}")
         if self.objects:
             parts.append(f"objects:{self.objects.text()}")
         parts += [c.text() for c in self.conditions]
@@ -269,5 +276,5 @@ def _show(value: float | None) -> str:
     return "" if value is None else f"{value:g}"
 
 
-def _quote(text: str) -> str:
+def quote(text: str) -> str:
     return text if re.fullmatch(r"[^\s()\"|:]+", text) else '"' + text.replace('"', "") + '"'

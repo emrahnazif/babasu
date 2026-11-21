@@ -1,6 +1,6 @@
 import pytest
 
-from app import db, media, projects
+from app import projects
 from app.filters import Filter, FilterError
 
 
@@ -24,22 +24,6 @@ def test_text_that_cant_be_read_is_refused(text):
         Filter.parse(text)
 
 
-@pytest.fixture
-def street(conn, image):
-    """A project: a small car; a big car and a person; nothing."""
-    objects = {
-        "small.png": [{"class": "car", "bbox": [5, 5, 10, 10]}],
-        "big.png": [{"class": "car", "bbox": [5, 5, 40, 40]}, {"class": "person", "bbox": [0, 0, 8, 20]}],
-        "empty.png": [],
-    }
-    with db.action("request", "make"), conn:
-        project_id = projects.create(conn, "Street")
-        for n, (name, found) in enumerate(objects.items()):
-            media_id, _ = media.store(conn, project_id, image(n, size=(64, 64)), name)
-            projects.save(conn, media_id, project_id, found)
-    return project_id
-
-
 @pytest.mark.parametrize("text, names", [
     ("car", {"small.png", "big.png"}),
     ("(car size:8..16)", {"small.png"}),
@@ -60,3 +44,25 @@ def test_a_class_the_project_doesnt_have_is_refused(conn, street):
     """A typo would otherwise find nothing, which looks like an answer."""
     with pytest.raises(FilterError):
         projects.browse(conn, Filter.parse("cra"), project_id=street)
+
+
+@pytest.mark.parametrize("text, says", [
+    ("(car w:<10) | (person)", "“|” can't join them"),  # it read as an empty term, matching nothing
+    ("car w:<10", r"goes in brackets with their class: \(car w:<10\), or \(w:<10\)"),
+    ("edge:yes", "goes in brackets"),
+    ("class:car", "a class by its name"),
+    ("colour:red", "Terms: labelled or unlabelled"),
+])
+def test_a_term_that_isnt_one_says_how_to_write_it(text, says):
+    with pytest.raises(FilterError, match=says):
+        Filter.parse(text)
+
+
+def test_statistics_of_a_class_say_how_to_count_its_images(conn, street):
+    with pytest.raises(FilterError, match=rf"GET /api/images\?project_id={street}&where=car"):
+        projects.stats(conn, street, "car")
+
+
+def test_deleting_objects_without_naming_them_says_how(conn, street):
+    with pytest.raises(ValueError, match=r"\(car\) for every car"):
+        projects.change(conn, street, Filter(), "delete_objects", None, None)

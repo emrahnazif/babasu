@@ -19,7 +19,7 @@ atexit.register(shutil.rmtree, _home, ignore_errors=True)
 os.environ["HOME"] = str(_home)
 os.environ["XDG_DATA_HOME"] = str(_home / "data")
 
-from app import config, db, jobs  # noqa: E402  (after HOME is set)
+from app import config, db, jobs, media, projects  # noqa: E402  (after HOME is set)
 
 if not config.DATA_DIR.is_relative_to(_home):  # e.g. Windows, whose folders don't come from HOME
     pytest.exit(f"The workspace would be {config.DATA_DIR}, not a temporary folder: not running tests there")
@@ -59,3 +59,29 @@ def image():
         Image.new("RGB", size, (n % 256, n // 256 % 256, 7)).save(buffer, format="PNG")
         return buffer.getvalue()
     return make
+
+
+@pytest.fixture
+def api(conn):
+    """The app's API, as the agent and the pages call it."""
+    from fastapi.testclient import TestClient
+
+    import app.server
+
+    return TestClient(app.server.app)
+
+
+@pytest.fixture
+def street(conn, image):
+    """A project: a small car; a big car and a person; nothing."""
+    objects = {
+        "small.png": [{"class": "car", "bbox": [5, 5, 10, 10]}],
+        "big.png": [{"class": "car", "bbox": [5, 5, 40, 40]}, {"class": "person", "bbox": [0, 0, 8, 20]}],
+        "empty.png": [],
+    }
+    with db.action("request", "make"), conn:
+        project_id = projects.create(conn, "Street")
+        for n, (name, found) in enumerate(objects.items()):
+            media_id, _ = media.store(conn, project_id, image(n, size=(64, 64)), name)
+            projects.save(conn, media_id, project_id, found)
+    return project_id
