@@ -103,8 +103,7 @@
           <span class="jobs-button__count" id="jobs-count" {% if not job_overview.active %}hidden{% endif %}>{{ job_overview.active }}</span>
         </button>
         {# A page that has its own return target (e.g. settings) passes `next`; keep it. #}
-        {% set back = next if next is defined else request.url.path %}
-        <a class="icon-button" href="/settings/general?next={{ back | urlencode }}" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</a>
+        <a class="icon-button" href="/settings/general?next={{ (next if next is defined else request.url.path) | urlencode }}" aria-label="Settings" title="Settings">{{ icon("cog-6-tooth") }}</a>
       </div>
      </div>
     </header>
