@@ -12,7 +12,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_valida
 from app import annotators, db, imports, jobs, media, projects, runs, segment
 from app.filters import WHERE, Filter, FilterError, ObjectCondition, Range
 from app.formatting import plural
-from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, Started, ToDownload
+from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, NoImages, Started, ToDownload
 from app.templating import query, templates
 
 router = APIRouter()
@@ -237,7 +237,8 @@ class ProjectListed(Answer):
 class ImageListed(Answer):
     media_id: int = Field(description="The image's id: GET /api/images/{media_id}, the page /images/{media_id}.")
     filename: str = Field(description="Its file name.")
-    objects: dict[str, int] = Field(description="How many objects of each class it has (by class name).")
+    class_counts: dict[str, int] = Field(description="How many objects of each class it has, by class name "
+                                         "(the objects themselves are its annotations).")
     width: int | None = Field(None, description="In pixels (with ?annotations=1).")
     height: int | None = Field(None, description="In pixels (with ?annotations=1).")
     annotations: list[AnnotationOut] | None = Field(None, description="Its objects with their shapes (with ?annotations=1).")
@@ -722,6 +723,10 @@ def api_change(project_id: int, change: ProjectChange, conn: DB) -> dict:
         return changed | {"dry_run": change.dry_run, "did": _change_done(conn, change, changed)}
 
 
+# How a preview says it is one, and how to do it.
+PREVIEW = " (a preview: nothing has changed yet; the same call with dry_run false does it)"
+
+
 def _change_done(conn: sqlite3.Connection, change: ProjectChange, changed: dict) -> str:
     """What a change did, or would (a preview): "Deleted 44 objects on 5 images"."""
     images, objects = plural(changed["images"], "image"), plural(changed.get("objects") or 0, "object")
@@ -732,15 +737,17 @@ def _change_done(conn: sqlite3.Connection, change: ProjectChange, changed: dict)
                         "remove_images": ("remove", "Removed", images),
                         "copy_images": ("copy", "Copied", images + to),
                         "move_images": ("move", "Moved", images + to)}[change.action]
-    return f"Would {would} {what} (a preview: dry_run false changes it)" if change.dry_run else f"{did} {what}"
+    return f"Would {would} {what}{PREVIEW}" if change.dry_run else f"{did} {what}"
 
 
 class StoredImage(Answer):
     media_id: int = Field(description="The image's id: GET /api/images/{media_id}.")
     project_id: int = Field(description="The project it's in.")
-    name: str = Field(description="Its file name.")
+    filename: str = Field(description="Its file name.")
     width: int = Field(description="In pixels.")
     height: int = Field(description="In pixels.")
+    class_counts: dict[str, int] = Field(description="How many objects of each class it has, by class name "
+                                         "(GET /api/images/{media_id} has the objects themselves).")
 
 
 class ImagesOut(Answer):
@@ -751,9 +758,11 @@ class ImagesOut(Answer):
 @router.get("/api/images", response_model=ImagesOut)
 def api_images(images: Annotated[Images, Query()], conn: DB) -> dict:
     """Images named one way (an image set, e.g. ?where=tomato: those of every project with a tomato):
-    how many, and the first of them, each with its id (what an image's operations take), project and name."""
+    how many, and the first of them, each with its id (what an image's operations take), project and file name."""
     try:
         ids = images.ids(conn)
+    except NoImages:
+        return {"count": 0, "images": []}
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from None
     return {"count": len(ids), "images": [{field: image[field] for field in StoredImage.model_fields}
@@ -774,10 +783,12 @@ def api_search(conn: DB, q: Annotated[str, Query(min_length=1, description="Part
 
 
 @router.get("/api/projects", response_model=list[ProjectListed], response_model_exclude_unset=True)
-def api_project_list(conn: DB) -> list[dict]:
+def api_project_list(conn: DB, limit: Annotated[int | None, Query(
+        ge=1, description="Only this many (the most recently changed first); all if not given.")] = None,
+                     offset: Annotated[int, Query(ge=0, description="Skip this many first: ?limit=50&offset=50 is the next 50.")] = 0) -> list[dict]:
     """Every project, most recently changed first: id, name, type, how many images, how many of them
     labelled and how many classes."""
-    return [{k: p[k] for k in ProjectListed.model_fields} for p in projects.list_all(conn)]
+    return [{k: p[k] for k in ProjectListed.model_fields} for p in projects.list_all(conn, limit, offset)]
 
 
 @router.post("/api/projects", status_code=201, response_model=ProjectCreated)
@@ -801,7 +812,7 @@ def api_create_project(new: NewProject, conn: DB) -> dict:
 
 # What an image in the project's answer has: enough to know it and what's in it; with ?annotations=1
 # also its objects themselves (and its size, which their coordinates are in).
-LISTED = ("media_id", "filename", "objects")
+LISTED = ("media_id", "filename", "class_counts")
 WITH_SHAPES = ("width", "height", "annotations", "matches")
 
 
@@ -1132,7 +1143,7 @@ class Relabelled(Done):
 
 def _said(done: dict, dry_run: bool, would: str, did: str) -> dict:
     """A rename or clear's answer: what it changed, or (a preview) would."""
-    return done | {"dry_run": dry_run, "did": f"Would {would} (a preview: dry_run false changes it)" if dry_run else did}
+    return done | {"dry_run": dry_run, "did": f"Would {would}{PREVIEW}" if dry_run else did}
 
 
 @router.post("/api/projects/{project_id}/classes/rename", response_model=Relabelled)

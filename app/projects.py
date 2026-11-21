@@ -11,14 +11,13 @@ never becomes two.
 import json
 import math
 import sqlite3
-from collections import Counter
 from typing import Annotated, Literal
 
 from PIL import ImageColor
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app import db, jobs, media
-from app.filters import Filter, FilterError, ObjectCondition
+from app.filters import Filter, FilterError, ObjectCondition, quote
 
 # What a project is for. It suggests (an annotator: annotators.SUGGESTED; later what to train), it
 # doesn't restrict: every project may hold every shape. Optional; classification comes later.
@@ -153,7 +152,7 @@ def get(conn: sqlite3.Connection, project_id: int) -> dict | None:
     return _project(row) if row else None
 
 
-def list_all(conn: sqlite3.Connection) -> list[dict]:
+def list_all(conn: sqlite3.Connection, limit: int | None = None, offset: int = 0) -> list[dict]:
     """Every project, most recently changed first, with its image count, how many of its images
     are labelled (have an annotation), how many classes it has and the thumbnails of its first few
     images for its card."""
@@ -163,8 +162,8 @@ def list_all(conn: sqlite3.Connection) -> list[dict]:
                   (SELECT json_group_array(sha256) FROM (
                       SELECT sha256 FROM media AS first WHERE first.project_id = project.id ORDER BY first.id LIMIT ?)) AS covers
            FROM project LEFT JOIN media ON media.project_id = project.id
-           GROUP BY project.id ORDER BY project.updated_at DESC""",
-        (COVER_SIZE,),
+           GROUP BY project.id ORDER BY project.updated_at DESC, project.id DESC LIMIT ? OFFSET ?""",
+        (COVER_SIZE, -1 if limit is None else limit, offset),
     ).fetchall()
     listed = []
     for row in rows:
@@ -307,14 +306,14 @@ _IMAGE_SELECT = """SELECT media.id, media.project_id, media.name, media.split, m
 
 
 def _image(row: sqlite3.Row, matched: set[int] | None = None) -> dict:
-    """An image (or video) row for templates and the API: its objects per class, its annotations,
+    """An image (or video) row for templates and the API: its objects per class (class_counts), its annotations,
     a video's facts (`video`: duration, frame_count, fps, sample_fps; None for an image), and,
     when the filter asks for objects, `matches`: the positions in that list of the objects it found."""
     annotations = json.loads(row["annotations"])
     video = {k: row[k] for k in ("duration", "frame_count", "fps", "sample_fps")} if row["type"].startswith("video/") else None
     image = {"media_id": row["id"], "project_id": row["project_id"], "filename": row["name"], "split": row["split"],
              "type": row["type"], "video": video, "width": row["width"], "height": row["height"],
-             "objects": dict(Counter(a["class"] for a in annotations)),
+             "class_counts": media.class_counts(annotations),
              "annotations": annotations,
              "url": media.url(row["sha256"], row["ext"]),
              "thumb_url": media.thumb_url(row["sha256"])}
@@ -492,6 +491,10 @@ def stats(conn: sqlite3.Connection, project_id: int, field: str, filter: Filter 
         rows = conn.execute(f"SELECT a.class, count(*) {objects} GROUP BY a.class ORDER BY 2 DESC", params)
         return {"field": field, "counts": [{"class": name, "objects": n} for name, n in rows]}
     if field not in STAT_FIELDS:
+        if field.casefold() in {c["name"].casefold() for c in stored_classes(conn, project_id)}:
+            raise FilterError(f"“{field}” is a class, not a statistic: GET /api/images?project_id={project_id}"
+                              f"&where={quote(field)} says how many images have one; field=class counts the "
+                              "objects of each class")
         raise FilterError(f"There are no statistics for “{field}”; try one of {', '.join(STAT_FIELDS)}")
     column = f"a.{field}"
     low, high, total = conn.execute(f"SELECT min({column}), max({column}), count({column}) {objects}", params).fetchone()
@@ -687,9 +690,12 @@ def _rewrite(conn: sqlite3.Connection, project_id: int, filter: Filter, media_id
     """Delete the objects the filter names (class_name None), or give them class_name: those images'
     and objects' counts, and the first images."""
     matches = _matches(conn, filter, media_ids)
+    known = stored_classes(conn, project_id)
     if matches is None:
-        raise ValueError("Say which objects, in brackets: e.g. (car w:<10)")
-    changed, objects, known = [], 0, stored_classes(conn, project_id)
+        name = quote(known[0]["name"]) if known else "car"
+        raise ValueError(f"Say which objects in where, in brackets: ({name}) for every {name}, ({name} w:<80) for "
+                         f"the narrow ones, (w:<80) for those of any class")
+    changed, objects = [], 0
     for media_id, found in matches.items():
         stored = json.loads(_media_row(conn, media_id)["annotations"])
         if class_name is not None:  # already that class: as it is
@@ -810,8 +816,10 @@ def set_classes(conn: sqlite3.Connection, project_id: int, listed: list[ClassCha
                      "color": c.color or (old["color"] if old else None)})
     use = class_use(conn, project_id)
     if used := [current[n]["name"] for n in current if n not in seen and n in use]:
-        raise ValueError(f"Images have {used[0]} ({use[used[0].casefold()]['annotations']} annotations): clear them "
-                         "first to remove it, or hide it")
+        name = used[0]
+        raise ValueError(f"Images have {name} ({use[name.casefold()]['annotations']} annotations): clear them first "
+                         f"to remove it, or hide it: POST /api/projects/{project_id}/classes/clear "
+                         f"{json.dumps({'name': name, 'dry_run': False})} deletes them")
     return _keep(conn, project_id, keep)
 
 

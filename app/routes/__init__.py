@@ -4,13 +4,13 @@ import json
 import random
 import sqlite3
 from collections.abc import Iterator
-from typing import get_args
+from typing import Annotated, get_args
 
 from fastapi import HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 
 from app import media
 from app.filters import WHERE, Filter
@@ -60,8 +60,8 @@ def fields_at(annotation, loc: tuple) -> list[str]:
     model = _model(annotation)
     for part in loc:
         if isinstance(part, str):
-            model = _model(model.model_fields[part].annotation)
-    return list(model.model_fields)
+            model = _model(next(f for name, f in model.model_fields.items() if part in (name, f.alias)).annotation)
+    return [f.alias or name for name, f in model.model_fields.items()]  # as JSON writes them: class, not class_
 
 
 def _model(annotation) -> type[BaseModel]:
@@ -78,10 +78,15 @@ async def refused(request: Request, exc: RequestValidationError) -> JSONResponse
     body = getattr(request.scope.get("route"), "body_field", None)
     errors = []
     for error in exc.errors():
-        if error["type"] == "extra_forbidden" and error["loc"][:1] == ("body",) and body is not None:
+        said = None
+        if body is not None and error["type"] == "missing" and error["loc"] == ("body",):
+            said, loc = "a JSON body is needed", ()
+        elif body is not None and error["type"] == "extra_forbidden" and error["loc"][:1] == ("body",):
+            said, loc = "not a field here", error["loc"][1:-1]
+        if said:
             try:
-                error = error | {"msg": f"not a field here; it takes {', '.join(fields_at(body.field_info.annotation, error['loc'][1:-1]))}"}
-            except (KeyError, StopIteration):
+                error = error | {"msg": f"{said}; it takes {', '.join(fields_at(body.field_info.annotation, loc))}"}
+            except StopIteration:
                 pass
         errors.append(error)
     return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
@@ -164,12 +169,27 @@ IMAGES = ("Which images: {\"project_id\": 3, \"where\": \"night\", \"count\": 10
           "some at random), {\"where\": \"tomato\"} (every project's matching it) or {\"media_ids\": [...]}.")
 
 
+def _comma_list(value):
+    """A list in a query, written either way: ?ids=1,2 or ?ids=1&ids=2 (a JSON list passes as it is)."""
+    if isinstance(value, list):
+        return [part.strip() for item in value for part in (item.split(",") if isinstance(item, str) else [item])
+                if part != ""]
+    return value
+
+
+CommaList = BeforeValidator(_comma_list)
+
+
+class NoImages(ValueError):
+    """No images match: to read, that's the answer (0); to work on, there's nothing to do."""
+
+
 class Images(BaseModel):
     """Which images, one way: by id, or a project's (or every project's) matching a filter; any of
     them, some at random (count)."""
 
     model_config = ConfigDict(extra="forbid")
-    media_ids: list[int] | None = Field(None, description="By id.")
+    media_ids: Annotated[list[int] | None, CommaList] = Field(None, description="By id (in a query: ?media_ids=1,2).")
     project_id: int | None = Field(None, description="A project's images (with where); without one, where looks in every project.")
     where: str | None = Field(None, max_length=2000, description=WHERE)
     count: int | None = Field(None, ge=1, description="That many of them, picked at random; empty for all.")
@@ -192,7 +212,7 @@ class Images(BaseModel):
             if self.project_id is not None and conn.execute("SELECT 1 FROM project WHERE id = ?", (self.project_id,)).fetchone() is None:
                 raise ValueError(f"There is no project {self.project_id}")
             if not (ids := sample(conn, Filter.parse(self.where or ""), self.project_id)):
-                raise ValueError("No images match that filter")
+                raise NoImages("No images match that filter")
         if self.count is not None and self.count < len(ids):
             ids = sorted(random.sample(ids, self.count))
         return ids

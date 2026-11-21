@@ -15,6 +15,7 @@ import secrets
 import shutil
 import sqlite3
 import threading
+from collections import Counter
 from contextlib import nullcontext
 from functools import lru_cache
 from pathlib import Path
@@ -234,14 +235,21 @@ def forget(sha256: str, ext: str) -> None:
     shutil.rmtree(path(sha256, "frames"), ignore_errors=True)
 
 
+def class_counts(annotations: list[dict]) -> dict[str, int]:
+    """How many objects of each class annotations have."""
+    return dict(Counter(a["class"] for a in annotations))
+
+
 def listed(conn: sqlite3.Connection, media_ids: list[int]) -> list[dict]:
-    """These images, in the order given (those that exist): media_id, project_id, name, width,
-    height and thumbnail."""
+    """These images, in the order given (those that exist): media_id, project_id, filename, width,
+    height, thumbnail and class_counts (how many objects of each class)."""
     rows = {r["id"]: r for r in conn.execute(
-        "SELECT id, project_id, sha256, width, height, name FROM media WHERE id IN (SELECT value FROM json_each(?))",
+        "SELECT id, project_id, sha256, width, height, name, annotations FROM media WHERE id IN (SELECT value FROM json_each(?))",
         (json.dumps(media_ids),))}
-    return [{"media_id": m, "project_id": rows[m]["project_id"], "name": rows[m]["name"], "width": rows[m]["width"],
-             "height": rows[m]["height"], "thumb_url": thumb_url(rows[m]["sha256"])} for m in media_ids if m in rows]
+    return [{"media_id": m, "project_id": rows[m]["project_id"], "filename": rows[m]["name"], "width": rows[m]["width"],
+             "height": rows[m]["height"], "thumb_url": thumb_url(rows[m]["sha256"]),
+             "class_counts": class_counts(json.loads(rows[m]["annotations"]))}
+            for m in media_ids if m in rows]
 
 
 def thumbnail(file: Path) -> bytes:

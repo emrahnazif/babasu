@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app import db, runs
 from app.formatting import plural
 from app.projects import ClassName as ProjectClass
-from app.routes import IMAGES, READS, Answer, Done, Images, Started, started
+from app.routes import IMAGES, READS, Answer, CommaList, Done, Images, Started, started
 
 router = APIRouter(prefix="/api")
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
@@ -83,7 +83,8 @@ class NodeOut(Answer):
 
 
 @router.get("/workflows/nodes", response_model=list[NodeOut], response_model_exclude_unset=True)
-def api_nodes(names: Annotated[list[str] | None, Query(description="Nodes to show in full: inputs, outputs, parameters.")] = None) -> list[dict]:
+def api_nodes(names: Annotated[list[str] | None, CommaList, Query(
+        description="Nodes to show in full (inputs, outputs, parameters): ?names=crop,resize or ?names=crop&names=resize.")] = None) -> list[dict]:
     """What workflows are built from: every node's name, category and what it does (?names= those
     in full). A run keeps what reaches its save nodes (save_to_babasu: the image's annotations;
     save_image_to_babasu: a new image; save_video_to_babasu: a video's frames as a new video); read_media is

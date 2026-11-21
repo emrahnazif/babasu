@@ -15,7 +15,7 @@ from fastapi.responses import (
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app import agent, db, projects
-from app.routes import UI_ONLY, safe_next
+from app.routes import UI_ONLY, CommaList, safe_next
 from app.templating import dropped_images, page_name, templates
 
 router = APIRouter(tags=[UI_ONLY])
@@ -56,7 +56,7 @@ def send_message(message: NewMessage) -> StreamingResponse:
 
 
 @router.get("/agent/images", response_class=HTMLResponse)
-def step_images(request: Request, conn: DB, media_ids: Annotated[list[int], Query()]):
+def step_images(request: Request, conn: DB, media_ids: Annotated[list[int], CommaList, Query()]):
     """The images a step of the agent found, drawn with their objects (partials/chat-images.html);
     fetched by chat.js when the step ends."""
     return templates.TemplateResponse(request, "partials/chat-images.html", {"shown": projects.images(conn, media_ids)})
