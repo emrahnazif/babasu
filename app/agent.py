@@ -23,7 +23,7 @@ import openai
 
 from app import agent_tools, code, config, db, imports, jobs, settings
 
-MAX_ROUNDS = 20  # model calls per turn; each round may run tools (work of several steps takes many)
+MAX_ROUNDS = 50  # model calls per turn; each round may run tools (building, trying and fixing a workflow takes many; the person can stop it any time)
 # Tokens one model call may write, its thinking included: a reply, a script or a workflow fits many
 # times over. Without it a server writes until the context is full (Ollama: 131,072 tokens), so a
 # model caught repeating itself keeps the GPU busy for half an hour; this cuts it off (finish_reason
@@ -42,6 +42,7 @@ about their projects, images and what's in them, with no tool names, API paths o
 How you work:
 - Look first. Each message comes with the page it was written on and what's on it, and the project made from the \
 images dropped with it ("this project", "these images" are that page's, or those dropped).
+- Which call does what (finding projects and images by name, reading and changing them, workflows): read_docs api.
 - With no project or images in view (no page of one, nothing dropped), asked what's in images ("which have", "how many"): \
 first see what's annotated in every project (GET /api/images?where=CLASS) before running a model. A project in view \
 is the one to work on.
@@ -584,6 +585,7 @@ def run_turn(
         yield {"type": "agent", "agent": agent.name, "model": model.name}
 
         with client(model) as model_client:
+            asked_again = False  # after an empty reply, once a turn
             for _ in range(MAX_ROUNDS):
                 reply_id = conn.execute(
                     "INSERT INTO message (conversation_id, role, status, agent, model) VALUES (?, 'assistant', 'streaming', ?, ?)",
@@ -648,7 +650,13 @@ def run_turn(
                     yield {"type": "error", "message": message}
                     return
                 tool_calls = list(calls.values())
-                if not tool_calls and not text_parts:  # e.g. a model that put its tool call in its thinking and stopped
+                if not tool_calls and not text_parts:
+                    if not asked_again:  # often a one-off: ask once more
+                        asked_again = True
+                        with conn:
+                            conn.execute("DELETE FROM message WHERE id = ?", (reply_id,))
+                        continue
+                    # again: e.g. a model that put its tool call in its thinking
                     message = f"{model.name} answered nothing (no text, no tool call). Send it again, or try another model."
                     finish("error", message)
                     yield {"type": "error", "message": message}

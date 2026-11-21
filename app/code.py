@@ -68,16 +68,17 @@ class Api:
     def delete(self, path: str):
         return self._call("DELETE", path)
 
-    def images(self, project_id: int, where: str = ""):
-        """A project's images (those matching the filter `where`), each with its objects, read a
-        page at a time. Don't change what a filter matches while going through it: the pages move."""
-        page, pages = 1, 1
+    def images(self, project_id: int, where: str = "") -> list[dict]:
+        """A project's images (those matching the filter `where`), each with its objects: a list, all
+        read before it's returned, so changing them while going through it is safe."""
+        found, page, pages = [], 1, 1
         while page <= pages:
             data = self.get(f"/api/projects/{project_id}?"  # 100 a page, the most the API gives
                             + urlencode({"page": page, "where": where, "images": 100, "annotations": 1}))
             pages = data["pages"]
-            yield from data["images"]
+            found += data["images"]
             page += 1
+        return found
 
 
 class _Printed(io.TextIOBase):
@@ -106,12 +107,12 @@ class _Printed(io.TextIOBase):
 IDLE = 30 * 60  # seconds a conversation's process waits for its next run, then ends (freeing what it holds)
 
 
-def _child(pipe, folder: str) -> None:
+def _child(pipe, folder: str, tools: frozenset[str]) -> None:
     """In the child: work in the conversation's folder (its files open by relative paths), and run
     each piece of code the app sends all in one namespace, so
     what one run leaves in variables and functions the next can use. Sends what's printed as it's
     printed, then ("done", error): None, or the error with the line it was on (its file, number
-    and text). Ends after IDLE seconds without a run."""
+    and text; `tools`: the agent's tool names, to say they aren't in code). Ends after IDLE seconds without a run."""
     os.chdir(folder)
     printed = _Printed(pipe)
     shown = -1  # the last percentage sent in this run: a loop of any length sends at most ~100
@@ -126,7 +127,10 @@ def _child(pipe, folder: str) -> None:
 
     names = {"api": Api(pipe), "Refused": Refused, "progress": progress, "__name__": "__main__"}
     while pipe.poll(IDLE):
-        code = pipe.recv()
+        try:
+            code = pipe.recv()
+        except EOFError:  # the app ended (closed, or crashed): so does this
+            return
         name, shown, error = "<code>", -1, None
         try:
             with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(printed):  # warnings too
@@ -138,9 +142,19 @@ def _child(pipe, folder: str) -> None:
             where = ""
             if lines:
                 where = f"line {lines[-1]} ({code.splitlines()[lines[-1] - 1].strip()}): "
-            error = where + "".join(traceback.format_exception_only(e)).strip()
+            error = where + "".join(traceback.format_exception_only(e)).strip() + _hint(e, tools)
         printed.flush()
         pipe.send(("done", error))
+
+
+def _hint(e: Exception, tools: frozenset[str]) -> str:
+    """How to correct what code written as if it were elsewhere gets wrong: importing `api`, calling a tool."""
+    if isinstance(e, ModuleNotFoundError) and e.name == "api":
+        return ". `api` is there already, without an import: api.images(project_id), api.get(path)…"
+    if isinstance(e, NameError) and e.name in tools:
+        return (f". The tools aren't in code: api.get(path) reads, api.post, put, patch and delete write; "
+                f"call {e.name} itself outside the code")
+    return ""
 
 
 class Session:
@@ -148,10 +162,10 @@ class Session:
     variables last from one run to the next. A run that times out or crashes ends it, and it ends
     itself after IDLE seconds without a run."""
 
-    def __init__(self, folder: Path) -> None:
+    def __init__(self, folder: Path, tools: frozenset[str]) -> None:
         context = multiprocessing.get_context("spawn")
         self._pipe, there = context.Pipe()
-        self._process = context.Process(target=_child, args=(there, str(folder)), daemon=True)
+        self._process = context.Process(target=_child, args=(there, str(folder), tools), daemon=True)
         self._process.start()
         there.close()  # the child's end is the child's: once it ends, reading here sees that at once
         self.used = time.monotonic()
@@ -231,9 +245,9 @@ _sessions: dict[Path, Session] = {}  # by the conversation's folder
 _lock = threading.Lock()
 
 
-def session(folder: Path) -> Session:
+def session(folder: Path, tools: frozenset[str]) -> Session:
     """The code process working in a conversation's folder, started if it has none or its last
-    one ended."""
+    one ended; `tools`, the agent's tool names (code calling one is told how to correct it)."""
     with _lock:
         for other, found in list(_sessions.items()):
             if not found.alive:
@@ -242,7 +256,7 @@ def session(folder: Path) -> Session:
         if folder not in _sessions:
             if len(_sessions) >= SESSIONS and (idle := [k for k, s in _sessions.items() if not s.running]):
                 _sessions.pop(min(idle, key=lambda k: _sessions[k].used)).close()  # one running in another chat goes on
-            _sessions[folder] = Session(folder)
+            _sessions[folder] = Session(folder, tools)
         _sessions[folder].used = time.monotonic()  # the most recently used now, before its run starts
         return _sessions[folder]
 

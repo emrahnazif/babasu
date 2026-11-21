@@ -17,6 +17,7 @@ always true), with the images it found. An earlier turn's result reaches the mod
 """
 
 import html
+import importlib.resources
 import inspect
 import json
 import re
@@ -38,7 +39,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from app import code as code_mode  # `code` is run_code's argument
 from app import config, jobs, media, projects
-from app.formatting import number, plural
+from app.formatting import plural
 from app.routes import IMAGES, UI_ONLY, fields_at
 
 
@@ -331,8 +332,8 @@ ANSWER_SIZE = 8_000  # characters of an answer the agent reads; a longer one is 
 
 def _answer(method: str, path: str, body=None) -> object:
     """An answer of the API for the agent: whole, or refused when it's too long to read, saying
-    the operation's own ways to ask for less (a cut answer reads as a wrong one). A list comes with
-    how many it has: a model reads a number better than it counts one."""
+    the operation's own ways to ask for less (a cut answer reads as a wrong one). As code gets it
+    (api.get), so what the agent learns reading holds in its code."""
     path = _api_path(path)
     response = _request(method, path, body)
     if not response.content:
@@ -345,7 +346,7 @@ def _answer(method: str, path: str, body=None) -> object:
         less = f"Ask for less ({', '.join(asks)}), or go through it in code (run_code)." if asks else \
             "It can't be asked for in parts: go through it in code (run_code)."
         raise ToolError(f"That answer is {len(response.text):,} characters, too long to read here ({shape}). {less}")
-    return {"count": len(answer), "items": answer} if isinstance(answer, list) else answer
+    return answer
 
 
 SHOWN = 4  # images a step draws at most
@@ -370,10 +371,10 @@ class ReadArgs(Args):
 
 
 def _read_note(args: ReadArgs, answer) -> str:
+    if isinstance(answer, list):
+        return f"{len(answer)} found"
     if not isinstance(answer, dict):
         return ""
-    if "items" in answer:
-        return f"{answer['count']} found"
     if "image_count" in answer and "match_count" in answer:  # a project's images (an image's own answer has its place)
         return f"{answer['match_count']:,} of {plural(answer['image_count'], 'image')}"
     return ", ".join(f"{len(found)} {name}" for name, found in answer.items() if isinstance(found, list) and found)
@@ -453,11 +454,12 @@ def _request(method: str, path: str, body=None):
     action). Raises ToolError: an unknown operation, a method the path doesn't take, the API's refusal."""
     path = _api_path(path)
     target = path.split("?")[0]
-    methods = [o["operation"].split(" ")[0] for o in _operations_at(path)]
+    operations_here = _operations_at(path)
+    methods = [o["operation"].split(" ")[0] for o in operations_here]
     if not methods:
         raise ToolError(f"There's no operation at {target}; find_api finds them.")
-    if method not in methods:
-        raise ToolError(f"{target} takes {', '.join(methods)}, not {method}.")
+    if method not in methods:  # what it does take, in full, so the next call can be right
+        raise ToolError(f"{target} takes {', '.join(methods)}, not {method}:\n{json.dumps(operations_here, ensure_ascii=False)}")
     response = _client.request(method, path, json=body)
     if response.status_code >= 400:
         raise ToolError(_refusal(response))
@@ -490,7 +492,7 @@ def folder() -> Path:
 
 class CodeArgs(Args):
     code: str = Field(description="Python to run. `api` is the app's API (api.get, post, put, patch, "
-                             "delete; api.images(project_id, where) goes through a project's images with their "
+                             "delete; api.images(project_id, where) is a list of a project's images with their "
                              "objects). print() what you need, and the counts that check it.")
     seconds: int = Field(code_mode.TIMEOUT, ge=1, le=600, description="How long it may take at most, in seconds.")
 
@@ -510,7 +512,7 @@ def _last_line(text: str) -> str:
     note=lambda args, ran: _last_line(ran["output"]),
 )
 def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
-    result = yield from code_mode.session(folder()).run(args.code, _for_code, _turn.get().stop, args.seconds)
+    result = yield from code_mode.session(folder(), frozenset(TOOLS)).run(args.code, _for_code, _turn.get().stop, args.seconds)
     if result["error"]:
         raise ToolError(result["error"] + (f"\nPrinted before it:\n{result['output']}" if result["output"] else ""))
     return {"output": result["output"]}
@@ -592,16 +594,16 @@ class FindArgs(Args):
 def _found_note(found: dict) -> str:
     """What a find found, in a few words: "Found person 23, car 2 on 9 images"."""
     if found["status"] in jobs.ACTIVE:
-        return f"Still running on {plural(found['images'], 'image')} (job {found['job_id']})"
+        return f"Still running on {plural(found['looked_at_images'], 'image')} (job {found['job_id']})"
     if found["status"] != "succeeded":
         return f"The run {found['status']}" + (f": {found['error']}" if found.get("error") else "")
-    counted = ", ".join(f"{name} {number(n)}" for name, n in found["found"].items()) or "nothing"
-    return f"Found {counted} on {plural(found['images'], 'image')}"
+    counted = ", ".join(plural(n, f"{name} object") for name, n in found["objects_found"].items()) or "nothing"
+    return f"Found {counted}, looking at {plural(found['looked_at_images'], 'image')}"
 
 
 @tool("Find things in images with a model: run a workflow over them (the default finds and outlines the classes "
       "named) and wait for it. What it finds is kept as the images' annotations, in their projects; it answers how "
-      "many of each class and the projects' pages to link. Before running a model, see whether the images are "
+      "many objects of each class it found, how many images it looked at, and the projects' pages to link. Before running a model, see whether the images are "
       "annotated already (GET /api/images?where=CLASS). A run not done in a minute goes on: wait for its job.",
       FindArgs, label="Finding objects", note=lambda args, found: found["did"])
 def find(conn: sqlite3.Connection, args: FindArgs) -> Iterator[dict]:
@@ -612,8 +614,8 @@ def find(conn: sqlite3.Connection, args: FindArgs) -> Iterator[dict]:
     pages = [f"/projects/{p}" + (f"?{urlencode(where)}" if where else "") for p in dict.fromkeys(
         r[0] for r in conn.execute("SELECT project_id FROM media WHERE id IN (SELECT value FROM json_each(?))",
                                    (json.dumps(job["params"]["media_ids"]),)))]
-    found = {"job_id": started["job_id"], "status": job["status"], "images": started["images"],
-             "found": (job["result"] or {}).get("found", {}), "pages": pages, "error": job["error"]}
+    found = {"job_id": started["job_id"], "status": job["status"], "looked_at_images": started["images"],
+             "objects_found": (job["result"] or {}).get("found", {}), "pages": pages, "error": job["error"]}
     return found | {"did": _found_note(found)}
 
 
@@ -665,11 +667,18 @@ def look(conn: sqlite3.Connection, args: LookArgs) -> Seen:
 
 
 def _docs() -> dict[str, str]:
-    """The docs, by topic (the file's name): its text, starting with its title."""
-    return {path.stem: path.read_text() for path in sorted(config.DOCS_DIR.glob("*.md"))}
+    """The docs, by topic: the app's by file name, and the docs pixelflow ships (run_code has it) as
+    "pixelflow" (its index, llms.txt) and "pixelflow/PATH" (a page, by its path in the index)."""
+    docs = {path.stem: path.read_text() for path in sorted(config.DOCS_DIR.glob("*.md"))}
+    library = Path(str(importlib.resources.files("pixelflow") / "docs"))  # its package data
+    docs["pixelflow"] = (library / "llms.txt").read_text()
+    docs |= {f"pixelflow/{path.relative_to(library).with_suffix('').as_posix()}": path.read_text()
+             for path in sorted(library.rglob("*.md"))}
+    return docs
 
 
 DOCS = _docs()
+TOPICS = [topic for topic in DOCS if "/" not in topic]  # the pages of a library are listed in its index
 
 
 class DocsArgs(Args):
@@ -677,14 +686,49 @@ class DocsArgs(Args):
 
 
 @tool(
-    "How the app works, and how to do something in it, on a topic: " + ", ".join(DOCS) + ". Read it when "
-    "you're unsure what something is or how it's done, or before explaining it.",
+    "How the app works, and how to do something in it, on a topic: " + ", ".join(TOPICS) + ". Read it when "
+    "you're unsure what something is or how it's done, or before explaining it. pixelflow (for run_code) lists "
+    "its pages; read one as pixelflow/PATH, e.g. pixelflow/core-concepts/detections.",
     DocsArgs,
     label="Reading the docs",
     note=lambda args, doc: doc.partition("\n")[0].removeprefix("# "),
 )
 def read_docs(conn: sqlite3.Connection, args: DocsArgs) -> str:
-    topic = args.topic.strip().lower().removesuffix(".md")
-    if topic not in DOCS:
-        raise ToolError(f"There is no topic {args.topic!r}; the topics: {', '.join(DOCS)}.")
-    return DOCS[topic]
+    topic = args.topic.strip().lower().removesuffix(".md").removeprefix("/").removeprefix("docs/")
+    if "/" in topic and f"pixelflow/{topic}" in DOCS:  # a link in a pixelflow page: /docs/tracking/zones.md
+        topic = f"pixelflow/{topic}"
+    if topic in DOCS:
+        return DOCS[topic]
+    if topic.startswith("pixelflow/"):
+        raise ToolError(f"pixelflow has no page {args.topic!r}; read_docs pixelflow lists them.")
+    found = _sections_about(topic)
+    if not found:
+        raise ToolError(f"There is no topic {args.topic!r}, and the docs don't mention it; the topics: {', '.join(TOPICS)}.")
+    return (f"There is no topic {args.topic!r}; what the docs say about it (the topics: {', '.join(TOPICS)}):\n\n"
+            + "\n\n".join(f"From {name}:\n{text}" for name, text in found))
+
+
+def _words(text: str) -> set[str]:
+    """Words to match, by their first five letters: classes is class, renaming is rename."""
+    return {w[:5] for w in re.findall(r"[a-z]{3,}", text.lower())}
+
+
+@cache
+def _sections() -> list[tuple[str, str, set[str], set[str]]]:
+    """The app's docs cut at their ## headings: topic, text, its heading's words, its words."""
+    found = []
+    for name in TOPICS:
+        if name != "pixelflow":
+            for part in re.split(r"\n(?=## )", DOCS[name]):
+                heading = part.partition("\n")[0]
+                found.append((name, part.strip(), _words(heading), _words(part)))
+    return found
+
+
+def _sections_about(query: str, most: int = 2) -> list[tuple[str, str]]:
+    """The docs' sections that match the words of `query` best (a word in the heading counts more)."""
+    wanted = _words(query)
+    scored = [(sum(3 * (w in heading) + (w in words) for w in wanted), name, text)
+              for name, text, heading, words in _sections()]
+    scored = sorted((s for s in scored if s[0]), key=lambda s: -s[0])
+    return [(name, text) for _, name, text in scored[:most]]

@@ -5,12 +5,12 @@ Use run_code for what the API doesn't do in one call: going through many images,
 
 ## The client
 - `api.get(path)`, `api.post(path, body)`, `api.put(path, body)`, `api.patch(path, body)`, `api.delete(path)`: any /api operation (find_api finds one and what it takes). Each returns the JSON answer; a write's says what it did (`did`). find_api shows what an operation takes and the fields of its answer, so look there before writing code that reads one.
-- `api.images(project_id, where="")`: a project's images (those matching a filter), each with its objects, a page at a time.
+- `api.images(project_id, where="")`: a project's images (those matching a filter), each with its objects, as a list.
 - A refusal raises `Refused` with the API's reason: catch it to go on with the others, or let it stop the code.
 - `print()` what you need to see and what you'll report: the output comes back to you (8,000 characters at most).
 - The code's changes are part of your turn: undoing the turn (History) undoes them.
 - Work through the API only: no database, no files of the workspace.
-- pixelflow and numpy are there. A run stops after 60 seconds unless you give more (`seconds`, up to 600).
+- pixelflow and numpy are there (read_docs pixelflow: its docs). A run stops after 60 seconds unless you give more (`seconds`, up to 600).
 - `progress(done, total)` shows a bar in the chat while a long loop runs; what you print shows there as it's printed.
 
 ## Your folder
@@ -28,9 +28,9 @@ Your runs in a chat share one Python process, so what a run leaves in variables 
 A run that's stopped (time) or crashes ends the process, and so do 30 minutes without a run: its variables are gone; read the files again and go on.
 
 ## A project's images
-`api.images(project_id)` goes through them all; `api.images(project_id, "car")` through those matching a filter (read docs: filters). Don't go through a filter while changing what it matches: it reads a page at a time (`GET /api/projects/{id}?page=N`), and the pages move under you. Go through all of them instead and pick in the code.
+`api.images(project_id)` is a list of them all; `api.images(project_id, "car")` of those matching a filter (read docs: filters). It's read whole before it's returned, so changing the images while going through it is safe.
 
-An image from `api.images` has `media_id`, `filename`, `width`, `height`, `objects` (how many of each class) and `annotations`: objects with `class` (its name) and `bbox` [x, y, w, h] in pixels, `segments` (an outline) or `keypoints`, and `score` on a model's. Write an image's objects back with `PUT /api/images/{media_id}/annotations` and the whole list: leave out what goes, change what changes. A class name the project hasn't had becomes a class.
+An image from `api.images` has `media_id`, `filename`, `width`, `height`, `class_counts` (how many objects of each class) and `annotations`: the objects, each with `class` (its name) and `bbox` [x, y, w, h] in pixels, `segments` (an outline) or `keypoints`, and `score` on a model's. Write an image's objects back with `PUT /api/images/{media_id}/annotations` and the whole list: leave out what goes, change what changes. A class name the project hasn't had becomes a class.
 
 ## Delete one class's objects
 ```python
