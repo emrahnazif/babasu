@@ -16,6 +16,7 @@ import json
 import queue
 import sqlite3
 import threading
+import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import closing
 
@@ -65,8 +66,9 @@ class Busy(Exception):
 
 
 # Events that follow one of their kind (of the same tool call, for a call's) are merged into it:
-# text joined (by this key); progress replaced (only the latest counts).
-_MERGED = {"text": "delta", "call": "delta", "output": "text", "progress": None, "storing": None}
+# text joined (by this key), the first event's other fields kept; progress replaced (only the
+# latest counts).
+_MERGED = {"text": "delta", "reasoning": "delta", "call": "delta", "output": "text", "progress": None, "storing": None}
 
 
 class Turn:
@@ -86,8 +88,8 @@ class Turn:
             elif (event["type"] in _MERGED and self.events and self.events[-1]["type"] == event["type"]
                   and self.events[-1].get("id") == event.get("id")):
                 # Kept as one event, so a page that follows later replays it at once.
-                key = _MERGED[event["type"]]
-                self.events[-1] = event | ({key: self.events[-1][key] + event[key]} if key else {})
+                key, last = _MERGED[event["type"]], self.events[-1]
+                self.events[-1] = last | {key: last[key] + event[key]} if key else event
             else:
                 self.events.append(event)
             for loop, queue in self.followers:
@@ -267,7 +269,7 @@ def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bo
                 earlier AS (SELECT message.id, sum(length(content)) OVER (ORDER BY message.id DESC) AS newer
                             FROM message, turn WHERE conversation_id = :id AND role = 'tool' AND message.id < turn.this)
            SELECT id, role, tool_calls, tool_call_id, status, error, label, note, images, agent, model, page, page_title,
-                  about, tokens_in, tokens_out, length(picture) IS NOT NULL AS has_picture,  -- length() doesn't read it
+                  about, tokens_in, tokens_out, reasoning, thought, seconds, length(picture) IS NOT NULL AS has_picture,  -- length() doesn't read it
                   project_id, (SELECT count(*) FROM media WHERE media.project_id = message.project_id) AS attached,
                   CASE WHEN role = 'tool' AND NOT (:results AND (id > turn.this OR id IN
                       (SELECT id FROM earlier WHERE newer <= :earlier))) THEN '' ELSE content END AS content,
@@ -281,9 +283,11 @@ def _messages(conn: sqlite3.Connection, conversation_id: int | None, results: bo
 def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
     """The conversation as the chat shows it: the person's turns (each with its id, and the project
     the images they dropped with it made and how many it has), and each agent turn as one entry with
-    its parts in order (its text, and the tool calls that ran: each its label, note, status, the
-    images it found (media ids), and the picture it gave the model, its address), how it ended, and
-    the tokens its model read and wrote in all."""
+    its parts in order, how it ended, how long it took (seconds, to its last reply), and the tokens
+    its model read and wrote in all. A part is its
+    text, what its model thought (the text, and for how many seconds), or a tool call that ran: its
+    label, note, status, why it failed, the images it found (media ids) and the picture it gave the
+    model (its address)."""
     messages = _messages(conn, conversation_id)
     answers = {m["tool_call_id"]: m for m in messages if m["role"] == "tool"}
     result: list[dict] = []
@@ -294,19 +298,22 @@ def turns(conn: sqlite3.Connection, conversation_id: int | None) -> list[dict]:
         elif m["role"] == "assistant":
             if not result or result[-1]["role"] != "agent":
                 result.append({"role": "agent", "parts": [], "status": "done", "error": None, "agent": None, "model": None,
-                               "tokens_in": 0, "tokens_out": 0})
+                               "tokens_in": 0, "tokens_out": 0, "seconds": None})
             turn = result[-1]
+            if m["reasoning"]:
+                turn["parts"].append({"kind": "thinking", "text": m["reasoning"], "seconds": m["thought"]})
             if m["content"]:
                 turn["parts"].append({"kind": "text", "text": m["content"]})
             for answer in filter(None, (answers.get(call["id"]) for call in m["tool_calls"])):
                 turn["parts"].append({"kind": "tool", "label": answer["label"] or "", "note": answer["note"] or "",
-                                      "status": answer["status"],
+                                      "status": answer["status"], "error": answer["error"],
                                       "images": json.loads(answer["images"]) if answer["images"] else None,
                                       "picture": picture_url(answer["id"]) if answer["has_picture"] else None})
             turn["status"], turn["error"] = m["status"], m["error"]
             turn["agent"], turn["model"] = m["agent"] or turn["agent"], m["model"] or turn["model"]
             turn["tokens_in"] += m["tokens_in"] or 0
             turn["tokens_out"] += m["tokens_out"] or 0
+            turn["seconds"] = m["seconds"]
     return result
 
 
@@ -527,20 +534,40 @@ def run_turn(
                                                             it's not known)
       {"type": "attached", "message_id": 57}                they're stored: the message shows them
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers
+      {"type": "reasoning", "id", "since", "delta": "..."}  part of what the model thinks before it replies
+                                                            (since: when it began, Unix seconds)
+      {"type": "thought", "id", "seconds": 12.4}            it's done thinking: for that long
       {"type": "text", "delta": "..."}                      part of the reply
-      {"type": "tool", "id", "label", "status": "running" | "done" | "error", "note", "images", "picture"}
-      {"type": "call", "id", "name", "delta": "..."}        a tool call's arguments as the model writes them
+      {"type": "call", "id", "name", "label", "delta": "..."}   a tool call as the model writes it: from its
+                                                            first piece (with its name and label), then its
+                                                            arguments as they come (delta)
+      {"type": "tool", "id", "label", "status": "running" | "done" | "error", "note", "error", "images",
+                                                            "picture"}   the call running, then how it went
+                                                            (a failed one: why in error, no note)
       {"type": "output", "text": "..."}                     what the running tool prints (run_code)
       {"type": "progress", "done": 3, "total": 10}          how far the running tool is
       {"type": "usage", "tokens_in", "tokens_out"}          what a call of the model read and wrote
       {"type": "open", "url": "/projects/3?where=car"}      a page to show once the reply is done
       {"type": "changed"}                                   a tool changed what pages show: once the
                                                             reply is done, reload (unless one opens)
-      {"type": "done"}, {"type": "stopped"} or {"type": "error", "message": "..."}
+      {"type": "done", "seconds"}, {"type": "stopped", "seconds"} or {"type": "error", "message", "seconds"}
+                                                            how it ended, and how long the turn took
     Once `stop` is set, the turn ends at once (a tool running ends too) and saves the reply so far
     as stopped. What the turn changes is one action in the history, named by the message.
     """
     with closing(db.connect()) as conn, db.action("agent", text), agent_tools.turn_of(conversation_id, stop) as tools_turn:
+        started = time.time()
+        took = {"seconds": 0.0}  # the turn so far, as the last reply saved it
+
+        def so_far() -> float:
+            """How long the turn has taken, as a reply saves it when it ends."""
+            took["seconds"] = round(time.time() - started, 1)
+            return took["seconds"]
+
+        def last(status: str, message: str | None = None) -> dict:
+            """The turn's last event: how it ended, and how long it took (as its last reply saved)."""
+            return {"type": status, "seconds": took["seconds"]} | ({"message": message} if message else {})
+
         with conn:
             message_id = conn.execute(
                 "INSERT INTO message (conversation_id, role, content, page, page_title, about) VALUES (?, 'user', ?, ?, ?, ?)",
@@ -560,10 +587,11 @@ def run_turn(
             attached not stored), or stopped before its model was asked (while storing it)."""
             with conn:
                 conn.execute(
-                    "INSERT INTO message (conversation_id, role, status, error, agent, model) VALUES (?, 'assistant', ?, ?, ?, ?)",
-                    (conversation_id, status, message, *who),
+                    "INSERT INTO message (conversation_id, role, status, error, agent, model, seconds) "
+                    "VALUES (?, 'assistant', ?, ?, ?, ?, ?)",
+                    (conversation_id, status, message, *who, so_far()),
                 )
-            return {"type": status, "message": message}
+            return last(status, message)
 
         if not found:
             yield ending("error", "Set up an agent first: Settings → Models, then Agents.")
@@ -595,22 +623,33 @@ def run_turn(
                 conn.commit()
                 text_parts: list[str] = []
                 calls: dict[int, dict] = {}  # by index in the stream: {"id", "name", "arguments"}
+                shown: set[str] = set()  # the calls the chat has been told of
                 ended = None  # why the model stopped writing: "stop", "tool_calls", "length"…
                 usage = None  # what the server counted, in the stream's last chunk
+                thinking = {"id": f"think_{reply_id}", "text": "", "since": None, "seconds": None}
+
+                def thought() -> dict | None:
+                    """The model has stopped thinking (it writes its reply, or it's done): for how long."""
+                    if thinking["since"] is None or thinking["seconds"] is not None:
+                        return None
+                    thinking["seconds"] = round(time.time() - thinking["since"], 1)
+                    return {"type": "thought", "id": thinking["id"], "seconds": thinking["seconds"]}
 
                 def finish(status: str, error: str | None = None, tool_calls: list | None = None) -> None:
+                    thought()
                     with conn:
                         conn.execute(
                             "UPDATE message SET content = ?, tool_calls = ?, status = ?, error = ?, tokens_in = ?, "
-                            "tokens_out = ? WHERE id = ?",
+                            "tokens_out = ?, reasoning = ?, thought = ?, seconds = ? WHERE id = ?",
                             ("".join(text_parts), json.dumps(tool_calls) if tool_calls else None, status, error,
-                             usage and usage.prompt_tokens, usage and usage.completion_tokens, reply_id),
+                             usage and usage.prompt_tokens, usage and usage.completion_tokens,
+                             thinking["text"] or None, thinking["seconds"], so_far(), reply_id),
                         )
 
                 def stopped(ran: list | None = None) -> dict:
                     """Stopped: keep the text that arrived and the tool calls that ran."""
                     finish("stopped", tool_calls=ran)
-                    return {"type": "stopped"}
+                    return last("stopped")
 
                 messages = _history(conn, conversation_id, agent)
                 try:
@@ -622,22 +661,42 @@ def run_turn(
                             continue
                         ended = chunk.choices[0].finish_reason or ended
                         delta = chunk.choices[0].delta
+                        # Servers send what the model thinks beside the reply, by one name or the other.
+                        extra = delta.model_extra or {}
+                        reasoning = extra.get("reasoning") or extra.get("reasoning_content")
+                        if reasoning and thinking["seconds"] is None:
+                            if thinking["since"] is None:
+                                thinking["since"] = time.time()
+                            thinking["text"] += reasoning
+                            yield {"type": "reasoning", "id": thinking["id"], "since": thinking["since"], "delta": reasoning}
+                        if (delta.content or delta.tool_calls) and (done_thinking := thought()):
+                            yield done_thinking
                         if delta.content:
                             text_parts.append(delta.content)
                             yield {"type": "text", "delta": delta.content}
                         for part in delta.tool_calls or []:
                             # Its id is ours, from the reply's: servers may send none, or the same each round.
                             call = calls.setdefault(part.index, {"id": f"call_{reply_id}_{part.index}", "name": "", "arguments": ""})
+                            written = part.function and part.function.arguments or ""
                             if part.function:
                                 call["name"] += part.function.name or ""
-                                call["arguments"] += part.function.arguments or ""
-                                if part.function.arguments:  # a page may show it as it's written
-                                    yield {"type": "call", "id": call["id"], "name": call["name"],
-                                           "delta": part.function.arguments}
+                                call["arguments"] += written
+                            if not call["name"]:
+                                continue
+                            if call["id"] not in shown:  # shown from its first piece: what it does
+                                shown.add(call["id"])
+                                yield {"type": "call", "id": call["id"], "name": call["name"],
+                                       "label": agent_tools.label(call["name"], call["arguments"]), "delta": written}
+                            elif written:  # then its arguments as they're written
+                                yield {"type": "call", "id": call["id"], "delta": written}
                 except Exception as exc:  # unreachable server, bad key, unknown model…
+                    if done_thinking := thought():
+                        yield done_thinking
                     finish("error", describe(exc, model))
-                    yield {"type": "error", "message": describe(exc, model)}
+                    yield last("error", describe(exc, model))
                     return
+                if done_thinking := thought():
+                    yield done_thinking
                 if usage:
                     yield {"type": "usage", "tokens_in": usage.prompt_tokens, "tokens_out": usage.completion_tokens}
                 if stop.is_set():
@@ -648,7 +707,7 @@ def run_turn(
                     message = (f"{model.name} wrote {REPLY_TOKENS:,} tokens without ending its reply, so it was cut off "
                                "(it may have been repeating itself). Ask again, or for less at once.")
                     finish("error", message)
-                    yield {"type": "error", "message": message}
+                    yield last("error", message)
                     return
                 tool_calls = list(calls.values())
                 if not tool_calls and not text_parts:
@@ -660,11 +719,11 @@ def run_turn(
                     # again: e.g. a model that put its tool call in its thinking
                     message = f"{model.name} answered nothing (no text, no tool call). Send it again, or try another model."
                     finish("error", message)
-                    yield {"type": "error", "message": message}
+                    yield last("error", message)
                     return
                 finish("done", tool_calls=tool_calls)
                 if not tool_calls:
-                    yield {"type": "done"}
+                    yield last("done")
                     return
 
                 for ran, call in enumerate(tool_calls):
@@ -675,7 +734,7 @@ def run_turn(
                         outcome, status, error = (yield from agent_tools.call(conn, call["name"], call["arguments"], model.sees_images)), "done", None
                     except Exception as exc:  # the model sees the error and can correct itself
                         error = str(exc)
-                        outcome, status = agent_tools.Outcome(json.dumps({"error": error}), error.partition("\n")[0]), "error"
+                        outcome, status = agent_tools.Outcome(json.dumps({"error": error}), ""), "error"  # why: in error
                     with conn:
                         answer_id = conn.execute(
                             "INSERT INTO message (conversation_id, role, content, tool_call_id, status, error, label, note, "
@@ -684,7 +743,7 @@ def run_turn(
                              json.dumps(outcome.images) if outcome.images else None, outcome.picture),
                         ).lastrowid
                     yield {"type": "tool", "id": call["id"], "label": label, "status": status, "note": outcome.note,
-                           "images": outcome.images, "picture": picture_url(answer_id) if outcome.picture else None}
+                           "error": error, "images": outcome.images, "picture": picture_url(answer_id) if outcome.picture else None}
                     if stop.is_set():  # the tools after it don't run, and the model isn't asked again
                         yield stopped(tool_calls[:ran + 1])
                         return

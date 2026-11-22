@@ -4,7 +4,8 @@
    as the turn goes (/agent/images, /agent/attached/ID). #}
 {% import "components.html" as ui %}
 {% from "projects/macros.html" import image_tiles %}
-<div class="chat__images">
+{# One to three fill a row of their own (chat__images--row, chat.css); more wrap in small rows. #}
+<div class="chat__images{% if shown.images | length <= 3 %} chat__images--row{% endif %}">
   {{- image_tiles(shown.images, shown.classes) -}}
   {%- if shown.more %}{{ ui.text("and " ~ shown.more | number ~ " more", muted=true) }}{% endif -%}
 </div>

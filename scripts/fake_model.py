@@ -5,7 +5,7 @@ A Script is what the model "answers", one list of deltas per model call (text, o
 records each request it got. workspace() makes a throwaway workspace (HOME in a temp folder; with
 copy=True the real workspace's data, see try_agent) whose agent runs on the script's server.
 
-    from scripts.fake_model import Script, call, text, turn, workspace
+    from scripts.fake_model import Script, call, text, think, turn, workspace
 
     script = Script([[text("I'll look."), call(0, "c1", "search", '{"text": "car"}')], [text("Found it.")]])
     workspace(script)
@@ -31,6 +31,11 @@ HEAD = {"id": "fake", "object": "chat.completion.chunk", "created": 0, "model": 
 
 def text(content: str) -> dict:
     return {"content": content}
+
+
+def think(reasoning: str) -> dict:
+    """What the model thinks before it replies, as servers stream it beside the reply."""
+    return {"reasoning": reasoning}
 
 
 def call(index: int, id: str, name: str, arguments: str) -> dict:
@@ -92,11 +97,18 @@ def workspace(script: Script, copy: bool = False):
         from scripts.try_agent import copy_workspace
         copy_workspace(home)
     os.environ["HOME"] = str(home)
-    from app import db, server, settings
+    from app import db, server
     db.migrate()
+    use(script)
+    return server
+
+
+def use(script: Script) -> Script:
+    """The workspace's agent (the default one, "fake") answering from the script; the script."""
+    from app import settings
     settings.update(models=[settings.Model(id="fake", name="Fake", base_url=_serve(script), model="fake")],
                     agents=[settings.Agent(id="fake", name="Assistant", model_id="fake")], default_agent="fake")
-    return server
+    return script
 
 
 def turn(message: str, page: str | None = None, about: str | None = None) -> list[dict]:
@@ -113,10 +125,12 @@ if __name__ == "__main__":
     import uvicorn
 
     script = Script([
-        [text("I'll check this project's labelled images."),
+        [think("The person asks about labelled images. "), think("I should read the project first."),
+         text("I'll check this project's labelled images."),
          call(0, "c1", "read", '{"step": "Finding labelled images", "path": "/api/projects/9?where=labelled"}'),
          call(1, "c2", "run_code", '{"step": "Counting objects per class", "code": "print(\\"car 41, person 12\\")"}')],
-        [text("19 of the 24 images are labelled: **41 cars** and **12 people**.")],
+        [think("The counts are in; now the answer."),
+         text("19 of the 24 images are labelled: **41 cars** and **12 people**.")],
     ])
     server = workspace(script, copy=True)
     turn("which images are labelled here, and what's in them?", "/projects/9")

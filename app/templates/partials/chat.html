@@ -14,17 +14,49 @@
   <div class="chat__text selectable">{{ text }}</div>
 {%- endmacro %}
 
-{# A step the agent takes (a tool call): what it's doing, then what came out (its note, or why it
-   failed: that can be selected and copied), and under it the images it found, or the picture it
-   looked at. Running (spinner), done (check) or error (cross): the icon follows data-status. #}
-{% macro tool_part(label, note, status, shown=none, picture=none) -%}
-  <div class="chat__tool" data-status="{{ status }}">
-    <span class="chat__tool-icon" aria-hidden="true"><span class="spinner"></span>{{ icon("check") }}{{ icon("x-mark") }}</span>
-    <span class="chat__tool-label">{{ label }}</span>
-    <span class="chat__tool-note{% if status == 'error' %} selectable{% endif %}">{{ note }}</span>
-    {%- if shown %}{% include "partials/chat-images.html" %}{% endif %}
-    {%- if picture %}{{ picture_part(picture) }}{% endif %}
-  </div>
+{# The line every part of the agent's work starts with: an icon for its state (a turning circle
+   while it runs, a cross if it failed, a tick once done), what it is, and a detail at the end of
+   the line. Only the icon for the state is drawn: chat.js swaps it as the state changes (the
+   chat-icon-* templates). #}
+{% macro line(status, title, detail="") -%}
+  <span class="chat__line" data-status="{{ status }}">
+    <span class="chat__line-icon" aria-hidden="true">{{ line_icon(status) }}</span>
+    <span class="chat__line-title">{{ title }}</span>
+    <span class="chat__line-detail">{{ detail }}</span>
+  </span>
+{%- endmacro %}
+
+{% macro line_icon(status) -%}
+  {%- if status == "running" %}<span class="spinner"></span>{% elif status == "error" %}{{ icon("x-mark") }}{% else %}{{ icon("check") }}{% endif -%}
+{%- endmacro %}
+
+{# What the model thought before it replied: "Thinking" (its time so far) while it streams, its
+   last lines showing; "Thought for 12s" once it's done, folded away (unfolded, all of it). #}
+{% macro thinking_part(text, seconds=none, status="done") -%}
+  <details class="chat__thinking"{% if status == "running" %} open{% endif %}>
+    <summary>{{ line(status, "Thinking" if status == "running" else ("Thought for " ~ (seconds | took) if seconds is not none else "Thought")) }}</summary>
+    <div class="chat__thinking-text selectable">{{ text }}</div>
+  </details>
+{%- endmacro %}
+
+{# A step the agent takes (a tool call): what it does and what came out (its note), folded over
+   the rest: why it failed, the images it found, the picture it looked at. Unfolded where there's
+   something to see; chat.js fills in, as it runs, its arguments being written, what it prints and
+   how far it is. #}
+{% macro tool_part(label, note, status, error=none, shown=none, picture=none) -%}
+  <details class="chat__step"{% if shown or picture or error %} open{% endif %}>
+    <summary>{{ line(status, label, note) }}</summary>
+    <div class="chat__step-body">
+      {%- if error %}{{ step_error(error) }}{% endif %}
+      {%- if shown %}{% include "partials/chat-images.html" %}{% endif %}
+      {%- if picture %}{{ picture_part(picture) }}{% endif -%}
+    </div>
+  </details>
+{%- endmacro %}
+
+{# Why a step failed, in full: it can be selected and copied. #}
+{% macro step_error(text) -%}
+  <pre class="chat__error selectable">{{ text }}</pre>
 {%- endmacro %}
 
 {# The picture a step gave the agent's model, as the model saw it. #}
@@ -32,15 +64,21 @@
   <div class="chat__picture"><img src="{{ src }}" alt="What the agent looked at" loading="lazy"></div>
 {%- endmacro %}
 
-{# Who wrote an agent turn: the agent's name; on hover its model, and the tokens the model read and
-   wrote in the turn (when its server says). #}
-{% macro by_line(agent, model, tokens_in=0, tokens_out=0) -%}
-  <p class="chat__by" title="{{ agent }} · {{ model }}{% if tokens_in %} · {{ tokens_in | number }} tokens read, {{ tokens_out | number }} written{% endif %}">{{ agent }}</p>
+{# Who wrote an agent turn and how long it took; on hover its model, and the tokens the model read
+   and wrote in the turn (when its server says). #}
+{% macro by_line(agent, model, tokens_in=0, tokens_out=0, seconds=none) -%}
+  <p class="chat__by" title="{{ agent }} · {{ model }}{% if tokens_in %} · {{ tokens_in | number }} tokens read, {{ tokens_out | number }} written{% endif %}">
+    {{- agent }}<span class="chat__took">{% if seconds is not none %} · {{ seconds | took }}{% endif %}</span></p>
 {%- endmacro %}
 
+{# Under a turn: why it failed (can be selected and copied), or that it was stopped. #}
 {% macro note(kind, text) -%}
-  {# kind: "status" (shimmering, while working), "error" (can be selected and copied) or "stopped" #}
   <p class="chat__note chat__note--{{ kind }}{% if kind == 'error' %} selectable{% endif %}">{{ text }}</p>
+{%- endmacro %}
+
+{# The agent is working and shows nothing else yet (waiting for its model, storing what was dropped). #}
+{% macro working(text="Working") -%}
+  <p class="chat__status">{{ line("running", text) }}</p>
 {%- endmacro %}
 
 {% set chat = agent_chat(request, page_title) %}
@@ -60,19 +98,21 @@
       {% if turn.role == "user" %}
         {{ user_message(turn.text, turn.shown) }}
       {% else %}
-        <div class="chat__message chat__message--agent" data-status="{{ turn.status }}">
+        <div class="chat__message chat__message--agent">
           {% for part in turn.parts %}
-            {% if part.kind == "text" %}{{ text_part(part.text) }}{% else %}{{ tool_part(part.label, part.note, part.status, part.shown, part.picture) }}{% endif %}
+            {% if part.kind == "text" %}{{ text_part(part.text) }}
+            {% elif part.kind == "thinking" %}{{ thinking_part(part.text, part.seconds) }}
+            {% else %}{{ tool_part(part.label, part.note, part.status, part.error, part.shown, part.picture) }}{% endif %}
           {% endfor %}
           {% if turn.status == "error" %}{{ note("error", turn.error) }}{% endif %}
           {% if turn.status == "stopped" %}{{ note("stopped", "Stopped") }}{% endif %}
-          {% if turn.agent %}{{ by_line(turn.agent, turn.model, turn.tokens_in, turn.tokens_out) }}{% endif %}
+          {% if turn.agent %}{{ by_line(turn.agent, turn.model, turn.tokens_in, turn.tokens_out, turn.seconds) }}{% endif %}
         </div>
       {% endif %}
     {% endfor %}
     {# The agent is answering: chat.js follows the reply (GET /api/agent/turn) and fills this in. #}
     {% if chat.running %}
-      <div class="chat__message chat__message--agent" data-status="streaming" data-following>{{ note("status", "Thinking…") }}</div>
+      <div class="chat__message chat__message--agent" data-following>{{ working() }}</div>
     {% endif %}
   </div>
 
@@ -90,14 +130,20 @@
   </form>
 
   <template id="chat-user">{{ user_message("") }}</template>
-  <template id="chat-agent"><div class="chat__message chat__message--agent" data-status="streaming"></div></template>
+  <template id="chat-agent"><div class="chat__message chat__message--agent"></div></template>
   <template id="chat-text">{{ text_part("") }}</template>
+  <template id="chat-thinking">{{ thinking_part("", status="running") }}</template>
   <template id="chat-tool">{{ tool_part("", "", "running") }}</template>
   <template id="chat-picture">{{ picture_part("") }}</template>
-  {# While a tool runs (run_code): what it prints, and how far it is (progress(done, total)). #}
+  {# In a step's body, as it's written and runs: its arguments so far, what it prints (run_code),
+     how far it is (progress(done, total)), why it failed. #}
+  <template id="chat-arguments"><pre class="chat__arguments"></pre></template>
   <template id="chat-output"><pre class="chat__output"></pre></template>
   <template id="chat-progress"><div class="progress chat__progress" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"></div></template>
-  <template id="chat-status">{{ note("status", "Thinking…") }}</template>
+  <template id="chat-step-error">{{ step_error("") }}</template>
+  <template id="chat-status">{{ working() }}</template>
+  {# A line's icon for each state (line()): chat.js swaps it as the state changes. #}
+  {% for state in ["running", "error", "done"] %}<template id="chat-icon-{{ state }}">{{ line_icon(state) }}</template>{% endfor %}
   <template id="chat-error">{{ note("error", "") }}</template>
   <template id="chat-stopped">{{ note("stopped", "Stopped") }}</template>
   <template id="chat-by">{{ by_line("", "") }}</template>

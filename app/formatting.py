@@ -96,6 +96,12 @@ def clock(seconds: float, tenths: bool = False) -> str:
     return f"{hours}:{minutes:02}:{rest}" if hours else f"{minutes}:{rest}"
 
 
+def took(seconds: float) -> str:
+    """How long something took, at a glance: "12s", "1m 5s" (at least 1s; js/chat.js writes the same)."""
+    whole = max(round(seconds), 1)
+    return f"{whole // 60}m {whole % 60}s" if whole >= 60 else f"{whole}s"
+
+
 FILTERS = {"number": number, "plural": plural, "filesize": filesize, "counted": counted, "ago": ago, "period": period,
-           "clock": clock}
+           "clock": clock, "took": took}
 GLOBALS = {"icon": icon}

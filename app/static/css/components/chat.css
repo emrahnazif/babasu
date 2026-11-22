@@ -135,82 +135,41 @@
 
 .chat__text th { white-space: nowrap; }
 
-/* A step (a tool call): the icon shows running (spinner), done (check) or error (cross); what it's
-   doing, then what came out, at the end of the line (under it when it doesn't fit). */
-.chat__tool {
+/* The agent's work (what it thinks, its tool calls, that it's working), smaller than its reply. */
+.chat__thinking,
+.chat__step,
+.chat__status { font-size: 0.8125rem; }
+
+/* The line each part of the agent's work starts with (partials/chat.html line()): its icon, what it
+   is, a detail at the end of the line. A running one's title shimmers; a failed one is red. */
+.chat__line {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  column-gap: var(--space-2);
+  gap: var(--space-2);
+  min-width: 0;
   color: var(--color-text-muted);
-  font-size: 0.8125rem;
 }
 
-.chat__tool-note {
-  margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
-}
-
-.chat__images {  /* the images a step found, on a line of their own under it */
-  flex-basis: 100%;
-  margin-block: var(--space-1);
-}
-
-.chat__images .justified { --row-height: 3.5rem; }
-
-.chat__message--user + .chat__images {  /* those the person attached: under their message, at its side */
-  align-self: flex-end;
-  width: 85%;
-}
-
-.chat__picture {  /* the picture a step gave the model, on a line of its own under it, as it is */
-  flex-basis: 100%;
-  margin-block: var(--space-1);
-}
-
-.chat__picture img {
-  max-width: 100%;
-  max-height: 8rem;
-  border-radius: var(--radius-md);
-}
-
-.chat__tool-icon {
+.chat__line-icon {
+  flex: none;
   display: grid;
   place-items: center;
   width: 1rem;
   height: 1rem;
 }
 
-.chat__tool-icon > * { grid-area: 1 / 1; display: none; }
-.chat__tool-icon svg { width: 1rem; height: 1rem; }
-.chat__tool[data-status="running"] .spinner,
-.chat__tool[data-status="done"] .chat__tool-icon svg:first-of-type,
-.chat__tool[data-status="error"] .chat__tool-icon svg:last-of-type { display: block; }
-.chat__tool[data-status="error"] { color: var(--color-destructive); }
+.chat__line-icon svg { width: 1rem; height: 1rem; }
+.chat__line-icon .spinner { width: 0.75rem; height: 0.75rem; }
 
-/* What a running tool prints, following its last line; and its progress bar. */
-.chat__output {  /* a <pre>: base.css gives it its border and font */
-  max-height: 10rem;
-  overflow: auto;
-  margin: 0;
-  padding: var(--space-2);
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
+.chat__line-title { min-width: 0; }
+
+.chat__line-detail {
+  margin-inline-start: auto;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
 }
 
-.chat__progress { margin-block: var(--space-1); }
-
-.chat__tool-icon .spinner {
-  width: 0.75rem;
-  height: 0.75rem;
-}
-
-/* Notes under a turn: "Thinking…" while waiting (a light sweeps across it), an error, or stopped. */
-.chat__note {
-  font-size: var(--text-sm);
-}
-
-.chat__note--status {
+.chat__line[data-status="running"] .chat__line-title {
   background: linear-gradient(90deg, var(--color-text-muted) 40%, var(--color-text) 50%, var(--color-text-muted) 60%);
   background-size: 300% 100%;
   background-clip: text;
@@ -219,19 +178,137 @@
   animation: chat-shimmer 2s linear infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .chat__line[data-status="running"] .chat__line-title { animation: none; }
+}
+
 @keyframes chat-shimmer {
   from { background-position: 100% 0; }
   to { background-position: 0 0; }
 }
 
+.chat__line[data-status="error"] { color: var(--color-destructive); }
+
+/* What folds (thinking, a step): its line is the summary. A chevron after it, only
+   when there's something inside, turns down when it's open. */
+.chat__message--agent summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+  cursor: pointer;
+}
+
+.chat__message--agent summary::-webkit-details-marker { display: none; }
+.chat__message--agent summary > .chat__line { flex: 1; }
+.chat__message--agent summary:hover .chat__line:not([data-status="running"]) { color: var(--color-text); }
+
+.chat__message--agent details:has(> div:not(:empty)) > summary::after {
+  content: "";
+  flex: none;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin-inline: 0.125rem 0.25rem;
+  border-right: 1.5px solid var(--color-text-muted);
+  border-bottom: 1.5px solid var(--color-text-muted);
+  rotate: -45deg;
+  transition: rotate var(--duration-fast) var(--ease-out);
+}
+
+.chat__message--agent details[open]:has(> div:not(:empty)) > summary::after { rotate: 45deg; }
+
+/* What the model thought hangs off a line down from the icon, apart from the reply. Unfolded once
+   it's done, it's all there: only the chat scrolls. While it streams, its last lines show through
+   a window, faded at the top once it's full (chat.js keeps it at the end and marks it). */
+.chat__thinking-text {
+  margin: var(--space-1) 0 0 calc(0.5rem - 1px);
+  padding-inline-start: calc(var(--space-3) + 0.5rem - 1px);
+  border-left: 2px solid var(--color-border);
+  white-space: pre-wrap;
+  color: var(--color-text-muted);
+}
+
+.chat__thinking-text:empty { display: none; }
+
+.chat__thinking:has(> summary > [data-status="running"]) .chat__thinking-text,
+.chat__arguments,
+.chat__output {
+  max-height: 7lh;
+  overflow: hidden;
+}
+
+.chat__thinking:has(> summary > [data-status="running"]) .chat__thinking-text[data-cut],
+.chat__arguments[data-cut],
+.chat__output[data-cut] {
+  mask-image: linear-gradient(transparent, black 2lh);
+}
+
+/* A step's body, under its title: why it failed, what it's given and prints, how far it is, and
+   the images it found or looked at. */
+.chat__step-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);  /* wide content (images, code) can't widen the chat */
+  gap: var(--space-1);
+  padding-inline-start: 1.5rem;
+}
+
+.chat__step-body:not(:empty) { margin-top: var(--space-1); }
+
+.chat__arguments,
+.chat__output,
+.chat__error {  /* <pre>s: base.css gives them their border and font; what it's given and prints
+                   show their last lines (above), why it failed all of it */
+  margin: 0;
+  padding: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.chat__arguments,
+.chat__error { white-space: pre-wrap; }
+
+.chat__error { color: var(--color-destructive); }
+
+.chat__progress { margin-block: var(--space-1); }
+
+/* Images in the chat, the same wherever they come from (dropped with a message, found by a step,
+   looked at): one to three fill a row of their own (--row), as tall as the chat allows up to
+   --image-height, and centred; more wrap in rows of small ones. The picture a step looked at is
+   one image. */
+.chat { --image-height: 12rem; }
+
+.chat__images .justified {
+  --row-height: 4.5rem;
+  margin-top: 0;
+}
+
+.chat__images--row .justified {
+  --row-height: var(--image-height);
+  flex-wrap: nowrap;  /* they shrink together, keeping one height */
+  justify-content: center;
+}
+
+.chat__images--row .justified::after { display: none; }
+.chat__images--row .justified > * { flex-grow: 0; }  /* at most the row's height */
+
+.chat__picture img {  /* narrower than the chat: contained */
+  display: block;
+  height: var(--image-height);
+  max-width: 100%;
+  margin-inline: auto;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+}
+
+/* Notes under a turn: why it failed, or that it was stopped. */
 .chat__note--error { color: var(--color-destructive); }
+.chat__note--stopped { color: var(--color-text-muted); }
 
 /* Who wrote the turn (the model shows on hover). */
 .chat__by {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
-.chat__note--stopped { color: var(--color-text-muted); }
 
 /* The form looks like one input box; the textarea inside has no border of its own. */
 .chat__form {

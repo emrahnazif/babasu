@@ -1,6 +1,7 @@
-// Agent chat in the sidebar. Sends a message and shows the reply as it streams: text as it's
-// written, each tool call with its state (running, done, error), and how the turn ended. The
-// server saves everything, so the next page renders the same conversation (partials/chat.html).
+// Agent chat in the sidebar. Sends a message and shows the reply as it streams: what the model
+// thinks, text as it's written, each tool call from its first piece (as it's written, running,
+// then done or failed), and how the turn ended. The server saves everything, so the next page
+// renders the same conversation (partials/chat.html).
 // The reply doesn't depend on this page: a page opened while the agent is answering follows the
 // reply from its first event ([data-following]), and stop is a request of its own.
 // The agent's text is markdown, shown formatted (js/markdown.js): saved parts once the page
@@ -26,45 +27,120 @@ if (chat) {
   const drawn = (mediaIds) => html(`/agent/images?${new URLSearchParams(mediaIds.map((id) => ["media_ids", id]))}`);
   const atBottom = () => messages.scrollHeight - messages.scrollTop - messages.clientHeight < 24;
 
-  // Follow the reply only while the reader is at the bottom; scrolling up to read stops it.
-  function append(parent, element) {
+  // Change the chat, following the reply only while the reader is at the bottom: scrolling up to
+  // read stops it.
+  function grow(change) {
     const follow = atBottom();
-    parent.append(element);
+    change();
     if (follow) messages.scrollTop = messages.scrollHeight;
+  }
+
+  function append(parent, element) {
+    grow(() => parent.append(element));
     return element;
   }
 
-  // One agent turn, built from the stream's events: a new one, or the one the page rendered.
+  // How long something took, at a glance: "12s", "1m 5s" (formatting.py's took writes the same).
+  function took(seconds) {
+    const whole = Math.max(Math.round(seconds), 1);
+    return whole >= 60 ? `${Math.floor(whole / 60)}m ${whole % 60}s` : `${whole}s`;
+  }
+
+  // A line's state (partials/chat.html line()): its icon for it, and its title and detail if given.
+  function setLine(line, state, title, detail) {
+    line.dataset.status = state;
+    line.querySelector(".chat__line-icon").replaceChildren(clone(`chat-icon-${state}`));
+    if (title != null) line.querySelector(".chat__line-title").textContent = title;
+    if (detail != null) line.querySelector(".chat__line-detail").textContent = detail;
+  }
+
+  // Add to a window that shows the last lines of what's written (thinking, a step's arguments and
+  // output): kept at its end, and faded at the top once it's full ([data-cut]). What's written in a
+  // frame is added at once, however fast it comes.
+  const unwritten = new Map(); // window -> text not added yet
+  function write(window, text) {
+    if (!unwritten.size) requestAnimationFrame(() => grow(() => {
+      for (const [shown, more] of unwritten) {
+        shown.append(more);
+        shown.scrollTop = shown.scrollHeight;
+        if (!shown.hasAttribute("data-cut") && shown.scrollHeight > shown.clientHeight) shown.toggleAttribute("data-cut", true);
+      }
+      unwritten.clear();
+    }));
+    unwritten.set(window, (unwritten.get(window) ?? "") + text);
+  }
+
+  // Fold or unfold what folds as the turn goes, unless the person has opened or closed it.
+  const fold = (details, open) => { if (!("touched" in details.dataset)) details.open = open; };
+  messages.addEventListener("click", (event) => {
+    const summary = event.target.closest("summary");
+    if (summary) summary.parentElement.dataset.touched = "";
+  });
+
+  // One agent turn, built from the stream's events: a new one, or the one the page rendered. Its
+  // parts as partials/chat.html draws a saved one: what its model thinks, its text, each tool call.
   function agentTurn(turn = append(messages, clone("chat-agent"))) {
-    // "Thinking…" while the agent works
-    let status = turn.querySelector(".chat__note--status") ?? append(turn, clone("chat-status"));
-    let part = null; // the text part being written: { element, markdown }; a tool call ends it
+    // "Working" while nothing else shows that it is (waiting for the model, storing what was dropped).
+    let status = turn.querySelector(".chat__status") ?? append(turn, clone("chat-status"));
+    let part = null; // the text part being written: { element, markdown }; anything else ends it
     let frame = 0; // a render of that part waiting for the next frame
     let byLine = null; // who answers; added under everything else when the turn ends
     let who = ""; // the agent and its model, the by-line's title
     const tokens = { read: 0, written: 0 }; // what the model's calls in this turn read and wrote
-    const tools = new Map();
-    let running = {}; // what the running tool shows under it: { output, bar }
+    const thoughts = new Map(); // id -> { element, line, text, since, timer }
+    const steps = new Map(); // tool call id -> { element, line, body, arguments, output, bar }
+    let running = null; // the step whose tool is running: what it prints goes there
 
     function clearStatus() {
       status?.remove();
       status = null;
     }
 
-    // Render the part's markdown so far (at most once a frame, however fast deltas come).
+    // Render the text part's markdown so far (at most once a frame, however fast deltas come).
     function draw() {
       cancelAnimationFrame(frame);
       frame = 0;
-      const follow = atBottom();
-      part.element.innerHTML = render(part.markdown);
-      if (follow) messages.scrollTop = messages.scrollHeight;
+      grow(() => { part.element.innerHTML = render(part.markdown); });
+    }
+
+    function endText() {
+      if (frame) draw();
+      part = null;
+    }
+
+    // A part other than text (thinking, a tool call): it ends the text part being written.
+    function added(element) {
+      endText();
+      clearStatus();
+      return append(turn, element);
+    }
+
+    // Done thinking: for how long (as the server says; not known if the reply was cut off).
+    function endThought(thought, seconds) {
+      clearInterval(thought.timer);
+      setLine(thought.line, "done", seconds == null ? "Thought" : `Thought for ${took(seconds)}`, "");
+      fold(thought.element, false);
+    }
+
+    // A tool call's step: shown open from its first piece, what it does said as it's known.
+    function step(id, label) {
+      let found = steps.get(id);
+      if (!found) {
+        const element = added(clone("chat-tool"));
+        found = { element, line: element.querySelector(".chat__line"), body: element.querySelector(".chat__step-body") };
+        element.open = true;
+        steps.set(id, found);
+      }
+      if (label) setLine(found.line, found.line.dataset.status, label);
+      return found;
     }
 
     return {
       // Storing the images the person attached, before the agent starts: how far it is.
       storing({ done, total }) {
-        if (total == null) status.textContent = "Storing the images…";
-        else if (done < total) status.textContent = `Storing the images: ${done.toLocaleString("en")} of ${total.toLocaleString("en")}…`;
+        const title = status.querySelector(".chat__line-title");
+        if (total == null) title.textContent = "Storing the images";
+        else if (done < total) title.textContent = `Storing the images: ${done.toLocaleString("en")} of ${total.toLocaleString("en")}`;
         else status.replaceWith((status = clone("chat-status")));
       },
       // Those images, under the person's message (the first few); in place of those the page
@@ -76,53 +152,73 @@ if (chat) {
           else turn.insertAdjacentHTML("beforebegin", images);
         });
       },
+      // What the model thinks, open while it streams, with its time so far.
+      reasoning({ id, since, delta }) {
+        let thought = thoughts.get(id);
+        if (!thought) {
+          const element = added(clone("chat-thinking"));
+          const line = element.querySelector(".chat__line");
+          const detail = line.querySelector(".chat__line-detail");
+          const tick = () => { detail.textContent = took(Date.now() / 1000 - since); };
+          thought = { element, line, text: element.querySelector(".chat__thinking-text"), since, timer: setInterval(tick, 1000) };
+          tick();
+          thoughts.set(id, thought);
+        }
+        write(thought.text, delta);
+      },
+      thought({ id, seconds }) {
+        const thought = thoughts.get(id);
+        if (thought) endThought(thought, seconds);
+      },
       text(delta) {
         clearStatus();
         part ??= { element: append(turn, clone("chat-text")), markdown: "" };
         part.markdown += delta;
         frame ||= requestAnimationFrame(draw);
       },
-      tool({ id, label, note, images, picture, status: state }) {
-        if (frame) draw(); // the part ends as written
-        part = null;
-        clearStatus();
-        let element = tools.get(id);
-        if (!element) {
-          element = append(turn, clone("chat-tool"));
-          element.querySelector(".chat__tool-label").textContent = label;
-          tools.set(id, element);
+      // A tool call as the model writes it: shown from its first piece, its arguments as they come.
+      call({ id, label, delta }) {
+        const found = step(id, label);
+        if (!delta) return;
+        found.arguments ??= append(found.body, clone("chat-arguments"));
+        write(found.arguments, delta);
+      },
+      // The call running (open, with what it prints), then done or failed: folded to what came out,
+      // open on what there is to see (why it failed, the images it found, the picture it looked at).
+      tool({ id, label, note, error, images, picture, status: state }) {
+        const found = step(id, label);
+        clearStatus(); // a "Working" shown after the call before it
+        setLine(found.line, state, null, note ?? "");
+        if (state === "running") {
+          running = found;
+          fold(found.element, true);
+          return;
         }
-        const shown = element.querySelector(".chat__tool-note");
-        shown.textContent = note ?? "";
-        shown.classList.toggle("selectable", state === "error"); // why it failed can be copied
-        element.dataset.status = state;
-        // The images it found.
-        if (images) drawn(images).then((html) => element.insertAdjacentHTML("beforeend", html));
-        // The picture it gave the model (a crop it looked at), as the model saw it.
-        if (picture) {
-          const shown = clone("chat-picture");
-          shown.querySelector("img").src = picture;
-          element.append(shown);
-        }
-        running = {};
-        // After a tool and between rounds, show that the agent is still working.
-        if (state !== "running") status = append(turn, clone("chat-status"));
+        running = null;
+        for (const shown of [found.arguments, found.output, found.bar]) shown?.remove();
+        if (error) append(found.body, clone("chat-step-error")).textContent = error;
+        if (images) drawn(images).then((html) => grow(() => found.body.insertAdjacentHTML("beforeend", html)));
+        if (picture) append(found.body, clone("chat-picture")).querySelector("img").src = picture;
+        fold(found.element, Boolean(error || images || picture));
+        // Between rounds, show that it's still working.
+        status = append(turn, clone("chat-status"));
       },
       // What the running tool prints (appended, following its end) and how far it is.
       output({ text }) {
-        running.output ??= append(turn, clone("chat-output"));
-        running.output.textContent += text;
-        running.output.scrollTop = running.output.scrollHeight;
+        if (!running) return;
+        running.output ??= append(running.body, clone("chat-output"));
+        write(running.output, text);
       },
       progress({ done, total }) {
-        running.bar ??= append(turn, clone("chat-progress"));
+        if (!running) return;
+        running.bar ??= append(running.body, clone("chat-progress"));
         const value = total ? Math.min(done / total, 1) : 0;
         running.bar.style.setProperty("--value", value);
         running.bar.setAttribute("aria-valuenow", Math.round(value * 100));
       },
       by(agent, model) {
         byLine = clone("chat-by");
-        byLine.textContent = agent;
+        byLine.prepend(agent);
         byLine.title = who = `${agent} · ${model}`;
       },
       usage({ tokens_in, tokens_out }) {
@@ -130,16 +226,22 @@ if (chat) {
         tokens.written += tokens_out;
         byLine.title = `${who} · ${tokens.read.toLocaleString("en")} tokens read, ${tokens.written.toLocaleString("en")} written`;
       },
-      end(state, message) {
-        if (frame) draw();
+      end(state, message, seconds) {
+        endText();
         clearStatus();
-        turn.dataset.status = state;
+        // Thinking the server didn't say the end of (the reply was cut off) ends here.
+        for (const thought of thoughts.values()) {
+          if (thought.line.dataset.status === "running") endThought(thought);
+        }
         if (state !== "done") {
           const note = clone(state === "error" ? "chat-error" : "chat-stopped");
           if (message) note.textContent = message;
           append(turn, note);
         }
-        if (byLine) append(turn, byLine);
+        if (byLine) {
+          if (seconds != null) byLine.querySelector(".chat__took").textContent = ` · ${took(seconds)}`;
+          append(turn, byLine);
+        }
       },
     };
   }
@@ -222,12 +324,15 @@ if (chat) {
           if (event.type === "storing") turn.storing(event);
           else if (event.type === "attached") turn.attached(event.message_id);
           else if (event.type === "agent") turn.by(event.agent, event.model);
+          else if (event.type === "reasoning") turn.reasoning(event);
+          else if (event.type === "thought") turn.thought(event);
           else if (event.type === "text") turn.text(event.delta);
           else if (event.type === "tool") {
             heard();
             turn.tool(event);
             hear("agent:tool", event);
           } else if (event.type === "call") {
+            turn.call(event);
             const call = calls.get(event.id) ?? { name: event.name, text: "" };
             call.text += event.delta;
             calls.set(event.id, call);
@@ -239,9 +344,7 @@ if (chat) {
           else if (event.type === "usage") turn.usage(event);
           else if (event.type === "open") open = event.url;
           else if (event.type === "changed") changed = true;
-          else if (event.type === "done") (turn.end("done"), (ended = true));
-          else if (event.type === "stopped") (turn.end("stopped"), (ended = true));
-          else if (event.type === "error") (turn.end("error", event.message), (ended = true));
+          else if (["done", "stopped", "error"].includes(event.type)) (turn.end(event.type, event.message, event.seconds), (ended = true));
         }
       }
       if (!ended) turn.end("error", "The reply ended unexpectedly.");
