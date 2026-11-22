@@ -101,8 +101,9 @@ _lock = threading.Lock()
 
 
 def client(model: settings.Model) -> openai.OpenAI:
-    # Local servers accept any key, but the client requires one.
-    return openai.OpenAI(base_url=model.base_url, api_key=model.api_key or "none", timeout=120)
+    # The client requires a key. Without one, send the placeholder keyless local servers accept
+    # (Unsloth Studio, LM Studio); servers that ignore keys (Ollama, llama.cpp) take it too.
+    return openai.OpenAI(base_url=model.base_url, api_key=model.api_key or "not-needed", timeout=120)
 
 
 def system_prompt(agent: settings.Agent) -> str:
