@@ -1,5 +1,6 @@
 from contextlib import closing
 from functools import cache
+from typing import get_args
 from urllib.parse import urlencode
 
 from fastapi import Request
@@ -108,6 +109,7 @@ templates.env.globals["sidebar_max_width"] = settings.SIDEBAR_MAX_WIDTH
 templates.env.globals["jobs_overview"] = jobs_overview
 templates.env.globals["media_formats"] = media.FORMATS_TEXT
 templates.env.globals["tasks"] = projects.TASKS
+templates.env.globals["thinking_levels"] = [(level, level.capitalize()) for level in get_args(settings.Thinking)]
 templates.env.globals["annotators"] = annotators.FINDERS
 templates.env.globals["media_suffixes"] = ",".join(sorted(media.SUFFIXES))
 templates.env.globals["agent_chat"] = agent_chat

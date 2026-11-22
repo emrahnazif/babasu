@@ -108,6 +108,11 @@ def client(model: settings.Model) -> openai.OpenAI:
     return openai.OpenAI(base_url=model.base_url, api_key=model.api_key or "not-needed", timeout=120)
 
 
+def thinking_of(model: settings.Model) -> dict:
+    """How much the model is asked to think, for its server: reasoning_effort, when it's set."""
+    return {"reasoning_effort": model.thinking} if model.thinking else {}
+
+
 def system_prompt(agent: settings.Agent) -> str:
     return f"{APP_PROMPT}\n\n{agent.instructions}".strip()
 
@@ -655,7 +660,7 @@ def run_turn(
                 try:
                     for chunk in _streamed(lambda: model_client.chat.completions.create(
                             model=model.model, messages=messages, tools=agent_tools.schemas(model.sees_images), stream=True,
-                            max_tokens=REPLY_TOKENS, stream_options={"include_usage": True}), stop):
+                            max_tokens=REPLY_TOKENS, stream_options={"include_usage": True}, **thinking_of(model)), stop):
                         usage = chunk.usage or usage
                         if not chunk.choices:
                             continue

@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 from app import annotators, db, imports, jobs, media, projects, runs, segment
+from app.settings import Blank
 from app.filters import WHERE, Filter, FilterError, ObjectCondition, Range
 from app.formatting import plural
 from app.routes import IMAGES, READS, AnnotationOut, Answer, ClassOut, Done, Images, NoImages, Started, ToDownload
@@ -115,7 +116,7 @@ class ProjectFields(BaseModel):
     name: Annotated[projects.Name, BeforeValidator(lambda v: v or UNNAMED)] = Field(
         UNNAMED, description="The project's name, e.g. Street cars.")
     description: projects.Description = Field("", description="What it's for, in a sentence or two.")
-    task: Annotated[projects.Task | None, BeforeValidator(lambda v: v or None)] = Field(None, description=TASK)
+    task: Annotated[projects.Task | None, Blank] = Field(None, description=TASK)
 
 
 class NewProject(ProjectFields):
@@ -133,7 +134,7 @@ class ProjectChanges(ProjectFields):
     """A project's name, description, type and annotator, all of them, when it's changed.
     Left out (a form's empty choice), the annotator is the one suggested for its type."""
 
-    annotator: Annotated[annotators.Finder | None, BeforeValidator(lambda v: v or None)] = Field(None, description=FINDER)
+    annotator: Annotated[annotators.Finder | None, Blank] = Field(None, description=FINDER)
 
 
 class ProjectPatch(BaseModel):

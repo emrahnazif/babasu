@@ -10,15 +10,19 @@ import re
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
 from app import config
 
 SETTINGS_FILE = config.DATA_DIR / "settings.json"
 
 Theme = Literal["system", "light", "dark"]
+# How much a model thinks before it replies, sent as reasoning_effort (servers that think map it to
+# their own scale; None sends nothing, leaving it to the server).
+Thinking = Literal["none", "low", "medium", "high"]
 Text = Annotated[str, StringConstraints(strip_whitespace=True)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+Blank = BeforeValidator(lambda v: v or None)  # a form's empty choice is none: Annotated[X | None, Blank]
 
 SIDEBAR_MIN_WIDTH = 240
 SIDEBAR_MAX_WIDTH = 600
@@ -38,6 +42,7 @@ class Model(BaseModel):
     # FOR TESTING ONLY the API key is stored here in plain text; it will move to the OS keychain.
     api_key: Text = ""
     sees_images: bool = True  # it reads images: the agent can look at images and crops (on unless turned off)
+    thinking: Thinking | None = None  # how much it thinks before it replies; None: as its server does
 
 
 class Agent(BaseModel):

@@ -20,6 +20,9 @@
                note="For testing only, keys are saved in plain text in the workspace's settings file."),
       ui.checkbox("sees_images", "It reads images: the agent can look at images and crops, sent to its server",
                   checked=m.sees_images if m else true),
+      ui.select("thinking", "Thinking", [("", "As the server does")] + thinking_levels,
+                m.thinking or "" if m else "", id=id ~ "-thinking",
+                note="How much it thinks before it replies. Less is faster; a model that doesn't think ignores it."),
       ui.hidden("model_id", m.id) if m,
     ]) }}
     <p class="muted" data-test-result aria-live="polite"></p>
@@ -40,7 +43,7 @@
     {% call ui.stack() %}
       {% for m in models %}
         {% set at = "/settings/models/" ~ m.id %}
-        {{ ui.card(m.name, m.model ~ " · " ~ m.base_url, children=[
+        {{ ui.card(m.name, m.model ~ " · " ~ m.base_url ~ (" · thinking: " ~ m.thinking if m.thinking else ""), children=[
           ui.text(test.message, muted=test.ok, error=not test.ok) if test and test.model == m.id,
           ui.actions([ui.button("Test", post=at ~ "/test" ~ back, variant="secondary"),
                       ui.button("Edit", popover="edit-model-" ~ m.id, variant="secondary"),

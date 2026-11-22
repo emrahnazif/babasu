@@ -2,7 +2,7 @@
 
 import pytest
 
-from app import agent, agent_tools, settings
+from app import agent, agent_tools, agents, settings
 from scripts.fake_model import Script, call, text, think, turn, use
 
 
@@ -55,6 +55,19 @@ def test_a_saved_turn_has_its_thinking_text_and_tool_calls_in_order(model, conn)
     assert [part["kind"] for part in saved["parts"]] == ["thinking", "text", "tool", "thinking", "tool", "text"]
     failed = saved["parts"][4]
     assert failed["status"] == "error" and failed["error"]
+
+
+def test_a_models_thinking_is_sent_only_when_set(model):
+    script = model([[text("Hi.")], [text("Hi again.")]])
+    turn("hello")
+    assert "reasoning_effort" not in script.requests[0]  # as its server does
+    agents.update_model("fake", agents.ModelForm(name="Fake", base_url=settings.find_model("fake").base_url, model="fake", thinking="low"))
+    turn("hello again")
+    assert script.requests[1]["reasoning_effort"] == "low"
+
+
+def test_the_forms_empty_thinking_leaves_it_to_the_server():
+    assert agents.ModelForm(name="M", base_url="http://x/v1", model="m", thinking="").thinking is None
 
 
 def test_a_turn_says_how_long_it_took_live_and_saved(model, conn):

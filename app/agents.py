@@ -4,10 +4,12 @@ is app/agent.py. Every change is checked by the Settings model; problems raise V
 message for people.
 """
 
+from typing import Annotated
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app import agent, settings
-from app.settings import Agent, Model, Settings, slug
+from app.settings import Agent, Blank, Model, Settings, Thinking, slug
 
 
 class ModelForm(BaseModel):
@@ -19,6 +21,9 @@ class ModelForm(BaseModel):
     api_key: str = Field("", description="The API key, if the server needs one; blank on a change keeps the saved one.")
     sees_images: bool = Field(True, description="It reads images: the agent can look at images and crops (they're "
                               "sent to its server).")
+    thinking: Annotated[Thinking | None, Blank] = Field(  # the form's "As the server does": none sent
+        None, description="How much it thinks before it replies: none, low, medium or high (sent as "
+                          "reasoning_effort); null leaves it to the server.")
 
 
 class AgentForm(BaseModel):
