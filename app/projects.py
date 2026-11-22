@@ -558,17 +558,22 @@ def remove(conn: sqlite3.Connection, project_id: int) -> None:
         conn.execute("DELETE FROM project WHERE id = ?", (project_id,))
 
 
-def add_images(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> list[int]:
-    """Copy images (of any project) into this one, with their annotations, names and splits: new
-    rows on the same files. One whose file it has already stays as it is. The new rows' ids.
-    Caller commits."""
+def add_images(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> tuple[list[int], list[int]]:
+    """Copy images and videos (of any project) into this one, with their annotations, names, splits
+    and what workflows looked for on them (a video with its length, frames and the rate it's worked
+    at): new rows on the same files. One whose file it has already stays as it is. The new rows' ids, and each image's id
+    here (a copy's, or the one it had already), in the order given. Caller commits."""
     added = sorted(r[0] for r in conn.execute(
-        """INSERT INTO media (project_id, sha256, ext, width, height, name, split, annotations)
-           SELECT ?, sha256, ext, width, height, name, split, annotations FROM media
-           WHERE id IN (SELECT value FROM json_each(?)) ON CONFLICT DO NOTHING RETURNING id""",
+        """INSERT INTO media (project_id, sha256, ext, type, width, height, name, split, annotations, analysed,
+                              duration, frame_count, fps, sample_fps)
+           SELECT ?, sha256, ext, type, width, height, name, split, annotations, analysed, duration, frame_count, fps,
+                  sample_fps FROM media WHERE id IN (SELECT value FROM json_each(?)) ON CONFLICT DO NOTHING RETURNING id""",
         (project_id, json.dumps(media_ids))))
     _arrived(conn, project_id, added)
-    return added
+    here = dict(conn.execute(
+        """SELECT given.id, copy.id FROM media given JOIN media copy ON copy.sha256 = given.sha256 AND copy.project_id = ?
+           WHERE given.id IN (SELECT value FROM json_each(?))""", (project_id, json.dumps(media_ids))).fetchall())
+    return added, [here[m] for m in media_ids]
 
 
 def _arrived(conn: sqlite3.Connection, project_id: int, media_ids: list[int]) -> None:
@@ -679,7 +684,7 @@ def change(conn: sqlite3.Connection, project_id: int, filter: Filter, action: Ch
         _touch(conn, project_id)
         done = moved
     else:
-        done = add_images(conn, to_project, media_ids)
+        done, _ = add_images(conn, to_project, media_ids)
     objects = conn.execute("SELECT count(*) FROM annotation WHERE media_id IN (SELECT value FROM json_each(?))",
                            (json.dumps(done),)).fetchone()[0]
     return {"action": action, "images": len(done), "objects": objects, "examples": done[:EXAMPLES],

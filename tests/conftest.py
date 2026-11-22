@@ -62,6 +62,24 @@ def image():
 
 
 @pytest.fixture
+def video(conn, tmp_path):
+    """video(project_id): a 5-frame video stored in the project (each frame a grey lighter than the
+    last), its media id."""
+    import numpy as np
+    import pixelflow as pf
+
+    def store(project_id: int) -> int:
+        file = tmp_path / "clip.mp4"
+        writer = pf.VideoWriter(str(file), fps=10)
+        for n in range(5):
+            writer.write(np.full((48, 64, 3), n * 40, dtype=np.uint8))
+        writer.close()
+        with conn:
+            return media.store_video(conn, project_id, file, "clip.mp4")[0]
+    return store
+
+
+@pytest.fixture
 def api(conn):
     """The app's API, as the agent and the pages call it."""
     from fastapi.testclient import TestClient

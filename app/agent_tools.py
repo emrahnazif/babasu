@@ -598,12 +598,15 @@ def _found_note(found: dict) -> str:
     if found["status"] != "succeeded":
         return f"The run {found['status']}" + (f": {found['error']}" if found.get("error") else "")
     counted = ", ".join(plural(n, f"{name} object") for name, n in found["objects_found"].items()) or "nothing"
-    return f"Found {counted}, looking at {plural(found['looked_at_images'], 'image')}"
+    frames = f" ({plural(found['video_frames'], 'video frame')})" if found.get("video_frames") else ""
+    return f"Found {counted}, looking at {plural(found['looked_at_images'], 'image')}{frames}"
 
 
 @tool("Find things in images with a model: run a workflow over them (the default finds and outlines the classes "
       "named) and wait for it. What it finds is kept as the images' annotations, in their projects; it answers how "
-      "many objects of each class it found, how many images it looked at, and the projects' pages to link. Before running a model, see whether the images are "
+      "many objects of each class it found, how many images it looked at, and the projects' pages to link. On a "
+      "video, an object counts on each frame it's on, unless the workflow tracks it (SAM 3, tracked): then once. "
+      "Before running a model, see whether the images are "
       "annotated already (GET /api/images?where=CLASS). A run not done in a minute goes on: wait for its job.",
       FindArgs, label="Finding objects", note=lambda args, found: found["did"])
 def find(conn: sqlite3.Connection, args: FindArgs) -> Iterator[dict]:
@@ -614,8 +617,11 @@ def find(conn: sqlite3.Connection, args: FindArgs) -> Iterator[dict]:
     pages = [f"/projects/{p}" + (f"?{urlencode(where)}" if where else "") for p in dict.fromkeys(
         r[0] for r in conn.execute("SELECT project_id FROM media WHERE id IN (SELECT value FROM json_each(?))",
                                    (json.dumps(job["params"]["media_ids"]),)))]
+    result = job["result"] or {}
     found = {"job_id": started["job_id"], "status": job["status"], "looked_at_images": started["images"],
-             "objects_found": (job["result"] or {}).get("found", {}), "pages": pages, "error": job["error"]}
+             "objects_found": result.get("found", {}), "pages": pages, "error": job["error"]}
+    if result.get("frames"):  # on a video, objects_found counts what's on each frame (a tracked one once)
+        found["video_frames"] = result["frames"]
     return found | {"did": _found_note(found)}
 
 
@@ -625,37 +631,50 @@ MARGIN = 0.15  # of an object's size, kept around its crop: what's next to it he
 
 
 class LookArgs(Args):
-    media_id: int = Field(description="The image (its media_id).")
-    object: int | None = Field(None, ge=0, description="#n: one of the image's objects (its annotations), to look at closely.")
+    media_id: int = Field(description="The image or video (its media_id).")
+    object: int | None = Field(None, ge=0, description="#n: one of the image's objects (its annotations), to look at closely "
+                                                     "(on a video, on its frame).")
     box: list[float] | None = Field(None, min_length=4, max_length=4, description="Or a part of it: [x, y, w, h] in pixels.")
+    frame: int | None = Field(None, ge=0, description="On a video: which frame (its number, as annotations' frame says); "
+                                                      "the first if left out.")
 
 
 @tool(
-    "Look at an image yourself: all of it, one of its objects closely, or a part of it: whether an object really "
-    "is what it's labelled, what a model missed or got wrong. The picture comes after the results.",
+    "Look at an image yourself (a video: one of its frames): all of it, one of its objects closely, or a part of "
+    "it: whether an object really is what it's labelled, what a model missed or got wrong. The picture comes "
+    "after the results.",
     LookArgs,
     label="Looking at an image",
     note=lambda args, seen: seen["looked_at"],
     vision=True,
 )
 def look(conn: sqlite3.Connection, args: LookArgs) -> Seen:
-    stored = conn.execute("SELECT sha256, ext FROM media WHERE id = ?", (args.media_id,)).fetchone()
-    if stored is None:
+    found = projects.images(conn, [args.media_id])["images"]
+    if not found:
         raise ToolError(f"There's no image {args.media_id}: an image's id is its media_id, as its page says "
                         "(/images/MEDIA_ID) and a project's answer lists them.")
-    image = projects.images(conn, [args.media_id])["images"][0]
-    name, objects = image["filename"], [(a["class"], projects.corners(a)) for a in image["annotations"]]
+    image, frame = found[0], args.frame
+    name, objects = image["filename"], image["annotations"]
     what, part = name, None
     if args.object is not None:
         if args.object >= len(objects):
             raise ToolError(f"{name} has no object #{args.object}: " + (f"its objects are #0 to #{len(objects) - 1}."
                             if objects else "it has none."))
-        label, part = objects[args.object]
-        what = f"{label} (#{args.object}) on {name}"
+        shown = objects[args.object]
+        part, frame = projects.corners(shown), shown.get("frame", frame)
+        what = f"{shown['class']} (#{args.object}) on {name}"
     elif args.box:
         x, y, w, h = args.box
         what, part = f"part of {name}", (x, y, x + w, y + h)
-    picture = Image.open(media.path(stored["sha256"], stored["ext"]))
+    if video := image["video"]:
+        frame = frame or 0
+        if frame >= video["frame_count"]:
+            raise ToolError(f"{name} has frames 0 to {video['frame_count'] - 1}.")
+        what += f", frame {frame}"
+    try:
+        picture = Image.open(projects.image_file(conn, args.media_id, frame)["path"])
+    except ValueError as e:  # a frame of an image
+        raise ToolError(f"{name}: {e}") from None
     if part:
         x1, y1, x2, y2 = part
         dx, dy = (x2 - x1) * MARGIN, (y2 - y1) * MARGIN

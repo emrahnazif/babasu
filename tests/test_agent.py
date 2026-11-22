@@ -70,9 +70,28 @@ def test_the_forms_empty_thinking_leaves_it_to_the_server():
     assert agents.ModelForm(name="M", base_url="http://x/v1", model="m", thinking="").thinking is None
 
 
+def test_look_sees_a_videos_frame_and_says_which(conn, video):
+    from app import projects
+
+    with conn:
+        project_id = projects.create(conn, "Clips")
+    media_id = video(project_id)
+
+    seen = agent_tools.look(conn, agent_tools.LookArgs(media_id=media_id, frame=3))
+    assert seen.result == {"looked_at": "clip.mp4, frame 3"} and seen.picture
+    assert agent_tools.look(conn, agent_tools.LookArgs(media_id=media_id)).result == {"looked_at": "clip.mp4, frame 0"}
+    with pytest.raises(agent_tools.ToolError, match="frames 0 to 4"):
+        agent_tools.look(conn, agent_tools.LookArgs(media_id=media_id, frame=9))
+
+
 def test_a_turn_says_how_long_it_took_live_and_saved(model, conn):
     model([[text("Hi.")]])
     last = turn("hello")[-1]
     assert last["type"] == "done" and last["seconds"] >= 0
     saved, = agent.turns(conn, agent.current_conversation(conn))[1:]
     assert saved["seconds"] == last["seconds"]
+
+
+def test_a_find_on_a_video_says_it_counted_frames():
+    found = {"status": "succeeded", "objects_found": {"person": 10}, "looked_at_images": 1, "video_frames": 28}
+    assert agent_tools._found_note(found) == "Found 10 person objects, looking at 1 image (28 video frames)"

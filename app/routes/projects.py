@@ -946,6 +946,8 @@ class ImagesAdd(BaseModel):
 class ImagesAdded(Done):
     added: int = Field(description="How many it added.")
     already_there: int = Field(description="How many the project had already (left as they are).")
+    media_ids: list[int] = Field(description="The images' ids in this project, in the order sent: a copy has its "
+                                             "own id (what it finds is on it), not the one copied.")
     image_count: int = Field(description="How many images the project has now.")
 
 
@@ -956,11 +958,12 @@ def api_add_images(project_id: int, body: ImagesAdd, conn: DB) -> dict:
     try:
         images = body.images.ids(conn)
         with _writing(conn, project_id):
-            added = len(projects.add_images(conn, project_id, images))
+            new, here = projects.add_images(conn, project_id, images)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    there, name = len(images) - added, projects.get(conn, project_id)["name"]
-    return {"added": added, "already_there": there, "image_count": projects.image_count(conn, project_id),
+    added, name = len(new), projects.get(conn, project_id)["name"]
+    there = len(images) - added  # those it had: left as they are
+    return {"added": added, "already_there": there, "media_ids": here, "image_count": projects.image_count(conn, project_id),
             "did": f"Added {plural(added, 'image')} to {name}" + (f" ({there} there already)" if there else "")}
 
 

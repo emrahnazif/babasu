@@ -57,11 +57,26 @@ def known_query(request: Request) -> None:
 def fields_at(annotation, loc: tuple) -> list[str]:
     """The fields of the object at `loc` (field names and list indexes) in a model: those an
     unknown name there could have been. KeyError or StopIteration if `loc` isn't in it."""
+    return [f.alias or name for name, f in _model_at(annotation, loc).model_fields.items()]  # as JSON writes them: class, not class_
+
+
+def field_at(annotation, loc: tuple):
+    """The field at `loc` (its last part a field name) in a model, its FieldInfo: its description
+    says what it takes. KeyError or StopIteration if `loc` isn't in it."""
+    return _field(_model_at(annotation, loc[:-1]), loc[-1])
+
+
+def _model_at(annotation, loc: tuple) -> type[BaseModel]:
+    """The model of the object at `loc` in a model (list indexes skipped)."""
     model = _model(annotation)
     for part in loc:
         if isinstance(part, str):
-            model = _model(next(f for name, f in model.model_fields.items() if part in (name, f.alias)).annotation)
-    return [f.alias or name for name, f in model.model_fields.items()]  # as JSON writes them: class, not class_
+            model = _model(_field(model, part).annotation)
+    return model
+
+
+def _field(model: type[BaseModel], name: str):
+    return next(f for key, f in model.model_fields.items() if name in (key, f.alias))
 
 
 def _model(annotation) -> type[BaseModel]:
@@ -72,23 +87,29 @@ def _model(annotation) -> type[BaseModel]:
 
 
 async def refused(request: Request, exc: RequestValidationError) -> JSONResponse:
-    """A request whose body or parameters don't fit (422), as FastAPI answers it, except that a field
-    the body doesn't take says which it does, as a parameter it doesn't take says (known_query): a
-    made-up one is a mistake to correct, and the fields are how."""
+    """A request whose body or parameters don't fit (422), as FastAPI answers it, except that the body
+    says how to correct it: a field it doesn't take says which it does, as a parameter it doesn't
+    take says (known_query); a field missing, or not the object it should be, says what it takes
+    (its description, its fields). A made-up or misshapen one is a mistake to correct, and that's how."""
     body = getattr(request.scope.get("route"), "body_field", None)
     errors = []
     for error in exc.errors():
-        said = None
-        if body is not None and error["type"] == "missing" and error["loc"] == ("body",):
-            said, loc = "a JSON body is needed", ()
-        elif body is not None and error["type"] == "extra_forbidden" and error["loc"][:1] == ("body",):
-            said, loc = "not a field here", error["loc"][1:-1]
-        if said:
-            try:
-                error = error | {"msg": f"{said}; it takes {', '.join(fields_at(body.field_info.annotation, loc))}"}
-            except StopIteration:
+        loc, said = error["loc"], None
+        try:
+            if body is None or loc[:1] != ("body",):
                 pass
-        errors.append(error)
+            elif error["type"] == "missing" and loc == ("body",):
+                said = f"a JSON body is needed; it takes {', '.join(fields_at(body.field_info.annotation, ()))}"
+            elif error["type"] == "extra_forbidden":
+                said = f"not a field here; it takes {', '.join(fields_at(body.field_info.annotation, loc[1:-1]))}"
+            elif error["type"] in ("missing", "model_attributes_type", "model_type", "dict_type"):
+                field = field_at(body.field_info.annotation, loc[1:])
+                wrong = ("Field required" if error["type"] == "missing"
+                         else f"Should be an object of {', '.join(fields_at(body.field_info.annotation, loc[1:]))}")
+                said = f"{wrong}. {field.description}" if field.description else wrong
+        except (KeyError, StopIteration):
+            pass
+        errors.append(error | {"msg": said} if said else error)
     return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 
@@ -172,7 +193,7 @@ IMAGES = ("Which images: {\"project_id\": 3, \"where\": \"night\", \"count\": 10
 def _comma_list(value):
     """A list in a query, written either way: ?ids=1,2 or ?ids=1&ids=2 (a JSON list passes as it is)."""
     if isinstance(value, list):
-        return [part.strip() for item in value for part in (item.split(",") if isinstance(item, str) else [item])
+        return [part for item in value for part in ([p.strip() for p in item.split(",")] if isinstance(item, str) else [item])
                 if part != ""]
     return value
 

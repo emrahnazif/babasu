@@ -96,3 +96,30 @@ def test_a_workflow_is_saved_in_its_short_form(api):
     saved = api.post("/api/workflows", json=document).json()
     assert json.loads((config.WORKFLOWS_DIR / f"{saved['id']}.json").read_text()) == document
     assert api.get(f"/api/workflows/{saved['id']}").json()["graph"] == document
+
+
+def test_ids_in_a_body_list_as_numbers_are_taken(api, street, conn):
+    """An image set's media_ids as JSON numbers (the comma form is for a query)."""
+    other = api.post("/api/projects", json={"name": "Other"}).json()["id"]
+    ids = [r[0] for r in conn.execute("SELECT id FROM media WHERE project_id = ?", (street,))]
+    added = api.post(f"/api/projects/{other}/images", json={"images": {"media_ids": ids}})
+    assert added.status_code == 201 and added.json()["added"] == len(ids)
+
+
+def test_an_image_set_sent_wrong_says_what_it_takes(api, street):
+    for body in ({"images": [{"media_id": 1}]}, {"media_ids": [1]}):
+        said = " ".join(e["msg"] for e in api.post(f"/api/projects/{street}/images", json=body).json()["detail"])
+        assert 'Which images: {"project_id": 3' in said, said
+    said, = api.post(f"/api/projects/{street}/images", json={"images": [1]}).json()["detail"]
+    assert said["msg"].startswith("Should be an object of media_ids, project_id, where, count.")
+
+
+def test_a_copied_video_is_still_a_video_and_the_copies_ids_are_said(api, conn, street, video):
+    """What's found on a copy is on its own id; a video copied keeps what makes it one."""
+    clip = video(street)
+    given = [r[0] for r in conn.execute("SELECT id FROM media WHERE project_id = ? ORDER BY id", (street,))]
+    other = api.post("/api/projects", json={"name": "Other"}).json()["id"]
+    added = api.post(f"/api/projects/{other}/images", json={"images": {"media_ids": given}}).json()
+    assert len(added["media_ids"]) == len(given) and not set(added["media_ids"]) & set(given)
+    copy = added["media_ids"][given.index(clip)]
+    assert tuple(conn.execute("SELECT type, frame_count FROM media WHERE id = ?", (copy,)).fetchone()) == ("video/mp4", 5)
