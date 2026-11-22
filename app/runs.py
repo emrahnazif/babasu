@@ -99,7 +99,7 @@ def document(id: str) -> dict | None:
 
 
 def detail(id: str, workflow: Workflow) -> dict:
-    """A loaded workflow with its graph (mozo's {nodes, edges}), what a run keeps (_kept), which parameters take the prompts, the models it uses (each with its
+    """A loaded workflow with its graph (mozo's short form), what a run keeps (_kept), which parameters take the prompts, the models it uses (each with its
     licence and the bytes still to download for config.DEVICE, 0 once downloaded) and the files
     it names that are missing."""
     found = workflow.check(device=config.DEVICE)
@@ -172,7 +172,11 @@ def save_workflow(workflow_id: str, document: dict) -> dict:
     workflow = _loaded(document)
     if not _kept(workflow):
         raise ValueError(f"Nothing reaches a save node ({', '.join(SAVES)}), so a run would keep nothing")
-    settings.write_file(config.WORKFLOWS_DIR / f"{workflow_id}.json", json.dumps(workflow.to_dict(), indent=2, ensure_ascii=False))
+    path = config.WORKFLOWS_DIR / f"{workflow_id}.json"
+    tmp = path.with_suffix(".json.tmp")  # saved whole, then renamed over it: never half-written
+    config.WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
+    workflow.save(tmp)
+    tmp.replace(path)
     return _listed(workflow_id, workflow)
 
 

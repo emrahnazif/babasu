@@ -1,3 +1,4 @@
+import json
 import re
 
 import pytest
@@ -55,3 +56,10 @@ def test_the_calls_the_api_page_gives_work(api):
         answer = api.request(method, path, json=body)
         assert answer.status_code == 200, (path, answer.text)
     assert "api" in DOCS and "/api/search?q=" in DOCS["api"]
+
+
+def test_the_workflow_the_docs_build_loads(api):
+    """read_docs workflows starts from a whole document: it loads as written."""
+    example = json.loads(re.search(r"```json\n(.*?)```", DOCS["workflows"], re.S)[1])
+    answer = api.post("/api/workflows/check", json=example)
+    assert answer.status_code == 200, answer.text

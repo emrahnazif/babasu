@@ -2,7 +2,7 @@
 Workflows are mozo graphs of models and steps; running one over images keeps what reaches its save nodes, in the projects.
 
 ## Workflows
-- A workflow is a mozo graph: nodes (read an image, a model, crop, filter, draw…) joined output to input. GET /api/workflows/nodes lists the nodes (?names= gives them in full); each output connects to inputs of the same type.
+- A workflow is a mozo graph: nodes (read an image, a model, crop, filter, draw…), each taking what an earlier one gives. GET /api/workflows/nodes lists the nodes (?names= gives them in full); an output feeds inputs of the same type.
 - Built-in ones (SAM 3, SAM 3 tracked, Grounding DINO, Grounding DINO → EdgeTAM) can't be changed or deleted; editing one saves a copy.
 - Built in the builder (/workflows/ID/edit), or written by you (below).
 - A run keeps what reaches its save nodes, each what it says: **save_to_babasu** keeps detections as the input image's annotations, in its project; **save_image_to_babasu** keeps an image (a drawn, cropped or edited copy) as a new image, in the input's project or the one it names; **save_video_to_babasu** keeps a video's frames (drawn or edited) as a new video, at the rate it was read at (nothing on an image). Two save nodes keep twice: the workflow decides.
@@ -17,15 +17,17 @@ Workflows are mozo graphs of models and steps; running one over images keeps wha
 - Before running a model to find something, see whether the images are annotated with it already (GET /api/images?where=person): that may be the answer.
 
 ## Building one
-A workflow is a JSON document: its nodes (each an `id` of yours and a `type` from the nodes list, with `data.parameters`) and edges, each joining a node's output (`sourceHandle`) to another's input (`targetHandle`). This one finds squares and keeps them as annotations:
+A workflow is a JSON document: its nodes, one per line, each an `id` of yours, a `type` from the nodes list and its parameters. This one finds squares and keeps them as annotations:
 ```json
 {"name": "Squares",
- "nodes": [{"id": "image", "type": "read_media"},
-           {"id": "find", "type": "grounding_dino", "data": {"parameters": {"text": ["square"]}}},
-           {"id": "keep", "type": "save_to_babasu"}],
- "edges": [{"source": "image", "sourceHandle": "image", "target": "find", "targetHandle": "image"},
-           {"source": "find", "sourceHandle": "detections", "target": "keep", "targetHandle": "detections"}]}
+ "nodes": [
+  {"id": "image", "type": "read_media"},
+  {"id": "find", "type": "grounding_dino", "text": ["square"]},
+  {"id": "keep", "type": "save_to_babasu"}
+ ]}
 ```
+There are no connections to write: **an input not written takes the latest earlier node with an output of its type.** `find` takes `image`'s image; `keep` takes `find`'s detections. One output feeds any number of nodes. To take something other than the latest, a node writes that input under `inputs`: after a drawing step (it gives a new image), `{"id": "crop", "type": "crop_around_detections", "inputs": {"image": "image"}}` crops the original. Where a node gives two outputs of a type, name one as `node.output`.
+
 A saved or built-in one reads the same way (GET /api/workflows/ID): start from the closest and change it.
 
 1. The nodes it needs: GET /api/workflows/nodes, then ?names= for those in full.

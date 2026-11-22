@@ -24,7 +24,7 @@ function changed(yes) {
 
 let following = null; // the agent's call this builder is drawing: { id, saves } (inert while it lasts)
 
-editor.on("change", () => { if (!following) changed(true); });
+editor.on("change", () => changed(true));  // the person's changes only: setting a document isn't one
 about.forEach((input) => input.addEventListener("input", () => changed(true)));
 
 // Leaving with unsaved changes asks first.
@@ -89,15 +89,13 @@ testButton.addEventListener("click", async () => {
 // --- The agent building this workflow ---
 // While the agent writes a workflow document for this builder (change: PUT to it, or POST a new
 // one or a check, named as this one; the chat passes what's written so far as "agent:call"), the
-// builder draws it: each node once its id and type are written, each edge once both its nodes are
-// there. It's inert meanwhile. When the reply ends, a save to this workflow that went through
-// reloads the page with it (the chat does); anything else stays here as unsaved changes.
+// builder draws it: each node once its id and type are written, connected as mozo's rule says
+// (an input it names from a node not written yet waits for it). It's inert meanwhile. When the
+// reply ends, a save to this workflow that went through reloads the page with it (the chat does);
+// anything else stays here as unsaved changes.
 
 function drawn(body) {
-  const nodes = (body.nodes ?? []).filter((n) => n && n.id && n.type);
-  const ids = new Set(nodes.map((n) => n.id));
-  const edges = (body.edges ?? []).filter((e) => e && ids.has(e.source) && ids.has(e.target) && e.sourceHandle && e.targetHandle);
-  return { ...body, nodes, edges };
+  return { ...body, nodes: body.nodes.filter((n) => n?.id && n?.type) };
 }
 
 const nameInput = [...about].find((input) => input.name === "name");

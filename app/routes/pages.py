@@ -49,7 +49,7 @@ def _builder(request: Request, workflow_id: str | None, document: dict):
 @router.get("/workflows/new", response_class=HTMLResponse)
 def new_workflow(request: Request):
     """The builder on an empty canvas; saving names the new workflow."""
-    return _builder(request, None, {"name": "", "description": "", "nodes": [], "edges": []})
+    return _builder(request, None, {"name": "", "description": "", "nodes": []})
 
 
 @router.get("/workflows/{workflow_id}/edit", response_class=HTMLResponse)

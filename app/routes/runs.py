@@ -14,14 +14,14 @@ from app.routes import IMAGES, READS, Answer, CommaList, Done, Images, Started, 
 
 router = APIRouter(prefix="/api")
 DB = Annotated[sqlite3.Connection, Depends(db.get)]
-# A workflow document, as the builder saves it.
+# A workflow document, as the builder saves it: mozo's short form.
 Document = Annotated[dict[str, Any], Body(description=(
-    'A mozo workflow: {"name", "description", "nodes": [{"id", "type", "data": {"parameters": {…}}}], '
-    '"edges": [{"source", "sourceHandle", "target", "targetHandle"}]}. Node types with their ports and parameters '
-    "are in the node catalogue (GET /api/workflows/nodes); an edge joins an output (sourceHandle) to an input "
-    "(targetHandle) of the "
-    "same type. A run keeps what reaches its save nodes: save_to_babasu (the image's annotations), "
-    "save_image_to_babasu (a new image), save_video_to_babasu (a video's frames as a new video)."))]
+    'A mozo workflow: {"name", "description", "nodes"}, each node {"id" (yours), "type" (from GET /api/workflows/nodes), '
+    'its parameters}. An input not written takes the latest earlier node with an output of its type; to take another, '
+    'write it under "inputs": {"image": "read"}. A run keeps what reaches its save nodes: save_to_babasu (the image\'s '
+    'annotations), save_image_to_babasu (a new image), save_video_to_babasu (a video\'s frames as a new video). E.g. '
+    '{"name": "Squares", "nodes": [{"id": "image", "type": "read_media"}, {"id": "find", "type": "grounding_dino", '
+    '"text": ["square"]}, {"id": "keep", "type": "save_to_babasu"}]}'))]
 
 
 # --- What the API answers ---
@@ -59,7 +59,7 @@ class MissingFile(Answer):
 
 
 class WorkflowDetail(WorkflowListed):
-    graph: dict[str, Any] = Field(description="The workflow document: name, description, nodes, edges (as PUT takes it).")
+    graph: dict[str, Any] = Field(description="The workflow document: name, description, nodes (as PUT takes it).")
     kept: list[str] = Field(description="What a run keeps, a save node at a time: annotations, or image (label).")
     prompt_parameters: list[str] = Field(description="The parameters that take the prompts, node.parameter.")
     missing_files: list[MissingFile] = Field(description="Files its nodes name that aren't there.")

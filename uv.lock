@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 
 [[package]]
@@ -69,7 +69,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "jinja2", specifier = ">=3.1" },
-    { name = "mozo", specifier = ">=1.12.0" },
+    { name = "mozo", specifier = ">=1.13.0" },
     { name = "openai", specifier = ">=3.49.0" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "pixelflow", specifier = ">=0.11.0" },
@@ -392,7 +392,7 @@ wheels = [
 
 [[package]]
 name = "mozo"
-version = "1.12.0"
+version = "1.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -408,9 +408,9 @@ dependencies = [
     { name = "torchvision" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/32/16/4c9a08108e1b4914452fdc2f3a1af49f823636cc3984aece03e7a7bc9016/mozo-1.12.0.tar.gz", hash = "sha256:37882a8ebd158a946c4047b65bbe4c4ad498f7a7cbd3d89289db042c2a91f047", size = 10171404, upload-time = "2026-11-21T21:05:56.061Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/51/efe0d3c00dd3d642c7efe60cee23a0d55d8757be19777846efa3b1e4dee2/mozo-1.13.0.tar.gz", hash = "sha256:4a234dc2b7b8ec2f3e184f088a83c8f8754ed12c5b6785604911c0b94e4b3bd9", size = 10196741, upload-time = "2026-11-22T19:52:58.636Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/92/fb6efdcfd59dc2361087fb0400ffcef3547986b19083ed7fba4357758b72/mozo-1.12.0-py3-none-any.whl", hash = "sha256:9e5c1d03ba0e0929f4a1692dc9e58804959297d9675647d24a5cefdc9aaad0f8", size = 10320481, upload-time = "2026-11-21T21:05:53.877Z" },
+    { url = "https://files.pythonhosted.org/packages/26/b1/657cd924c305f4ca48711072fd7e0524e6a9c3429a8a78b3dfc2c5eaca6d/mozo-1.13.0-py3-none-any.whl", hash = "sha256:abcc7ef33f98e6b3f41dd0b5a23ca755ac1ea1715e88bc292b2ba12f92492174", size = 10349611, upload-time = "2026-11-22T19:52:55.521Z" },
 ]
 
 [[package]]

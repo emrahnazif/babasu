@@ -1,6 +1,8 @@
 """What the API answers a call that's wrong, or written as people (and models) expect."""
 
-from app import db, projects
+import json
+
+from app import config, db, projects
 
 
 def test_a_listed_image_says_how_many_objects_of_each_class_it_has(api, street):
@@ -79,3 +81,18 @@ def test_a_settings_page_posts_to_its_own_address(api):
     html = api.get("/settings/models?next=/projects/new").text
     actions = [a for a in re.findall(r'<form[^>]*action="([^"]*)"', html) if a != "/agent/open"]
     assert actions == ["/settings/models?next=%2Fprojects%2Fnew"]
+
+
+
+def test_a_workflow_is_saved_in_its_short_form(api):
+    """Saved as written, without edges: an input written only where the latest earlier one isn't it."""
+    document = {"name": "Square crops", "nodes": [
+        {"id": "image", "type": "read_media"},
+        {"id": "find", "type": "grounding_dino", "text": ["square"]},
+        {"id": "draw", "type": "draw_boxes"},
+        {"id": "crop", "type": "crop_around_detections", "inputs": {"image": "image"}},
+        {"id": "keep", "type": "save_image_to_babasu"},
+    ]}
+    saved = api.post("/api/workflows", json=document).json()
+    assert json.loads((config.WORKFLOWS_DIR / f"{saved['id']}.json").read_text()) == document
+    assert api.get(f"/api/workflows/{saved['id']}").json()["graph"] == document
