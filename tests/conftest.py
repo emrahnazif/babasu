@@ -19,7 +19,7 @@ atexit.register(shutil.rmtree, _home, ignore_errors=True)
 os.environ["HOME"] = str(_home)
 os.environ["XDG_DATA_HOME"] = str(_home / "data")
 
-from app import config, db, jobs, media, projects  # noqa: E402  (after HOME is set)
+from app import code, config, db, jobs, media, projects  # noqa: E402  (after HOME is set)
 
 if not config.DATA_DIR.is_relative_to(_home):  # e.g. Windows, whose folders don't come from HOME
     pytest.exit(f"The workspace would be {config.DATA_DIR}, not a temporary folder: not running tests there")
@@ -27,7 +27,9 @@ if not config.DATA_DIR.is_relative_to(_home):  # e.g. Windows, whose folders don
 
 @pytest.fixture
 def conn():
-    """A connection to a new, empty database."""
+    """A connection to a new, empty database (and no code process of an earlier test's chat, whose
+    folder goes with the workspace)."""
+    code.close_all()
     shutil.rmtree(config.DATA_DIR, ignore_errors=True)
     db.migrate()
     with closing(db.connect()) as c:
