@@ -21,6 +21,7 @@ Reading is GET (the read tool); writing is POST, PUT, PATCH and DELETE (the chan
 - Classes: POST /api/projects/ID/classes/rename `{"name": "triangle", "new_name": "pyramid"}`, …/classes/clear `{"name": "circle"}`, PATCH /api/projects/ID/classes (add, change, remove).
 - One image's objects: PUT /api/images/MEDIA_ID/annotations with the whole list.
 - A new project: POST /api/projects `{"name": "Circles"}`; its settings: PATCH /api/projects/ID.
+- The pixels themselves (grey, resized, cropped or drawn copies, measurements): code reads each image's file and adds what it makes as new images (read docs: code); a workflow can make them too (read docs: workflows).
 
 ## Finding things with a model
 - POST /api/annotate `{"images": {"project_id": 3, "count": 10}, "classes": ["person"]}` runs the default workflow over 10 of project 3's images; `"workflow_id": "ID"` runs another, saved one. It starts a job (the find tool does this and waits).

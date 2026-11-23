@@ -1,8 +1,12 @@
 """How the agent talks to the model's server."""
 
+import json
+
+import numpy as np
+import pixelflow as pf
 import pytest
 
-from app import agent, agent_tools, agents, settings
+from app import agent, agent_tools, agents, media, projects, settings
 from scripts.fake_model import Script, call, text, think, turn, use
 
 
@@ -71,8 +75,6 @@ def test_the_forms_empty_thinking_leaves_it_to_the_server():
 
 
 def test_look_sees_a_videos_frame_and_says_which(conn, video):
-    from app import projects
-
     with conn:
         project_id = projects.create(conn, "Clips")
     media_id = video(project_id)
@@ -95,3 +97,55 @@ def test_a_turn_says_how_long_it_took_live_and_saved(model, conn):
 def test_a_find_on_a_video_says_it_counted_frames():
     found = {"status": "succeeded", "objects_found": {"person": 10}, "looked_at_images": 1, "video_frames": 28}
     assert agent_tools._found_note(found) == "Found 10 person objects, looking at 1 image (28 video frames)"
+
+
+def _recipe(title: str) -> str:
+    """The code of a worked example in the code docs, by its heading."""
+    doc = (agent_tools.config.DOCS_DIR / "code.md").read_text()
+    section = doc.split(f"## {title}\n", 1)[1]
+    return section.split("```python\n", 1)[1].split("```", 1)[0]
+
+
+def test_code_makes_grey_copies_of_images_and_a_video_as_the_docs_show(model, conn, api, workers, image, video):
+    """The worked example in docs/code.md, run as the agent's code: babasu reads each file, the copies come in."""
+    with conn:
+        project_id = projects.create(conn, "Street")
+        for n, name in enumerate(["big.png", "empty.png", "small.png"]):
+            media.store(conn, project_id, image(n * 100), name)  # each a different grey
+    video(project_id)
+    code = _recipe("Grey copies of a project's images and videos").replace("babasu.project(3)", f"babasu.project({project_id})")
+    model([[call(0, "c1", "run_code", json.dumps({"code": code, "seconds": 120}))], [text("Done.")]])
+    events = turn("make grey copies")
+
+    ran = next(e for e in events if e["type"] == "tool" and e["status"] != "running")
+    assert ran["status"] == "done", ran.get("error")
+    grey, = [p for p in projects.list_all(conn) if p["name"] == "Street in grey"]
+    copies = projects.detail(conn, grey["id"])["images"]
+    assert sorted(c["filename"] for c in copies) == ["big.png", "clip.mp4", "empty.png", "small.png"]
+    for copy in copies:
+        found = projects.media_file(conn, copy["media_id"])
+        pixels = next(iter(pf.VideoReader(found["path"]))) if found["video"] else pf.read_image(found["path"])
+        assert np.ptp(pixels.astype(int), axis=-1).max() <= 2  # grey: red, green and blue the same
+
+
+def test_code_imports_babasu_and_its_images_have_the_apis_names(model, api, street):
+    """Code written as it would be anywhere imports what it uses; an image's names are the API's."""
+    code = f"import babasu\nprint(sorted(i.filename for i in babasu.project({street}).images() if i.media_id))"
+    model([[call(0, "c1", "run_code", json.dumps({"code": code}))], [text("Done.")]])
+    ran = next(e for e in turn("list them") if e["type"] == "tool" and e["status"] != "running")
+    assert ran["status"] == "done", ran.get("error")
+    assert ran["note"] == "['big.png', 'empty.png', 'small.png']"
+
+
+def test_code_crops_every_person_into_a_new_project_as_the_docs_show(model, conn, api, workers, street):
+    code = _recipe("Crop every person into a new project").replace("babasu.project(3)", f"babasu.project({street})")
+    model([[call(0, "c1", "run_code", json.dumps({"code": code}))], [text("Done.")]])
+    events = turn("crop the people")
+
+    ran = next(e for e in events if e["type"] == "tool" and e["status"] != "running")
+    assert ran["status"] == "done", ran.get("error")
+    people, = [p for p in projects.list_all(conn) if p["name"] == "People"]
+    crop, = projects.detail(conn, people["id"])["images"]
+    found = projects.image(conn, crop["media_id"])
+    assert (found["width"], found["height"]) == (8, 20)  # the person's box in big.png
+

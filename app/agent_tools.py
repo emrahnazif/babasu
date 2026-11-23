@@ -27,7 +27,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, partial
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlencode
@@ -477,6 +477,14 @@ def _for_code(method: str, path: str, body) -> object:
     return response.json() if response.content else None
 
 
+def _file_for_code(conn: sqlite3.Connection, media_id: int) -> dict:
+    """Where an image's file is, for the agent's code (code_mode.Locate)."""
+    found = projects.media_file(conn, media_id)
+    if found is None:
+        raise code_mode.Refused(f"There's no image {media_id}.")
+    return found
+
+
 # --- The conversation's folder: the agent's code and its files ---
 
 
@@ -491,9 +499,11 @@ def folder() -> Path:
 
 
 class CodeArgs(Args):
-    code: str = Field(description="Python to run. `api` is the app's API (api.get, post, put, patch, "
-                             "delete; api.images(project_id, where) is a list of a project's images with their "
-                             "objects). print() what you need, and the counts that check it.")
+    code: str = Field(description="Python to run. `babasu` has the projects: babasu.project(id).images() are its "
+                             "images, each with its objects and `file` (read it with pixelflow: pf.read_image, "
+                             "pf.VideoReader); project.add(paths) puts files you made in as new images. `api` is "
+                             "the app's API (api.get, post, put, patch, delete). print() what you need, and the "
+                             "counts that check it.")
     seconds: int = Field(code_mode.TIMEOUT, ge=1, le=600, description="How long it may take at most, in seconds.")
 
 
@@ -504,7 +514,8 @@ def _last_line(text: str) -> str:
 
 
 @tool(
-    "Run Python for what no single operation does: going through many images, measuring, comparing. One process "
+    "Run Python for what no single operation does: going through many images, measuring, comparing, working on "
+    "their pixels (making edited copies). One process "
     "for this chat (variables stay for the next run), in its own folder (files stay). read_docs code first. "
     "Returns what it printed.",
     CodeArgs,
@@ -512,7 +523,8 @@ def _last_line(text: str) -> str:
     note=lambda args, ran: _last_line(ran["output"]),
 )
 def run_code(conn: sqlite3.Connection, args: CodeArgs) -> Iterator[dict]:
-    result = yield from code_mode.session(folder(), frozenset(TOOLS)).run(args.code, _for_code, _turn.get().stop, args.seconds)
+    result = yield from code_mode.session(folder(), frozenset(TOOLS)).run(
+        args.code, _for_code, partial(_file_for_code, conn), _turn.get().stop, args.seconds)
     if result["error"]:
         raise ToolError(result["error"] + (f"\nPrinted before it:\n{result['output']}" if result["output"] else ""))
     return {"output": result["output"]}

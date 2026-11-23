@@ -388,6 +388,14 @@ def image_file(conn: sqlite3.Connection, media_id: int, frame: int | None = None
     return {"path": file, "task": row["task"]}
 
 
+def media_file(conn: sqlite3.Connection, media_id: int) -> dict | None:
+    """An image's own file, the original as it came (a video's too): {path, video}. None if there's none."""
+    row = conn.execute("SELECT sha256, ext, type FROM media WHERE id = ?", (media_id,)).fetchone()
+    if row is None:
+        return None
+    return {"path": str(media.path(row["sha256"], row["ext"])), "video": row["type"].startswith("video/")}
+
+
 # An annotation `a` of the media row being filtered.
 _OF_IMAGE = "a.media_id = media.id"
 

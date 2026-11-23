@@ -3,11 +3,13 @@ filtering, combining projects), run in a child process: one per conversation, ke
 so what one run leaves in variables the next can use (the agent works in steps: do, look, decide,
 go on, on the same data). What it prints reaches the chat as it's printed.
 
-The code's one way in is `api`, the app's API. Its calls go back over a pipe to the app, which
-makes them in the agent's turn, so they're checked as the pages' are and recorded in History as
-part of that turn. Nothing else is handed to the code (no database, no connection). It's the
-person's own machine and their agent: Python can still open files, so "the API only" is how the
-code is guided (app/docs/code.md), not a sandbox.
+The code changes things only through `api`, the app's API. Its calls go back over a pipe to the
+app, which makes them in the agent's turn, so they're checked as the pages' are and recorded in
+History as part of that turn. Reading is open: `babasu` (app/workbench.py) gives the projects and
+their images in vision terms, each image with the path of its file (the app says where it is, over
+the same pipe), so the code reads pixels with pixelflow as any vision code does. No database or
+connection is handed to it. It's the person's own machine and their agent: "change through the API"
+is how the code is guided (app/docs/code.md), not a sandbox.
 
 A child process of the app's own executable (multiprocessing, spawn), not `python` on the PATH: a
 PyInstaller build has no interpreter, but runs its own children the same way (run.py calls
@@ -19,12 +21,12 @@ import contextlib
 import io
 import multiprocessing
 import os
+import sys
 import threading
 import time
 import traceback
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from urllib.parse import urlencode
 
 TIMEOUT = 60  # seconds a run may take unless the agent gives more
 STOP_CHECK = 0.1  # seconds between looks at whether the agent's turn was stopped (the code, the model)
@@ -32,6 +34,8 @@ OUTPUT_SIZE = 8_000  # characters of what the code printed that come back; the r
 
 # Makes one API call for the code: (method, path, body) -> its JSON answer; raises Refused.
 Call = Callable[[str, str, object], object]
+# Where an image's file is, for the code: media_id -> {path, video}; raises Refused (no such image).
+Locate = Callable[[int], dict]
 
 
 class Refused(Exception):
@@ -41,13 +45,20 @@ class Refused(Exception):
 class Api:
     """The app's API, for code: api.get("/api/projects"), api.post(path, body), api.put, api.patch,
     api.delete. Each returns the JSON answer (None when there's none); a refusal raises Refused
-    with the API's reason. api.images(project_id) goes through a project's images, page by page."""
+    with the API's reason."""
 
     def __init__(self, pipe):
         self._pipe = pipe
 
     def _call(self, method: str, path: str, body=None):
-        self._pipe.send(("call", method, path, body))
+        return self._ask(("call", method, path, body))
+
+    def _file(self, media_id: int) -> dict:
+        """Where an image's file is: {path, video} (babasu's Image.file)."""
+        return self._ask(("file", media_id))
+
+    def _ask(self, message: tuple):
+        self._pipe.send(message)
         ok, answer = self._pipe.recv()
         if not ok:
             raise Refused(answer)
@@ -67,18 +78,6 @@ class Api:
 
     def delete(self, path: str):
         return self._call("DELETE", path)
-
-    def images(self, project_id: int, where: str = "") -> list[dict]:
-        """A project's images (those matching the filter `where`), each with its objects: a list, all
-        read before it's returned, so changing them while going through it is safe."""
-        found, page, pages = [], 1, 1
-        while page <= pages:
-            data = self.get(f"/api/projects/{project_id}?"  # 100 a page, the most the API gives
-                            + urlencode({"page": page, "where": where, "images": 100, "annotations": 1}))
-            pages = data["pages"]
-            found += data["images"]
-            page += 1
-        return found
 
 
 class _Printed(io.TextIOBase):
@@ -125,7 +124,12 @@ def _child(pipe, folder: str, tools: frozenset[str]) -> None:
             shown = percent
             pipe.send(("progress", done, total))
 
-    names = {"api": Api(pipe), "Refused": Refused, "progress": progress, "__name__": "__main__"}
+    from app import workbench  # here, not at the top: it imports this module
+
+    api = Api(pipe)
+    workbench.connect(api, progress)
+    sys.modules["babasu"] = workbench  # `import babasu` is the one the code has
+    names = {"api": api, "babasu": workbench, "Refused": Refused, "progress": progress, "__name__": "__main__"}
     while pipe.poll(IDLE):
         try:
             code = pipe.recv()
@@ -150,7 +154,7 @@ def _child(pipe, folder: str, tools: frozenset[str]) -> None:
 def _hint(e: Exception, tools: frozenset[str]) -> str:
     """How to correct what code written as if it were elsewhere gets wrong: importing `api`, calling a tool."""
     if isinstance(e, ModuleNotFoundError) and e.name == "api":
-        return ". `api` is there already, without an import: api.images(project_id), api.get(path)…"
+        return ". `api` is there already, without an import: api.get(path), api.post(path, body)…"
     if isinstance(e, NameError) and e.name in tools:
         return (f". The tools aren't in code: api.get(path) reads, api.post, put, patch and delete write; "
                 f"call {e.name} itself outside the code")
@@ -184,23 +188,23 @@ class Session:
         self.close()
         return f"{why} Its variables are gone: the next run starts a new process."
 
-    def run(self, code: str, call: Call, stop: threading.Event, timeout: int = TIMEOUT) -> Iterator[dict]:
-        """Run the code, making its API calls with
-        `call` (here, in this thread), for at most `timeout` seconds, or until `stop` is set. Yields what it shows as it
+    def run(self, code: str, call: Call, locate: Locate, stop: threading.Event, timeout: int = TIMEOUT) -> Iterator[dict]:
+        """Run the code, making its API calls with `call` and saying where its images' files are
+        with `locate` (here, in this thread), for at most `timeout` seconds, or until `stop` is set. Yields what it shows as it
         comes, {"type": "output", "text"} (as much as the agent gets) and {"type": "progress",
         "done", "total"}; returns {output: what it printed (cut when long), error: why it stopped,
         or None}. A run left before the code is done (the app failed to answer one of its calls,
         or the turn ended) ends the process: the code would wait for an answer that never comes."""
         self.running = True
         try:
-            return (yield from self._run(code, call, stop, timeout))
+            return (yield from self._run(code, call, locate, stop, timeout))
         except BaseException:
             self.close()
             raise
         finally:
             self.running = False
 
-    def _run(self, code: str, call: Call, stop: threading.Event, timeout: int) -> Iterator[dict]:
+    def _run(self, code: str, call: Call, locate: Locate, stop: threading.Event, timeout: int) -> Iterator[dict]:
         started = time.monotonic()
         self._pipe.send(code)
         kept, size = [], 0  # what's printed, up to OUTPUT_SIZE; how much in all
@@ -230,10 +234,10 @@ class Session:
                     yield {"type": "output", "text": text}
             elif message[0] == "progress":
                 yield {"type": "progress", "done": message[1], "total": message[2]}
-            else:
-                _, method, path, body = message
+            else:  # a question it waits on: an API call, or where an image's file is
                 try:
-                    self._pipe.send((True, call(method, path, body)))
+                    answer = call(*message[1:]) if message[0] == "call" else locate(message[1])
+                    self._pipe.send((True, answer))
                 except Refused as e:
                     self._pipe.send((False, str(e)))
         cut = f"\n… cut: {size:,} characters printed in all" if size > OUTPUT_SIZE else ""
