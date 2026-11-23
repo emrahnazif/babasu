@@ -149,3 +149,19 @@ def test_code_crops_every_person_into_a_new_project_as_the_docs_show(model, conn
     found = projects.image(conn, crop["media_id"])
     assert (found["width"], found["height"]) == (8, 20)  # the person's box in big.png
 
+
+def test_a_message_with_dropped_images_goes_into_the_project_made_for_them(model, conn, workers, image, tmp_path):
+    """As Continue does: the chat goes to the new project at once, and the message counts as written there."""
+    (tmp_path / "a.png").write_bytes(image(1))
+    script = model([[text("Two cars.")]])
+    events = turn("count the cars", page="/", about="Home", paths=[str(tmp_path / "a.png")])
+
+    into, = [e for e in events if e["type"] == "into"]
+    kinds = [e["type"] for e in events]
+    assert kinds.index("into") < kinds.index("attached") < kinds.index("agent")
+    conversation_id = agent.current_conversation(conn)
+    message = conn.execute("SELECT project_id, page, about FROM message WHERE role = 'user'").fetchone()
+    assert into["url"] == message["page"] == f"/projects/{message['project_id']}" and message["about"] is None
+    assert conn.execute("SELECT page FROM conversation WHERE id = ?", (conversation_id,)).fetchone()["page"] == into["url"]
+    said = script.requests[0]["messages"][-1]["content"]
+    assert into["url"] in said and "they're in it now" in said

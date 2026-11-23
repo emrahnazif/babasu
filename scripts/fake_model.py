@@ -111,11 +111,11 @@ def use(script: Script) -> Script:
     return script
 
 
-def turn(message: str, page: str | None = None, about: str | None = None) -> list[dict]:
-    """Send a message as the chat does (written on `page`, which showed `about`) and wait for the
-    turn to end: its events."""
+def turn(message: str, page: str | None = None, about: str | None = None, paths: list[str] = ()) -> list[dict]:
+    """Send a message as the chat does (written on `page`, which showed `about`, with the files
+    `paths` dropped) and wait for the turn to end: its events."""
     from app import agent
-    running = agent.start_turn(message, page, None, about)
+    running = agent.start_turn(message, page, None, about, paths)
     while not running.ended:
         time.sleep(0.02)
     return running.events

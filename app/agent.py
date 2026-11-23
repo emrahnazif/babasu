@@ -22,7 +22,7 @@ from contextlib import closing
 
 import openai
 
-from app import agent_tools, code, config, db, imports, jobs, settings
+from app import agent_tools, code, config, db, imports, jobs, projects, settings
 
 MAX_ROUNDS = 50  # model calls per turn; each round may run tools (building, trying and fixing a workflow takes many; the person can stop it any time)
 # Tokens one model call may write, its thinking included: a reply, a script or a workflow fits many
@@ -353,8 +353,8 @@ def _attached(message: dict) -> str:
     them, the same line for three or thousands, and the same later however the project changes."""
     if message["project_id"] is None:
         return ""
-    return (f'(Images dropped with this message, in project {message["project_id"]} made for them: '
-            f'the images {{"project_id": {message["project_id"]}}}.)\n\n')
+    return (f'(They dropped images with this message: the app made project {message["project_id"]} from them, '
+            f'and they\'re in it now. The images: {{"project_id": {message["project_id"]}}}.)\n\n')
 
 
 def _arguments(text: str) -> str:
@@ -537,6 +537,8 @@ def run_turn(
       {"type": "storing", "done": 300, "total": 10250}      the images the person dropped being stored, in a
                                                             project made for them (first; total null while
                                                             it's not known)
+      {"type": "into", "url": "/projects/12"}               the project made for them: the chat goes into it
+                                                            at once (the message counts as written there)
       {"type": "attached", "message_id": 57}                they're stored: the message shows them
       {"type": "agent", "agent": "Assistant", "model": "Qwen 3 8B"}   who answers
       {"type": "reasoning", "id", "since", "delta": "..."}  part of what the model thinks before it replies
@@ -603,8 +605,12 @@ def run_turn(
             return
         if paths:  # a project for them, filled by an import (a job: its log says what was skipped), before the model is asked
             project_id, job_id = imports.into_new_project(conn, paths)
-            with conn:
-                conn.execute("UPDATE message SET project_id = ? WHERE id = ?", (project_id, message_id))
+            page, page_title = f"/projects/{project_id}", projects.get(conn, project_id)["name"]
+            with conn:  # sent from the project it made: the person is in it, and the chat reopens there
+                conn.execute("UPDATE message SET project_id = ?, page = ?, page_title = ?, about = NULL WHERE id = ?",
+                             (project_id, page, page_title, message_id))
+            set_page(conn, conversation_id, page, page_title)
+            yield {"type": "into", "url": page}
             for job in jobs.watched(conn, job_id, stop):
                 yield {"type": "storing", "done": job["done"], "total": job["total"]}
             if stop.is_set():

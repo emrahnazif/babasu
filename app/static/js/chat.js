@@ -322,6 +322,7 @@ if (chat) {
         for (const line of lines.filter(Boolean)) {
           const event = JSON.parse(line);
           if (event.type === "storing") turn.storing(event);
+          else if (event.type === "into") into(event.url);
           else if (event.type === "attached") turn.attached(event.message_id);
           else if (event.type === "agent") turn.by(event.agent, event.model);
           else if (event.type === "reasoning") turn.reasoning(event);
@@ -361,6 +362,12 @@ if (chat) {
     } finally {
       setBusy(false);
     }
+  }
+
+  // The project made for the images sent with a message: the chat goes into it at once (the reply
+  // goes on, followed there), unless this page has unsaved work or is that project's already.
+  function into(url) {
+    if (location.pathname !== url && !document.querySelector("[data-unsaved]:not([hidden])")) location.assign(url);
   }
 
   // The message, with the images attached to it (a drop zone's paths, in this form wherever it is).
