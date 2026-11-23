@@ -114,7 +114,7 @@ async def refused(request: Request, exc: RequestValidationError) -> JSONResponse
 
 
 class Answer(BaseModel):
-    """What an API operation answers (its response_model): find_api shows its fields to the agent.
+    """What an API operation answers (its response_model): search_docs shows its fields to the agent.
     A field the code adds without declaring it is an error, so the description can't drift from
     the answer. A field with a default may be left out of an answer: its route uses
     response_model_exclude_unset, so it stays out. Plain types only (no validators): every answer

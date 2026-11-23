@@ -17,7 +17,7 @@ A project is what someone is working on: its images, their annotations and its c
 - The images are what's true: changing the class list never changes them. **Hiding** a class (the eye) only stops the project's pages drawing it; the API still has its annotations. A class images have can't be removed: **clear** its annotations first (POST /api/projects/ID/classes/clear), then remove it. **Renaming** (POST …/classes/rename) renames it on the images too; into another class's name, they merge. Clear and rename preview unless dry_run is false, and History can undo them.
 
 ## Changing many images at once
-POST /api/projects/ID/changes changes the images matching a filter (`where`, read docs: filters) in one call. Its `action`: **delete_objects** or **set_class** (with `class`, the new name) change the objects the filter names in brackets; **remove_images**, **copy_images** and **move_images** (with `to_project_id`) take the images.
+POST /api/projects/ID/changes changes the images matching a filter (`where`, search_docs filters) in one call. Its `action`: **delete_objects** or **set_class** (with `class`, the new name) change the objects the filter names in brackets; **remove_images**, **copy_images** and **move_images** (with `to_project_id`) take the images.
 - Every circle: `{"action": "delete_objects", "where": "(circle)"}`. Only the narrow ones: `(circle w:<80)`; narrow objects of any class: `(w:<80)`.
 - The first call is a preview (how many images and objects, nothing changed); the same call with `"dry_run": false` does it.
 

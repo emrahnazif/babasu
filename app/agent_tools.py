@@ -4,9 +4,9 @@ Each tool's arguments are a pydantic model, so the JSON schema the model sees is
 written by hand. Tools that change things don't ask for confirmation: what they change in the
 database, and the workflows they delete, can be undone for 30 days (app/history.py).
 The tools are what the agent has to do: read anything (any GET of the API) and change anything (any
-write; a change to many images at once previews first), find the API's paths, look at images (and
-at what a run found), show the person a page, wait for a job, run code for what nothing else does,
-and read the docs. Everything else is the API's: search, workflow nodes, runs, bulk changes.
+write; a change to many images at once previews first), search the docs and the API's operations,
+look at images (and at what a run found), show the person a page, wait for a job, and run code for
+what nothing else does. Everything else is the API's: search, workflow nodes, runs, bulk changes.
 A tool registered with opens=True returns {"open": "/a/page", …}: that page is shown to the person
 once the reply is done (app/agent.py, run_turn); after a call that changed something through the
 API (change, code), the page they're on reloads then instead (unless one opens).
@@ -20,9 +20,11 @@ import html
 import importlib.resources
 import inspect
 import json
+import math
 import re
 import sqlite3
 import threading
+from collections import Counter
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -266,7 +268,7 @@ def _kind(schema: dict) -> tuple[str, list[dict]]:
 
 def _fields(schema: dict) -> str:
     """An answer's fields, one a line, each with its type and meaning; an object's fields indented
-    under it: what find_api shows so code knows what it gets. Empty for an answer without a model."""
+    under it: what search_docs shows so code knows what it gets. Empty for an answer without a model."""
     words, inner = _kind(schema)
     if not inner:
         return ""
@@ -291,40 +293,12 @@ def _objects(objects: list[dict], depth: int) -> str:
 
 
 @cache
-def _search() -> list[tuple[dict, str, re.Pattern]]:
-    """Each operation with its text to search (find_api) and the paths it answers (_request)."""
+def _routes() -> list[tuple[dict, re.Pattern]]:
+    """Each operation with the paths it answers (_request)."""
     def answers(operation: str) -> re.Pattern:
         path = re.escape(operation.split(" ", 1)[1])
         return re.compile(re.sub(r"\\\{\w+\\\}", "[^/]+", path) + "$")  # /api/projects/{project_id} -> /api/projects/[^/]+
-    def text(o: dict) -> str:  # what it does and takes; its answer's fields would match too much
-        return json.dumps({k: v for k, v in o.items() if k != "answer"}).lower()
-    return [(o, text(o), answers(o["operation"])) for o in operations()]
-
-
-class FindApiArgs(Args):
-    query: str = Field(min_length=1, description='An operation ("PATCH /api/projects/{project_id}"), or words ("annotations", '
-                       '"cancel job").')
-
-
-@tool(
-    "The details of the app's API operations: what one does, its parameters, the JSON body it takes and the fields "
-    "of what it answers (what your code gets). Give an operation (\"PATCH /api/projects/{project_id}\"), or "
-    "words to find up to three.",
-    FindApiArgs,
-    label="Looking up the app's API",
-    note=lambda args, found: f"{len(found)} found",
-)
-def find_api(conn: sqlite3.Connection, args: FindApiArgs) -> list[dict]:
-    query = args.query.strip().lower()
-    exact = [o for o in operations() if o["operation"].lower() == query]
-    if exact:
-        return exact
-    words = re.findall(r"\w+", query)
-    scored = sorted(((sum(w in text for w in words), o) for o, text, _ in _search()), key=lambda t: -t[0])
-    found = [o for score, o in scored[:3] if score]
-    if not found:
-        raise ToolError("No operation matches those words; try others.")
-    return found
+    return [(o, answers(o["operation"])) for o in operations()]
 
 
 ANSWER_SIZE = 8_000  # characters of an answer the agent reads; a longer one is refused, with how to ask for less
@@ -386,7 +360,7 @@ def _read_note(args: ReadArgs, answer) -> str:
     "of its images; ?where=FILTER for some, ?images=0 for the project alone); /api/projects/ID/stats?field=class "
     "(objects per class); /api/images/MEDIA_ID (one image and its objects); /api/images?where=FILTER (every project's "
     "images matching it, or any image set: how many, the first with their ids and projects); /api/workflows; /api/workflows/nodes; /api/jobs; /api/vision/models; /api/search?q=NAME; "
-    "/api/history. A page's path works too (/projects/3 reads /api/projects/3); find_api finds any other.",
+    "/api/history. A page's path works too (/projects/3 reads /api/projects/3); search_docs finds any other.",
     ReadArgs,
     label="Reading the app's data",
     note=_read_note,
@@ -400,7 +374,7 @@ class ChangeArgs(Args):
     method: Literal["POST", "PUT", "PATCH", "DELETE"]
     path: str = Field(description="The operation's path with its ids, e.g. /api/projects/3/changes.")
     body: dict[str, Any] | list[Any] | None = Field(
-        None, description="The JSON body (an object or a list), for an operation that takes one (find_api shows it).")
+        None, description="The JSON body (an object or a list), for an operation that takes one (search_docs shows it).")
 
     @field_validator("body", mode="before")
     @classmethod
@@ -426,7 +400,7 @@ def _change_note(args: ChangeArgs, answer) -> str:
     "PUT /api/images/MEDIA_ID/annotations (one image's objects); POST /api/projects/ID/changes (many "
     "images at once: delete objects, change their class, remove, copy or move images; only a preview unless "
     "dry_run is false); POST /api/projects/ID/import (images from files and folders); POST /api/workflows (save "
-    "one). find_api has what each takes, and any other.",
+    "one). search_docs has what each takes, and any other.",
     ChangeArgs,
     label="Changing the app's data",
     note=_change_note,
@@ -439,7 +413,7 @@ def change(conn: sqlite3.Connection, args: ChangeArgs) -> object:
 def _operations_at(path: str) -> list[dict]:
     """The operations that answer at a path (with its ids; its query left out), one a method."""
     target = path.strip().split("?")[0]
-    return [o for o, _, answers in _search() if answers.match(target)]
+    return [o for o, answers in _routes() if answers.match(target)]
 
 
 def _api_path(path: str) -> str:
@@ -457,7 +431,7 @@ def _request(method: str, path: str, body=None):
     operations_here = _operations_at(path)
     methods = [o["operation"].split(" ")[0] for o in operations_here]
     if not methods:
-        raise ToolError(f"There's no operation at {target}; find_api finds them.")
+        raise ToolError(f"There's no operation at {target}; search_docs finds them.")
     if method not in methods:  # what it does take, in full, so the next call can be right
         raise ToolError(f"{target} takes {', '.join(methods)}, not {method}:\n{json.dumps(operations_here, ensure_ascii=False)}")
     response = _client.request(method, path, json=body)
@@ -516,7 +490,7 @@ def _last_line(text: str) -> str:
 @tool(
     "Run Python for what no single operation does: going through many images, measuring, comparing, working on "
     "their pixels (making edited copies). One process "
-    "for this chat (variables stay for the next run), in its own folder (files stay). read_docs code first. "
+    "for this chat (variables stay for the next run), in its own folder (files stay). search_docs code first. "
     "Returns what it printed.",
     CodeArgs,
     label="Running code",
@@ -713,53 +687,90 @@ TOPICS = [topic for topic in DOCS if "/" not in topic]  # the pages of a library
 
 
 class DocsArgs(Args):
-    topic: str = Field(description="A topic, from the list in read_docs' description.")
+    query: str = Field(min_length=1, description='A topic ("code"), a pixelflow page ("pixelflow/core-concepts/detections"), '
+                       'an operation ("PATCH /api/projects/{project_id}"), or words ("crop people", "import files").')
 
 
 @tool(
-    "How the app works, and how to do something in it, on a topic: " + ", ".join(TOPICS) + ". Read it when "
-    "you're unsure what something is or how it's done, or before explaining it. pixelflow (for run_code) lists "
-    "its pages; read one as pixelflow/PATH, e.g. pixelflow/core-concepts/detections.",
+    "The app's docs and API, in one place: how the app works, how something is done in it, and what each API "
+    "operation takes and answers (the fields your code gets). Give a topic to read it whole: " + ", ".join(TOPICS)
+    + " (pixelflow, for run_code, lists its pages: pixelflow/PATH); an operation for what it takes and answers; "
+    "or words for the parts of the docs and the operations about them. Search when you're unsure what something "
+    "is, how it's done or which call does it, and before explaining it.",
     DocsArgs,
     label="Reading the docs",
-    note=lambda args, doc: doc.partition("\n")[0].removeprefix("# "),
+    note=lambda args, found: found.partition("\n")[0].removeprefix("# ") if isinstance(found, str) else f"{len(found)} found",
 )
-def read_docs(conn: sqlite3.Connection, args: DocsArgs) -> str:
-    topic = args.topic.strip().lower().removesuffix(".md").removeprefix("/").removeprefix("docs/")
-    if "/" in topic and f"pixelflow/{topic}" in DOCS:  # a link in a pixelflow page: /docs/tracking/zones.md
-        topic = f"pixelflow/{topic}"
-    if topic in DOCS:
-        return DOCS[topic]
-    if topic.startswith("pixelflow/"):
-        raise ToolError(f"pixelflow has no page {args.topic!r}; read_docs pixelflow lists them.")
-    found = _sections_about(topic)
+def search_docs(conn: sqlite3.Connection, args: DocsArgs) -> str | list[dict]:
+    query = args.query.strip().lower()
+    page = query.removesuffix(".md").removeprefix("/").removeprefix("docs/")
+    for name in (page, f"pixelflow/{page}"):  # the second: a link in a pixelflow page, /docs/tracking/zones.md
+        if name in DOCS:
+            return DOCS[name]
+    found = [o for o in operations() if o["operation"].lower() == query] or _ranked(query)
     if not found:
-        raise ToolError(f"There is no topic {args.topic!r}, and the docs don't mention it; the topics: {', '.join(TOPICS)}.")
-    return (f"There is no topic {args.topic!r}; what the docs say about it (the topics: {', '.join(TOPICS)}):\n\n"
-            + "\n\n".join(f"From {name}:\n{text}" for name, text in found))
-
-
-def _words(text: str) -> set[str]:
-    """Words to match, by their first five letters: classes is class, renaming is rename."""
-    return {w[:5] for w in re.findall(r"[a-z]{3,}", text.lower())}
-
-
-@cache
-def _sections() -> list[tuple[str, str, set[str], set[str]]]:
-    """The app's docs cut at their ## headings: topic, text, its heading's words, its words."""
-    found = []
-    for name in TOPICS:
-        if name != "pixelflow":
-            for part in re.split(r"\n(?=## )", DOCS[name]):
-                heading = part.partition("\n")[0]
-                found.append((name, part.strip(), _words(heading), _words(part)))
+        raise ToolError(f"Nothing in the docs or the API is about {args.query!r}; try other words, or a topic: {', '.join(TOPICS)}.")
     return found
 
 
-def _sections_about(query: str, most: int = 2) -> list[tuple[str, str]]:
-    """The docs' sections that match the words of `query` best (a word in the heading counts more)."""
-    wanted = _words(query)
-    scored = [(sum(3 * (w in heading) + (w in words) for w in wanted), name, text)
-              for name, text, heading, words in _sections()]
-    scored = sorted((s for s in scored if s[0]), key=lambda s: -s[0])
-    return [(name, text) for _, name, text in scored[:most]]
+SEARCH_RESULTS = 3  # parts of the docs and operations a search answers
+HEADING_WEIGHT = 3  # a word in a part's heading (an operation's name and description) counts as this many in its text
+K1, B = 1.2, 0.75  # BM25's usual constants: how fast more of a word stops counting; how much a long part is evened out
+SCHEMA_KEYS = {"type", "in", "format", "required", "default", "answer"}  # an operation's JSON that isn't words about it
+
+
+def _terms(text: str) -> list[str]:
+    """Words to match, cut to their first five letters (a prefix stemmer: renaming is rename, detection
+    is detect), less a plural's s, which a word of five letters or fewer keeps (cars is car, classes
+    and class are clas)."""
+    return [w[:5].removesuffix("s") for w in re.findall(r"[a-z]{3,}", text.lower())]
+
+
+def _words(heading: str, text: str) -> Counter:
+    """A part's words to match, each a heading's counting HEADING_WEIGHT times."""
+    return Counter(_terms(text)) + Counter({w: HEADING_WEIGHT - 1 for w in _terms(heading)})
+
+
+def _prose(value) -> str:
+    """An operation's words: its names and descriptions, its parameters' and its body's fields, not
+    JSON's own keys."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return " ".join(map(_prose, value))
+    if isinstance(value, dict):
+        return " ".join([*value.get("properties", {}), *(_prose(v) for k, v in value.items() if k not in SCHEMA_KEYS)])
+    return ""
+
+
+@dataclass(frozen=True)
+class _Index:
+    parts: list[tuple[dict, Counter]]  # each part with its words
+    weight: dict[str, float]  # each word's: the fewer parts have it, the more it counts (BM25's idf)
+    average: float  # a part's length, on average
+
+
+@cache
+def _index() -> _Index:
+    """What search_docs searches: every part of the docs (the app's and pixelflow's, cut at their ##
+    headings), {doc, text}, and every operation in full."""
+    parts = [({"doc": name, "text": part.strip()}, _words(part.partition("\n")[0], part))
+             for name, doc in DOCS.items() if name != "pixelflow"  # its index: its pages are in here themselves
+             for part in re.split(r"\n(?=## )", doc)]
+    parts += [(o, _words(o["operation"] + " " + o["description"], _prose(o))) for o in operations()]
+    having = Counter(w for _, words in parts for w in words)
+    weight = {w: math.log(1 + (len(parts) - n + 0.5) / (n + 0.5)) for w, n in having.items()}
+    return _Index(parts, weight, sum(words.total() for _, words in parts) / len(parts))
+
+
+def _ranked(query: str) -> list[dict]:
+    """The parts of the docs and the operations that match the words of `query` best (BM25)."""
+    index = _index()
+    wanted = set(_terms(query))
+    scored = []
+    for found, words in index.parts:
+        evened = K1 * (1 - B + B * words.total() / index.average)
+        score = sum(index.weight[w] * words[w] * (K1 + 1) / (words[w] + evened) for w in wanted if w in words)
+        if score:
+            scored.append((score, found))
+    return [found for _, found in sorted(scored, key=lambda s: -s[0])[:SEARCH_RESULTS]]

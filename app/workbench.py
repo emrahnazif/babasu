@@ -75,7 +75,7 @@ class Project:
         self.classes = [c["name"] for c in data["classes"]]
 
     def images(self, where: str = "") -> list[Image]:
-        """Its images (those matching the filter `where`, read_docs filters), each with its objects:
+        """Its images (those matching the filter `where`, search_docs filters), each with its objects:
         read whole first, so changing them while going through the list is safe."""
         found, page, pages = [], 1, 1
         while page <= pages:

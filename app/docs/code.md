@@ -5,7 +5,7 @@ Use run_code for what the API doesn't do in one call: going through many images,
 
 ## babasu
 - `babasu.project(id)`, `babasu.projects()`, `babasu.new_project(name)`: a project has `id`, `name` and `classes` (their names).
-- `project.images(where="")`: its images (those matching a filter, read docs: filters), each an `Image` with `media_id`, `filename`, `width`, `height`, `class_counts`, `annotations` (its objects), `is_video` and `file`.
+- `project.images(where="")`: its images (those matching a filter, search_docs filters), each an `Image` with `media_id`, `filename`, `width`, `height`, `class_counts`, `annotations` (its objects), `is_video` and `file`.
 - `image.file` is the path of its file, the original as it came, a video's too. Read it with pixelflow: `pf.read_image(image.file)` is an RGB array; `pf.VideoReader(image.file)` gives a video's frames (RGB) and its `fps`. Never write to it.
 - `project.add(*paths)`: puts image and video files (or folders of them) in as new images, and waits until they're in: `{added, already_there, skipped}`. Make the files in your folder (`pf.save_image`, `pf.VideoWriter`), then add them.
 - `image.set_annotations(objects)`: replaces its objects with the whole list (leave out what goes).
@@ -13,12 +13,12 @@ Use run_code for what the API doesn't do in one call: going through many images,
 - `babasu.wait(job_id)` waits for any job; one that fails raises `Refused`.
 
 ## The client
-- `api.get(path)`, `api.post(path, body)`, `api.put(path, body)`, `api.patch(path, body)`, `api.delete(path)`: any /api operation (find_api finds one and what it takes). Each returns the JSON answer; a write's says what it did (`did`).
+- `api.get(path)`, `api.post(path, body)`, `api.put(path, body)`, `api.patch(path, body)`, `api.delete(path)`: any /api operation (search_docs finds one and what it takes). Each returns the JSON answer; a write's says what it did (`did`).
 - A refusal raises `Refused` with the API's reason: catch it to go on with the others, or let it stop the code.
 - `print()` what you need to see and what you'll report: the output comes back to you (8,000 characters at most).
 - The code's changes are part of your turn: undoing the turn (History) undoes them.
 - Read any file; change projects, images and annotations only through `babasu` and `api`, never the database or the app's own files.
-- pixelflow (`import pixelflow as pf`; read_docs pixelflow: its docs) and numpy are there. A run stops after 60 seconds unless you give more (`seconds`, up to 600).
+- pixelflow (`import pixelflow as pf`; search_docs pixelflow: its docs) and numpy are there. A run stops after 60 seconds unless you give more (`seconds`, up to 600).
 - `progress(done, total)` shows a bar in the chat while a long loop runs; what you print shows there as it's printed.
 
 ## Your folder
@@ -36,7 +36,7 @@ Your runs in a chat share one Python process, so what a run leaves in variables 
 A run that's stopped (time) or crashes ends the process, and so do 30 minutes without a run: its variables are gone; read the files again and go on.
 
 ## A project's images
-`babasu.project(project_id).images()` is a list of them all; `.images("car")` of those matching a filter (read docs: filters). It's read whole before it's returned, so changing the images while going through it is safe.
+`babasu.project(project_id).images()` is a list of them all; `.images("car")` of those matching a filter (search_docs filters). It's read whole before it's returned, so changing the images while going through it is safe.
 
 An image's `annotations` are its objects, each with `class` (its name) and `bbox` [x, y, w, h] in pixels, `segments` (an outline) or `keypoints`, and `score` on a model's; a video's also have `frame` and `track`. Write them back with `image.set_annotations(objects)` and the whole list: leave out what goes, change what changes. A class name the project hasn't had becomes a class.
 

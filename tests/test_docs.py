@@ -3,11 +3,11 @@ import re
 
 import pytest
 
-from app.agent_tools import DOCS, DocsArgs, ToolError, read_docs
+from app.agent_tools import DOCS, DocsArgs, ToolError, search_docs
 
 
-def read(topic: str) -> str:
-    return read_docs(None, DocsArgs(topic=topic))
+def read(query: str) -> str | list[dict]:
+    return search_docs(None, DocsArgs(query=query))
 
 
 def test_every_page_in_pixelflows_index_can_be_read():
@@ -23,23 +23,38 @@ def test_a_link_inside_a_pixelflow_page_reads_that_page():
     assert read("/docs/core-concepts/detections.md") == read("pixelflow/core-concepts/detections")
 
 
-@pytest.mark.parametrize("topic, says", [
-    ("pixelflow/no-such-page", "read_docs pixelflow lists them"),
-    ("no-such-topic", "the topics: annotating"),
+def test_what_nothing_is_about_says_where_to_look(api):
+    with pytest.raises(ToolError, match="or a topic: annotating"):
+        read("xyzzy")
+
+
+def _where(found: list[dict]) -> list[str]:
+    return [f.get("operation") or f["doc"] + " " + f["text"].partition("\n")[0] for f in found]
+
+
+@pytest.mark.parametrize("words, first", [
+    ("rename class", "POST /api/projects/{project_id}/classes/rename"),  # models ask for the task, not a topic's name
+    ("grey copies of videos", "code ## Grey copies of a project's images and videos"),
+    ("crop people", "code ## Crop every person into a new project"),
+    ("import files from a folder", "POST /api/projects/{project_id}/import"),
 ])
-def test_an_unknown_topic_says_where_to_look(topic, says):
-    with pytest.raises(ToolError, match=says):
-        read(topic)
+def test_words_find_the_part_of_the_docs_or_the_operation_about_them(api, words, first):
+    found = read(words)
+    assert _where(found)[0] == first, _where(found)
+    assert len(found) <= 3
 
 
-def test_a_topic_that_isnt_one_answers_with_the_sections_about_it():
-    """Models ask for the task ("rename class"), not a topic's name."""
-    found = read("rename class")
-    assert "From projects:\n## Classes" in found and "rename" in found
+def test_words_find_pixelflows_docs_too(api):
+    assert any(f.get("doc", "").startswith("pixelflow/") for f in read("detections zones tracking"))
+
+
+def test_an_operation_is_answered_whole_and_alone(api):
+    found, = read("patch /api/projects/{project_id}")
+    assert found["operation"] == "PATCH /api/projects/{project_id}" and found["parameters"]
 
 
 def test_the_calls_the_api_page_gives_work(api):
-    """read_docs api is where the agent learns the calls: each of its examples is answered."""
+    """search_docs api is where the agent learns the calls: each of its examples is answered."""
     project = api.post("/api/projects", json={"name": "Street", "classes": [{"name": "car"}, {"name": "circle"},
                                                                            {"name": "triangle"}]}).json()["id"]
     for method, path, body in [
@@ -59,7 +74,7 @@ def test_the_calls_the_api_page_gives_work(api):
 
 
 def test_the_workflow_the_docs_build_loads(api):
-    """read_docs workflows starts from a whole document: it loads as written."""
+    """search_docs workflows starts from a whole document: it loads as written."""
     example = json.loads(re.search(r"```json\n(.*?)```", DOCS["workflows"], re.S)[1])
     answer = api.post("/api/workflows/check", json=example)
     assert answer.status_code == 200, answer.text
