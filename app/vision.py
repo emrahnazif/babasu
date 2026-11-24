@@ -181,12 +181,13 @@ def loading(conn, family: str, variant: str) -> dict:
     return {"id": job["id"], "status": job["status"], "started": started, "ahead": blocking and blocking["title"]}
 
 
-def _download_first(conn, params: dict) -> list[int]:
+def download_first(conn, params: dict) -> list[int]:
+    """What a job of a model (its params: family, variant) waits for: its download, unless it's there."""
     job = ensure(conn, params["family"], params["variant"])
     return [job] if job else []
 
 
-@jobs.kind(LOAD, lane="gpu", title="Load model", needs=_download_first)
+@jobs.kind(LOAD, lane="gpu", title="Load model", needs=download_first)
 def load_job(ctx: jobs.Context, family: str, variant: str) -> dict:
     ctx.advance(0, f"{family} {variant}")  # no total: torch loading reports none
     load(family, variant)

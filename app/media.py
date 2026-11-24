@@ -97,10 +97,10 @@ def store(conn: sqlite3.Connection, project_id: int, data: bytes, name: str) -> 
         # Existing files are kept, so a missing thumbnail is also recreated here.
         file = path(sha256, ext)
         if not file.exists():
-            _write(file, data)
+            write(file, data)
         thumb = path(sha256, "thumb.webp")
         if not thumb.exists():
-            _write(thumb, _thumbnail(image))
+            write(thumb, _thumbnail(image))
 
     return _row(conn, project_id, sha256, ext, IMAGE_TYPES[f".{ext}"], width, height, name)
 
@@ -156,7 +156,7 @@ def store_video(conn: sqlite3.Connection, project_id: int, file: Path, name: str
     times = frames(sha256, ext)
     thumb = path(sha256, "thumb.webp")
     if not thumb.exists():
-        _write(thumb, _thumbnail(pf.to_pil(first)))
+        write(thumb, _thumbnail(pf.to_pil(first)))
     fps = fps or len(times) / (times[-1] / 1000 or 1)  # a file without a rate: its frames over its length
     height, width = first.shape[:2]  # upright: OpenCV applies a rotation flag
     return _row(conn, project_id, sha256, ext, VIDEO_TYPES[file.suffix.lower()], width, height, name,
@@ -187,7 +187,7 @@ def frames(sha256: str, ext: str) -> list[float]:
         return json.loads(kept.read_text())
     with pf.VideoReader(str(path(sha256, ext))) as video:
         times = video.timestamps()
-    _write(kept, json.dumps(times).encode())
+    write(kept, json.dumps(times).encode())
     return times
 
 
@@ -215,7 +215,7 @@ def frame_file(sha256: str, ext: str, number: int) -> Path:
             pixels = video.read_frame(number)
         buffer = io.BytesIO()
         pf.to_pil(pixels).save(buffer, format="JPEG", quality=FRAME_QUALITY)
-        _write(kept, buffer.getvalue())
+        write(kept, buffer.getvalue())
     return kept
 
 
@@ -293,7 +293,7 @@ def picture(image: Image.Image, box: tuple[float, float, float, float] | None = 
     return buffer.getvalue()
 
 
-def _write(path: Path, data: bytes) -> None:
+def write(path: Path, data: bytes) -> None:
     """Write via a temporary file, so a crash never leaves a half-written file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")  # its own: two requests may write one file

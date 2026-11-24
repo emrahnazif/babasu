@@ -40,7 +40,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app import code as code_mode  # `code` is run_code's argument
-from app import config, jobs, media, projects
+from app import config, docs_index, jobs, media, projects
 from app.formatting import plural
 from app.routes import IMAGES, UI_ONLY, fields_at
 
@@ -731,6 +731,8 @@ def _at_path(query: str) -> list[dict]:
 
 SEARCH_RESULTS = 3  # parts of the docs and operations a search answers
 HEADING_WEIGHT = 3  # a word in a part's heading (an operation's name and description) counts as this many in its text
+FUSED = 50  # parts of each ranking that are combined
+RANK_OFFSET = 60  # reciprocal rank fusion's usual constant: a part's score from a ranking is 1 / (this + its rank)
 K1, B = 1.2, 0.75  # BM25's usual constants: how fast more of a word stops counting; how much a long part is evened out
 SCHEMA_KEYS = {"type", "in", "format", "required", "default", "answer"}  # an operation's JSON that isn't words about it
 
@@ -762,6 +764,7 @@ def _prose(value) -> str:
 @dataclass(frozen=True)
 class _Index:
     parts: list[tuple[dict, Counter]]  # each part with its words
+    texts: list[str]  # each part's text, as docs_index embeds it: a part of the docs as written, an operation's words
     weight: dict[str, float]  # each word's: the fewer parts have it, the more it counts (BM25's idf)
     average: float  # a part's length, on average
 
@@ -770,23 +773,47 @@ class _Index:
 def _index() -> _Index:
     """What search_docs searches: every part of the docs (the app's and pixelflow's, cut at their ##
     headings), {doc, text}, and every operation in full."""
-    parts = [({"doc": name, "text": part.strip()}, _words(part.partition("\n")[0], part))
-             for name, doc in DOCS.items() if name != "pixelflow"  # its index: its pages are in here themselves
-             for part in re.split(r"\n(?=## )", doc)]
-    parts += [(o, _words(o["operation"] + " " + o["description"], _prose(o))) for o in operations()]
+    docs = [(name, part.strip()) for name, doc in DOCS.items() if name != "pixelflow"  # its index: its pages are in here
+            for part in re.split(r"\n(?=## )", doc)]
+    parts = [({"doc": name, "text": text}, _words(text.partition("\n")[0], text)) for name, text in docs]
+    texts = [text for _, text in docs]
+    for o in operations():
+        texts.append(_prose(o))
+        parts.append((o, _words(o["operation"] + " " + o["description"], texts[-1])))
     having = Counter(w for _, words in parts for w in words)
     weight = {w: math.log(1 + (len(parts) - n + 0.5) / (n + 0.5)) for w, n in having.items()}
-    return _Index(parts, weight, sum(words.total() for _, words in parts) / len(parts))
+    return _Index(parts, texts, weight, sum(words.total() for _, words in parts) / len(parts))
 
 
 def _ranked(query: str) -> list[dict]:
-    """The parts of the docs and the operations that match the words of `query` best (BM25)."""
+    """The parts of the docs and the operations that match `query` best: by its words (BM25) and,
+    once the docs are indexed, by its meaning too, the two combined by their ranks (reciprocal rank
+    fusion: a part high in either comes first; each is good at what the other misses, words at
+    names and paths, meaning at other words for the same thing)."""
+    parts = _index().parts
+    rankings = [_by_words(query)]
+    if (by_meaning := docs_index.ranking(query)) is not None:
+        rankings.append(by_meaning)
+    score = Counter()
+    for ranking in rankings:
+        for rank, at in enumerate(ranking[:FUSED]):
+            score[at] += 1 / (RANK_OFFSET + rank)
+    return [parts[at][0] for at, _ in score.most_common(SEARCH_RESULTS)]
+
+
+def _by_words(query: str) -> list[int]:
+    """The positions of the parts that have words of `query`, the best match first (BM25)."""
     index = _index()
     wanted = set(_terms(query))
     scored = []
-    for found, words in index.parts:
+    for at, (_, words) in enumerate(index.parts):
         evened = K1 * (1 - B + B * words.total() / index.average)
         score = sum(index.weight[w] * words[w] * (K1 + 1) / (words[w] + evened) for w in wanted if w in words)
         if score:
-            scored.append((score, found))
-    return [found for _, found in sorted(scored, key=lambda s: -s[0])[:SEARCH_RESULTS]]
+            scored.append((score, at))
+    return [at for _, at in sorted(scored, reverse=True)]
+
+
+def meaning_texts() -> list[str]:
+    """What docs_index embeds of each part, in search_docs' order."""
+    return _index().texts

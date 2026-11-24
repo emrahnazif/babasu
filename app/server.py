@@ -2,7 +2,7 @@
 
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 
 import uvicorn
 from fastapi import Depends, FastAPI, Response
@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from mozo.workflow.api import workflow_router
 
-from app import agent, agent_tools, code, config, db, history, jobs, segment, vision
+from app import agent, agent_tools, code, config, db, docs_index, history, jobs, segment, vision
 from app.filters import FilterError
 from app import routes
 from app.routes import agent as agent_routes
@@ -56,6 +56,8 @@ async def lifespan(app: FastAPI):
     vision.setup()
     agent.recover()
     jobs.run_workers()
+    with closing(db.connect()) as conn:
+        docs_index.start(conn)  # downloads the model and embeds the docs, the first time
     yield
     agent.stop_all()
     code.close_all()

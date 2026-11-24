@@ -1,8 +1,10 @@
 import json
 import re
 
+import numpy as np
 import pytest
 
+from app import docs_index, jobs
 from app.agent_tools import DOCS, DocsArgs, ToolError, search_docs
 
 
@@ -90,3 +92,34 @@ def test_the_workflow_the_docs_build_loads(api):
     example = json.loads(re.search(r"```json\n(.*?)```", DOCS["workflows"], re.S)[1])
     answer = api.post("/api/workflows/check", json=example)
     assert answer.status_code == 200, answer.text
+
+
+class _Meaning:
+    """A stand-in for the embedding model: the grey-copies recipe and "xyzzy plugh" mean the same
+    (no word in common), everything else something else."""
+
+    def encode_text(self, texts):
+        texts = [texts] if isinstance(texts, str) else texts
+        same = [("Grey copies" in t or "xyzzy plugh" in t) for t in texts]
+        return np.array([[1.0, 0.0] if s else [0.0, 1.0] for s in same], dtype=np.float32)
+
+
+@pytest.fixture
+def meaning(monkeypatch):
+    monkeypatch.setattr(docs_index.vision, "load", lambda family, variant: _Meaning())
+    monkeypatch.setattr(docs_index.vision, "downloaded", lambda family, variant: True)
+    monkeypatch.setattr(docs_index.weights, "revision_of", lambda family, variant: "test")
+    monkeypatch.setattr(docs_index, "_matrix", None)
+
+
+def test_once_the_docs_are_indexed_a_search_finds_by_meaning_too(api, conn, workers, finished, meaning):
+    with pytest.raises(ToolError):  # not indexed yet: words alone, and the docs have neither word
+        read("xyzzy plugh")
+
+    docs_index.start(conn)
+    job, = jobs.list_recent(conn)
+    assert finished(job["id"])["status"] == "succeeded" and docs_index.INDEX.exists()
+    assert _where(read("xyzzy plugh"))[0] == "code ## Grey copies of a project's images and videos"
+
+    docs_index.start(conn)  # nothing changed: nothing to embed
+    assert len(jobs.list_recent(conn)) == 1
