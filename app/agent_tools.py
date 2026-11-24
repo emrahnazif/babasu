@@ -707,9 +707,25 @@ def search_docs(conn: sqlite3.Connection, args: DocsArgs) -> str | list[dict]:
     for name in (page, f"pixelflow/{page}"):  # the second: a link in a pixelflow page, /docs/tracking/zones.md
         if name in DOCS:
             return DOCS[name]
-    found = [o for o in operations() if o["operation"].lower() == query] or _ranked(query)
+    found = _at_path(query) or _ranked(query)
     if not found:
         raise ToolError(f"Nothing in the docs or the API is about {args.query!r}; try other words, or a topic: {', '.join(TOPICS)}.")
+    return found
+
+
+def _at_path(query: str) -> list[dict]:
+    """The operations at a path in the query, with its ids or its {names} ("post /api/projects/3/changes",
+    "workflows/nodes"): the one its method names, or all of them; a route that names a part of the
+    path (/api/workflows/nodes) over one that takes anything there (/api/workflows/{workflow_id}).
+    A path's words are in every operation, so words find it poorly."""
+    path = re.search(r"(?:\b(get|post|put|patch|delete)\s+)?(?<!\S)(/?[a-z_]+/\S*)", query)
+    if path is None:
+        return []
+    found = _operations_at(_api_path(path[2]))
+    fewest = min((o["operation"].count("{") for o in found), default=0)
+    found = [o for o in found if o["operation"].count("{") == fewest]
+    if path[1]:
+        return [o for o in found if o["operation"].startswith(path[1].upper() + " ")] or found
     return found
 
 

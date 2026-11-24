@@ -44,6 +44,18 @@ def test_words_find_the_part_of_the_docs_or_the_operation_about_them(api, words,
     assert len(found) <= 3
 
 
+@pytest.mark.parametrize("words, found", [
+    ("post /api/projects/222/changes", ["POST /api/projects/{project_id}/changes"]),
+    ("patch /api/projects/{id}/classes hide", ["PATCH /api/projects/{project_id}/classes"]),
+    ("check workflow post /api/workflows/check", ["POST /api/workflows/check"]),
+    ("workflows/nodes", ["GET /api/workflows/nodes"]),
+    ("delete /api/projects/119/changes", ["POST /api/projects/{project_id}/changes"]),  # not its method: all at the path
+    ("projects/{project_id}", ["GET /api/projects/{project_id}", "PATCH /api/projects/{project_id}", "DELETE /api/projects/{project_id}"]),
+])
+def test_a_path_answers_its_operations_the_one_its_method_names_or_all(api, words, found):
+    assert _where(read(words)) == found
+
+
 def test_words_find_pixelflows_docs_too(api):
     assert any(f.get("doc", "").startswith("pixelflow/") for f in read("detections zones tracking"))
 
