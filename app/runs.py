@@ -173,10 +173,8 @@ def save_workflow(workflow_id: str, document: dict) -> dict:
     if not _kept(workflow):
         raise ValueError(f"Nothing reaches a save node ({', '.join(SAVES)}), so a run would keep nothing")
     path = config.WORKFLOWS_DIR / f"{workflow_id}.json"
-    tmp = path.with_suffix(".json.tmp")  # saved whole, then renamed over it: never half-written
     config.WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
-    workflow.save(tmp)
-    tmp.replace(path)
+    workflow.save(path)  # whole or not at all (mozo 1.14)
     return _listed(workflow_id, workflow)
 
 
